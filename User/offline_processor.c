@@ -1,0 +1,1523 @@
+#include "offline_processor.h"
+#include "ida_config.h"
+#include "stdio.h"
+#include "./FATFS/exfuns/fattester.h"
+#include "./LIBS/lib_usb_protocol/usb_protocol.h"
+#include "./LIBS/lib_dwt/lib_dwt_timestamp.h"
+#include "usb_processor.h"
+#include "collector_processor.h"
+#include "./BSP/PCA9554A/pca9554a.h"
+
+#include "usb_processor.h"
+#include "usbd_cdc_if.h"
+
+extern CircularBuffer *g_cb_adc;
+
+extern void AdcCollectorContrl(uint8_t run_status);
+
+const Dev_ch_cfg_index g_off_HighPassFreq[] =
+    {
+        {0.05, HIGH_PASS_FREQ_005hz},
+        {0.5, HIGH_PASS_FREQ_05hz},
+        {1, HIGH_PASS_FREQ_1hz},
+        {10, HIGH_PASS_FREQ_10hz},
+};
+
+const Dev_ch_cfg_index g_off_LowPassFreq[] =
+    {
+        {0.0, LOW_PASS_FREQ_110kHz},
+        {20, LOW_PASS_FREQ_20Hz},
+        {1000, LOW_PASS_FREQ_1kHz},
+        {10000, LOW_PASS_FREQ_10kHz},
+        {20000, LOW_PASS_FREQ_20kHz},
+};
+
+const Dev_ch_cfg_index g_off_ida_ch_rate[] =
+    {
+        {512.0, SAMPLE_RATE_INDEX_512HZ},
+        {1024.0, SAMPLE_RATE_INDEX_1024HZ},
+        {2048.0, SAMPLE_RATE_INDEX_2048HZ},
+        {4096.0, SAMPLE_RATE_INDEX_4096HZ},
+        {8192.0, SAMPLE_RATE_INDEX_8192HZ},
+        {16384.0, SAMPLE_RATE_INDEX_16384HZ},
+        {32768.0, SAMPLE_RATE_INDEX_32768HZ},
+        {65536.0, SAMPLE_RATE_INDEX_65536HZ},
+        {131072.0, SAMPLE_RATE_INDEX_131072HZ},
+        {50.0, SAMPLE_RATE_INDEX_50HZ},
+        {100.0, SAMPLE_RATE_INDEX_100H},
+        {200.0, SAMPLE_RATE_INDEX_200H},
+        {400.0, SAMPLE_RATE_INDEX_400H},
+        {800.0, SAMPLE_RATE_INDEX_800HZ},
+        {1600.0, SAMPLE_RATE_INDEX_1600HZ},
+        {3200.0, SAMPLE_RATE_INDEX_3200HZ},
+        {6400.0, SAMPLE_RATE_INDEX_6400HZ},
+        {12800.0, SAMPLE_RATE_INDEX_12800HZ},
+        {25600.0, SAMPLE_RATE_INDEX_25600HZ},
+        {51200.0, SAMPLE_RATE_INDEX_51200HZ},
+        {102400.0, SAMPLE_RATE_INDEX_102400HZ},
+        {204800.0, SAMPLE_RATE_INDEX_204800HZ},
+        {256000.0, SAMPLE_RATE_INDEX_256000HZ},
+};
+
+#define OFFLINE_SCHEDULE_ITEM_MAX 32
+typedef enum ScheduleItemRunStatus
+{
+    STATUS_NO = 0,
+    STATUS_ING,
+    STATUS_END,
+} ScheduleStatus;
+
+ChannelTableHeader g_offline_chCfgHeader;
+ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
+DSAGlobalParams g_offline_GlobalParam;
+ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存（最多16组）
+tagRecordHeader g_recorde_file_head;
+
+uint8_t g_schedule_run_status[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表项目执行情况:
+                                                          // 0--未执行，1--执行中，2--执行完成
+
+void SysRunStatusInit(void);
+static int8_t GetOfflineCfgParam(const char *f_name);
+static int8_t CheckOfflineCfgParam(void);
+static FRESULT CreatOfflineRecordFile(uint32_t file_num);
+static void OfflineDatasRecord(void);
+static int delete_files_by_extension(const char *dir_path,
+                                     const char *keep_exts[],
+                                     uint32_t timeout_ms);
+
+FIL g_offline_record_fil; // 离线记录文件指针
+
+// void offline_processor(uint8_t mode)
+// {
+//     static uint8_t mode_l = WORKMODE_ONLINE;
+//     int8_t ret = RET_OK;
+//     int32_t err_reply = RET_OK;
+//     uint32_t sample_rate = 0;
+//     static uint64_t time_start = 0;
+//     uint64_t time_n = 0;
+//     int32_t time_off = 0;
+//     UINT bw, br;
+//     static uint32_t file_num = 0;
+
+//     //    mode = 1;
+//     if (mode != mode_l)
+//     {
+//         usb_printf("Workmode has changed. mode = %s\n", (mode == WORKMODE_ONLINE) ? "WORKMODE_ONLINE" : "WORKMODE_OFFLINE");
+
+//         // 1.停止当前采集过程
+//         if (g_IdaSystemStatus.st_dev_run.run_flag != 0)
+//         {
+//             g_IdaSystemStatus.st_dev_run.run_flag = 0;
+//             AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+//         }
+//         // 2.离线状态--》在线状态：记录数据文件更新
+//         if ((mode == WORKMODE_ONLINE) && (mode_l == WORKMODE_OFFLINE))
+//         {
+//         }
+
+//         // 3.清除缓存采集数据
+//         AdcCbClear();
+
+//         // 4.运行状态初始化
+//         g_IdaSystemStatus.st_dev_mode.work_mode = mode;
+//         SysRunStatusInit();
+//         mode_l = mode;
+//     }
+
+//     if (g_IdaSystemStatus.st_dev_mode.work_mode == WORKMODE_OFFLINE)
+//     {
+
+//         // 一、离线配置
+//         switch (g_IdaSystemStatus.st_dev_run.collect_cfg_flag)
+//         {
+//         case COLLECT_CFG_ERR:
+//             return;
+//             break;
+//         case COLLECT_CFG_INIT:
+//             // 1.获取离线通道配置及离线计划表
+//             usb_printf("GetOfflineCfgParam \n");
+//             ret = GetOfflineCfgParam(OFFLINE_SCHEDULE_FILE);
+//             if (ret < 0)
+//                 break;
+//             // 2.离线配置校验
+//             usb_printf("CheckOfflineCfgParam start\n");
+//             ret = CheckOfflineCfgParam();
+//             if (ret < 0)
+//                 break;
+
+//             usb_printf("CheckOfflineCfgParam end\n");
+
+//             // 3.离线配置
+//             for (uint8_t i = 0; i < (int)(sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0])); i++)
+//             {
+//                 if (g_offline_chCfgHeader.fHardwareSampleRate == g_off_ida_ch_rate[i].ch_cfg_value)
+//                 {
+
+//                     sample_rate = g_off_ida_ch_rate[i].ch_cfg_value;
+
+//                     usb_printf("sample_rate:%d \n", sample_rate);
+
+//                     break;
+//                 }
+//             }
+//             // sample_rate = 100;
+//             if (sample_rate == 0)
+//             {
+//                 g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
+//                 return;
+//             }
+//             else
+//             {
+//                 // 采集通道配置
+//                 CfgAdcSampleRate(sample_rate);
+//                 g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_OK;
+//             }
+//             break;
+//         }
+
+//         for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+//         {
+//             if (g_schedule_run_status[i] != STATUS_END)
+//             {
+//                 break;
+//             }
+//             if (i == g_offline_GlobalParam.nScheduleCount)
+//             {
+//                 g_IdaSystemStatus.st_dev_offline.start_flag = 0;
+//                 return;
+//             }
+//         }
+
+//         // 二、计划表执行
+//         for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+//         {
+//             //            time_n = dwt_get_us();
+//             //            time_off = (time_n - time_start) / 1000;
+//             time_n = HAL_GetTick();
+//             time_off = (time_n - time_start) / 1000;
+//             if (time_off >= g_offline_ScheduleParam[i].param0)
+//             {
+
+//                 if (g_schedule_run_status[i] == STATUS_END)
+//                 {
+//                     continue;
+//                 }
+//                 switch (g_offline_ScheduleParam[i].nType)
+//                 {
+//                 case Record_Start:
+//                     if (g_offline_record_fil.flag == 0) // 记录文件是否创建
+//                     {
+//                         usb_printf("g_offline_record_fil.flag == 0:%d \n", Record_Start);
+
+//                         // todo:生成记录文件名
+//                         memset(&g_recorde_file_head, 0, sizeof(g_recorde_file_head));
+//                         g_recorde_file_head.nVersion = 0x12345678;
+//                         g_recorde_file_head.nCreateTime = dwt_get_ns();
+//                         g_recorde_file_head.nDeviceChNum = 3;
+//                         g_recorde_file_head.nRecordNum = 3;
+//                         strcat(g_recorde_file_head.Name, RECORD_FILE_PATH);
+//                         file_num++;
+//                         CreatOfflineRecordFile(file_num);
+//                         g_IdaSystemStatus.st_dev_record.record_status = RECORD_RUN;
+//                     }
+//                     if (g_offline_ScheduleParam[i].param1 > 0)
+//                     {
+//                         g_IdaSystemStatus.st_dev_record.record_status = (time_off > (g_offline_ScheduleParam[i].param0 + g_offline_ScheduleParam[i].param1)) ? RECORD_PAUSE : g_IdaSystemStatus.st_dev_record.record_status;
+//                         g_schedule_run_status[i] = STATUS_END;
+//                     }
+//                     else
+//                     {
+//                         g_schedule_run_status[i] = STATUS_ING;
+//                     }
+//                     break;
+//                 case Record_End:
+//                     if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
+//                     {
+//                         g_IdaSystemStatus.st_dev_record.record_status = RECORD_STOP;
+//                         // 更新离线记录文件
+//                         OfflineDatasRecord();
+//                         // 关闭并保存记录文件
+//                         f_close(&g_offline_record_fil);
+//                         memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
+//                         g_schedule_run_status[i] = STATUS_END;
+//                         const char *keep_images[] = {".rec", NULL};
+//                         delete_files_by_extension(RECORD_FILE_PATH, keep_images, 1000);
+//                     }
+//                     break;
+//                 case ACQ_Start:
+//                     // 准备开始离线运行
+//                     // usb_printf("ACQ_Start:%d 0\n", STATUS_NO);
+
+//                     if (g_schedule_run_status[i] == STATUS_NO)
+//                     {
+//                         usb_printf("ACQ_Start:%d 1\n", STATUS_NO);
+
+//                         g_schedule_run_status[i] = STATUS_ING;
+//                         g_IdaSystemStatus.st_dev_run.run_flag = 1;
+//                         if ((g_offline_ScheduleParam[i].param1 > 0) &&
+//                             (time_off > (g_offline_ScheduleParam[i].param0 + g_offline_ScheduleParam[i].param1)))
+//                         {
+//                             g_IdaSystemStatus.st_dev_run.run_flag = 0;
+//                             g_schedule_run_status[i] = STATUS_END;
+//                         }
+//                         //                            AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+//                         // 启动采集时间作为计划表执行开始时间
+//                         //                            time_start = dwt_get_us();
+//                         time_start = HAL_GetTick();
+//                     }
+//                     break;
+//                 }
+//             }
+//         }
+
+//         // 三、记录过程
+//         if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) &&
+//             (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN))
+//         { // 离线运行记录中
+//             if (g_offline_record_fil.flag > 0)
+//             {
+//                 OfflineDatasRecord();
+//             }
+//         }
+//     }
+// }
+// 如文件中尚未定义，可添加以下宏
+#define RECORD_FILE_VERSION 0x12345678U
+#define DEFAULT_CHANNEL_COUNT 3U
+
+static uint32_t file_num = 0;
+
+// 安全的毫秒差计算（防止 uint32_t 溢出）
+static uint32_t SafeElapsedMs(uint32_t old_tick, uint32_t new_tick)
+{
+    if (new_tick >= old_tick)
+    {
+        return new_tick - old_tick;
+    }
+    return (UINT32_MAX - old_tick) + new_tick + 1U;
+}
+
+// 获取离线采样率
+static uint32_t GetOfflineSampleRate(void)
+{
+    uint32_t rate = 0;
+    size_t count = sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0]);
+
+    for (size_t i = 0; i < count; i++)
+    {
+        if (g_offline_chCfgHeader.fHardwareSampleRate == g_off_ida_ch_rate[i].ch_cfg_value)
+        {
+            rate = g_off_ida_ch_rate[i].ch_cfg_value;
+            break;
+        }
+    }
+    return rate;
+}
+
+// 记录开始处理
+static void HandleRecordStart(uint8_t idx)
+{
+    if (g_offline_record_fil.flag)
+        return;
+
+    usb_printf("Record_Start\n");
+
+    memset(&g_recorde_file_head, 0, sizeof(g_recorde_file_head));
+
+    g_recorde_file_head.nVersion = RECORD_FILE_VERSION;
+    g_recorde_file_head.nCreateTime = dwt_get_ns();
+    g_recorde_file_head.nDeviceChNum = DEFAULT_CHANNEL_COUNT;
+    g_recorde_file_head.nRecordNum = DEFAULT_CHANNEL_COUNT;
+
+    file_num++;
+
+    if (CreatOfflineRecordFile(file_num) != FR_OK)
+    {
+        usb_printf("Create file fail\n");
+        return;
+    }
+
+    g_IdaSystemStatus.st_dev_record.record_status = RECORD_RUN;
+
+    g_schedule_run_status[idx] = STATUS_ING;
+}
+
+// 记录结束处理
+static void HandleRecordEnd(uint8_t idx)
+{
+    if (g_IdaSystemStatus.st_dev_record.record_status != RECORD_RUN)
+        return;
+
+    usb_printf("Record_End\n");
+
+    g_IdaSystemStatus.st_dev_record.record_status = RECORD_STOP;
+
+    OfflineDatasRecord();
+
+    f_close(&g_offline_record_fil);
+
+    memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
+
+    g_schedule_run_status[idx] = STATUS_END;
+}
+
+// 采集开始处理
+static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
+{
+    if (g_schedule_run_status[idx] != STATUS_NO)
+    {
+        return;
+    }
+
+    usb_printf("ACQ_Start: starting acquisition\n");
+
+    g_schedule_run_status[idx] = STATUS_ING;
+    g_IdaSystemStatus.st_dev_run.run_flag = 1;
+    AdcCollectorContrl(1); // 强烈建议打开采集控制
+
+    // 有持续时间限制且已超时，则立即结束
+    if (g_offline_ScheduleParam[idx].param1 > 0)
+    {
+        uint32_t duration_end = (uint32_t)g_offline_ScheduleParam[idx].param0 +
+                                (uint32_t)g_offline_ScheduleParam[idx].param1;
+
+        if (elapsed_seconds >= duration_end)
+        {
+            g_IdaSystemStatus.st_dev_run.run_flag = 0;
+            AdcCollectorContrl(0);
+            g_schedule_run_status[idx] = STATUS_END;
+        }
+    }
+}
+
+static void ExecuteScheduleAction(uint8_t idx, uint32_t elapsed_seconds)
+{
+    switch (g_offline_ScheduleParam[idx].nType)
+    {
+
+    case Record_Start:
+        HandleRecordStart(idx);
+        break;
+
+    case Record_End:
+        HandleRecordEnd(idx);
+        break;
+
+    case ACQ_Start:
+        HandleAcqStart(idx, elapsed_seconds);
+        break;
+
+    case ACQ_Stop:
+
+        if (g_IdaSystemStatus.st_dev_run.run_flag)
+        {
+            g_IdaSystemStatus.st_dev_run.run_flag = 0;
+            AdcCollectorContrl(0);
+        }
+
+        g_schedule_run_status[idx] = STATUS_END;
+        break;
+
+    default:
+        break;
+    }
+}
+
+// 主函数
+// void offline_processor(uint8_t mode)
+// {
+//     static uint8_t prev_mode = WORKMODE_ONLINE;
+//     static uint32_t base_tick_ms = 0;
+//     static uint8_t config_done = 0;
+
+//     int32_t ret = RET_OK;
+
+//     // ── 1. 模式切换处理 ─────────────────────────────────────────────
+//     if (mode != prev_mode)
+//     {
+//         usb_printf("Workmode has changed. mode = %s\n",
+//                    (mode == WORKMODE_ONLINE) ? "WORKMODE_ONLINE" : "WORKMODE_OFFLINE");
+
+//         // 停止现有采集
+//         if (g_IdaSystemStatus.st_dev_run.run_flag != 0)
+//         {
+//             g_IdaSystemStatus.st_dev_run.run_flag = 0;
+//             AdcCollectorContrl(0);
+//         }
+
+//         // 清除缓存
+//         AdcCbClear();
+
+//         // 运行状态初始化
+//         g_IdaSystemStatus.st_dev_mode.work_mode = mode;
+//         SysRunStatusInit();
+
+//         prev_mode = mode;
+//         config_done = 0;              // 强制重新加载配置
+//         base_tick_ms = HAL_GetTick(); // 重置时间基准
+//     }
+
+//     // ── 2. 仅在离线模式下继续 ───────────────────────────────────────
+//     if (mode != WORKMODE_OFFLINE)
+//     {
+//         return;
+//     }
+
+//     // ── 3. 离线配置（只执行一次） ───────────────────────────────────
+//     if (!config_done)
+//     {
+//         usb_printf("Loading offline configuration...\n");
+
+//         ret = GetOfflineCfgParam(OFFLINE_SCHEDULE_FILE);
+//         if (ret < 0)
+//         {
+//             g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
+//             return;
+//         }
+
+//         ret = CheckOfflineCfgParam();
+//         if (ret < 0)
+//         {
+//             g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
+//             return;
+//         }
+
+//         uint32_t sample_rate = 12800; // GetOfflineSampleRate();
+//         if (sample_rate == 0)
+//         {
+//             usb_printf("Error: invalid sample rate from offline config\n");
+//             g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
+//             return;
+//         }
+
+//         CfgAdcSampleRate(sample_rate);
+//         g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_OK;
+//         config_done = 1;
+
+//         usb_printf("Offline configuration loaded. sample_rate = %lu Hz\n", sample_rate);
+//     }
+
+//     // ── 4. 检查是否所有计划均已完成 ─────────────────────────────────
+//     uint8_t all_finished = 1;
+//     for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+//     {
+//         if (g_schedule_run_status[i] != STATUS_END)
+//         {
+//             all_finished = 0;
+//             break;
+//         }
+//     }
+//     if (all_finished)
+//     {
+//         g_IdaSystemStatus.st_dev_offline.start_flag = 0;
+//         if (g_IdaSystemStatus.st_dev_run.run_flag)
+//         {
+//             g_IdaSystemStatus.st_dev_run.run_flag = 0;
+//             AdcCollectorContrl(0);
+//         }
+//         return;
+//     }
+
+//     // ── 5. 执行计划表 ────────────────────────────────────────────────
+//     uint32_t now_ms = HAL_GetTick();
+//     uint32_t elapsed_ms = SafeElapsedMs(base_tick_ms, now_ms);
+//     uint32_t elapsed_seconds = elapsed_ms / 1000U;
+
+//     for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+//     {
+//         if (g_schedule_run_status[i] != STATUS_NO)
+//         {
+//             continue;
+//         }
+
+//         if (elapsed_seconds < (uint32_t)g_offline_ScheduleParam[i].param0)
+//         {
+//             continue;
+//         }
+
+//         switch (g_offline_ScheduleParam[i].nType)
+//         {
+//         case Record_Start:
+//             HandleRecordStart(i);
+//             break;
+
+//         case Record_End:
+//             HandleRecordEnd(i);
+//             break;
+
+//         case ACQ_Start:
+//             HandleAcqStart(i, elapsed_seconds);
+//             break;
+
+//         default:
+//             break;
+//         }
+//     }
+
+//     // ── 6. 数据记录（放在最后，确保状态已更新） ──────────────────────
+//     if (g_IdaSystemStatus.st_dev_run.run_flag == 1 &&
+//         g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
+//     {
+//         if (g_offline_record_fil.flag > 0)
+//         {
+//             OfflineDatasRecord();
+//         }
+//     }
+// }
+
+void offline_processor(uint8_t mode)
+{
+    static uint8_t prev_mode = WORKMODE_ONLINE;
+    static uint32_t base_tick_ms = 0;
+    static uint8_t config_done = 0;
+
+    // ---------------------------
+    // 1 模式切换处理
+    // ---------------------------
+
+    if (mode != prev_mode)
+    {
+        usb_printf("Workmode change\n");
+
+        if (g_IdaSystemStatus.st_dev_run.run_flag)
+        {
+            g_IdaSystemStatus.st_dev_run.run_flag = 0;
+            AdcCollectorContrl(0);
+        }
+
+        AdcCbClear();
+
+        SysRunStatusInit();
+
+        prev_mode = mode;
+        config_done = 0;
+        base_tick_ms = HAL_GetTick();
+    }
+
+    if (mode != WORKMODE_OFFLINE)
+        return;
+
+    // ---------------------------
+    // 2 离线配置
+    // ---------------------------
+
+    if (!config_done)
+    {
+        if (GetOfflineCfgParam(OFFLINE_SCHEDULE_FILE) < 0)
+            return;
+
+        if (CheckOfflineCfgParam() < 0)
+            return;
+
+        uint32_t sample_rate = 25600; // GetOfflineSampleRate();
+
+        CfgAdcSampleRate(sample_rate);
+
+        config_done = 1;
+
+        usb_printf("Offline cfg ok\n");
+    }
+
+    // ---------------------------
+    // 3 计算运行时间
+    // ---------------------------
+
+    uint32_t now_ms = HAL_GetTick();
+    uint32_t elapsed_ms = SafeElapsedMs(base_tick_ms, now_ms);
+    uint32_t elapsed_seconds = elapsed_ms / 1000;
+
+    // ---------------------------
+    // 4 执行调度
+    // ---------------------------
+
+    for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+    {
+        ScheduleStatus *status = &g_schedule_run_status[i];
+
+        if (*status == STATUS_END)
+            continue;
+
+        uint32_t start_time = (uint32_t)g_offline_ScheduleParam[i].param0;
+
+        if (elapsed_seconds < start_time)
+            continue;
+
+        // ---------- 未执行 ----------
+        if (*status == STATUS_NO)
+        {
+            ExecuteScheduleAction(i, elapsed_seconds);
+
+            if (*status == STATUS_NO)
+                *status = STATUS_ING;
+
+            continue;
+        }
+
+        // ---------- 运行中 ----------
+        if (*status == STATUS_ING)
+        {
+            uint32_t duration = (uint32_t)g_offline_ScheduleParam[i].param1;
+
+            if (duration == 0)
+                continue;
+
+            if (elapsed_seconds >= start_time + duration)
+            {
+                *status = STATUS_END;
+
+                if (g_offline_ScheduleParam[i].nType == Record_Start)
+                {
+                    HandleRecordEnd(i);
+                }
+
+                if (g_offline_ScheduleParam[i].nType == ACQ_Start)
+                {
+                    g_IdaSystemStatus.st_dev_run.run_flag = 0;
+                    AdcCollectorContrl(0);
+                }
+            }
+        }
+    }
+
+    // ---------------------------
+    // 5 数据记录
+    // ---------------------------
+
+    if (g_IdaSystemStatus.st_dev_run.run_flag &&
+        g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
+    {
+        if (g_offline_record_fil.flag)
+        {
+            OfflineDatasRecord();
+        }
+    }
+}
+
+void SysRunStatusInit(void)
+{
+    g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_INIT;
+    g_IdaSystemStatus.st_dev_run.run_flag = 0;
+    g_IdaSystemStatus.st_dev_run.record_flag = 0;
+    g_IdaSystemStatus.st_dev_run.err_flag = 0;
+    g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE;
+    g_IdaSystemStatus.st_dev_offline.start_flag = 0;
+    g_IdaSystemStatus.st_dev_offline.event_flag = 0;
+    memset(&g_offline_chCfgHeader, 0, sizeof(g_offline_chCfgHeader));
+    memset(g_offline_chCfgParam, 0, sizeof(g_offline_chCfgParam));
+    memset(&g_offline_GlobalParam, 0, sizeof(g_offline_GlobalParam));
+    memset(g_offline_ScheduleParam, 0, sizeof(g_offline_ScheduleParam));
+    memset(&g_recorde_file_head, 0, sizeof(g_recorde_file_head));
+    memset(g_schedule_run_status, 0, sizeof(g_schedule_run_status));
+}
+/**
+ * @brief 带超时的文件读取函数
+ * @param fp 文件指针
+ * @param buff 缓冲区
+ * @param btr 要读取的字节数
+ * @param br 实际读取的字节数
+ * @param timeout_ms 超时时间（毫秒）
+ * @return FRESULT 结果
+ */
+FRESULT f_read_timeout(FIL *fp, void *buff, UINT btr, UINT *br, uint32_t timeout_ms)
+{
+    uint32_t start_tick = HAL_GetTick();
+    FRESULT res;
+
+    // 创建一个临时的文件操作函数，带超时检测
+    do
+    {
+        res = f_read(fp, buff, btr, br);
+        if (res == FR_OK)
+        {
+            return res;
+        }
+
+        // 检查是否超时
+        if ((HAL_GetTick() - start_tick) > timeout_ms)
+        {
+            return FR_TIMEOUT; // 超时错误
+        }
+
+        // 短暂延时后重试
+        HAL_Delay(1);
+    } while (res == FR_DISK_ERR || res == FR_NOT_READY);
+
+    return res;
+}
+
+/**
+ * @brief  Retrieve offline plan configuration from offline config file
+ * @param  f_name   File name of the configuration file
+ * @return int8_t   Result code (0 = success, negative = error)
+ */
+static int8_t GetOfflineCfgParam(const char *f_name)
+{
+    FIL fil;     // File object
+    UINT bw, br; // Bytes written/read
+    FRESULT res;
+    uint32_t offset = 0;                   // File pointer offset
+    const uint32_t FILE_OP_TIMEOUT = 5000; // File operation timeout (ms)
+
+    // Open the configuration file in read mode
+    res = f_open(&fil, f_name, FA_READ);
+    if (res != FR_OK)
+    {
+        usb_printf("Failed to open configuration file '%s': %d\n", f_name, res);
+        return -8;
+    }
+
+    // Read ChannelTableHeader
+    res = f_read_timeout(&fil, &g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), &br, FILE_OP_TIMEOUT);
+    if ((res != FR_OK) || (br <= 0) || (g_offline_chCfgHeader.nTotalChannelNum > 24))
+    {
+        usb_printf("Failed to read channel table header: %d (read %u bytes)\n", res, br);
+        f_close(&fil);
+        return -1;
+    }
+
+    // Read ChannelTableElem
+    offset += sizeof(g_offline_chCfgHeader);
+    res = f_lseek(&fil, offset);
+    if (res != FR_OK)
+    {
+        usb_printf("Failed to seek to channel table elements offset: %d\n", res);
+        f_close(&fil);
+        return -2;
+    }
+
+    res = f_read_timeout(&fil, &g_offline_chCfgParam[0],
+                         g_offline_chCfgHeader.nTotalChannelNum * sizeof(ChannelTableElem),
+                         &br, FILE_OP_TIMEOUT);
+    if (res != FR_OK)
+    {
+        usb_printf("Failed to read channel configuration parameters: %d\n", res);
+        f_close(&fil);
+        return -3;
+    }
+
+    // Read DSAGlobalParams
+    offset += g_offline_chCfgHeader.nTotalChannelNum * sizeof(ChannelTableElem);
+    res = f_lseek(&fil, offset);
+    if (res != FR_OK)
+    {
+        usb_printf("Failed to seek to global parameters offset: %d\n", res);
+        f_close(&fil);
+        return -4;
+    }
+
+    res = f_read_timeout(&fil, &g_offline_GlobalParam, sizeof(g_offline_GlobalParam), &br, FILE_OP_TIMEOUT);
+    if ((res != FR_OK) || (g_offline_GlobalParam.nScheduleCount > 16))
+    {
+        usb_printf("Failed to read global parameters: %d (schedule count = %u)\n",
+                   res, g_offline_GlobalParam.nScheduleCount);
+        f_close(&fil);
+        return -5;
+    }
+
+    // Read ScheduleParams
+    offset += sizeof(DSAGlobalParams);
+    res = f_lseek(&fil, offset);
+    if (res != FR_OK)
+    {
+        usb_printf("Failed to seek to schedule parameters offset: %d\n", res);
+        f_close(&fil);
+        return -6;
+    }
+
+    res = f_read_timeout(&fil, &g_offline_ScheduleParam[0],
+                         g_offline_GlobalParam.nScheduleCount * sizeof(ScheduleParams),
+                         &br, FILE_OP_TIMEOUT);
+    if (res != FR_OK)
+    {
+        usb_printf("Failed to read schedule parameters: %d\n", res);
+        f_close(&fil);
+        return -7;
+    }
+
+    // Close the file
+    res = f_close(&fil);
+    if (res != FR_OK)
+    {
+        usb_printf("Failed to close configuration file: %d\n", res);
+        return -9;
+    }
+
+    usb_printf("Successfully loaded offline configuration from file '%s'\n", f_name);
+    return 0; // Success
+}
+
+// /**
+//  * @brief 从离线配置文件获取离线计划配置
+//  * @param f_name 文件名
+//  * @return int8_t 结果
+//  */
+// static int8_t GetOfflineCfgParam(const char *f_name)
+// {
+//     FIL fil; // 文件对象
+//     UINT bw, br;
+//     FRESULT res;
+//     uint32_t offset = 0;                   // 文件指针偏移量
+//     const uint32_t FILE_OP_TIMEOUT = 5000; // 文件操作超时时间（毫秒）
+
+//     res = f_open(&fil, f_name, FA_READ);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("打开配置文件失败: %d\n", res);
+//         return -8;
+//     }
+
+//     // read ChannelTableHeader
+//     res = f_read_timeout(&fil, &g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), &br, FILE_OP_TIMEOUT);
+//     if ((res != FR_OK) || (br <= 0) || (g_offline_chCfgHeader.nTotalChannelNum > 24))
+//     {
+//         usb_printf("读取配置文件头部失败: %d\n", res);
+//         f_close(&fil);
+//         return -1;
+//     }
+
+//     // read ChannelTableElem
+//     offset += sizeof(g_offline_chCfgHeader);
+//     res = f_lseek(&fil, offset);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("文件指针偏移失败: %d\n", res);
+//         f_close(&fil);
+//         return -2;
+//     }
+
+//     res = f_read_timeout(&fil, &g_offline_chCfgParam[0], g_offline_chCfgHeader.nTotalChannelNum * sizeof(ChannelTableElem), &br, FILE_OP_TIMEOUT);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("读取通道配置失败: %d\n", res);
+//         f_close(&fil);
+//         return -3;
+//     }
+
+//     // read DSAGlobalParams
+//     offset += g_offline_chCfgHeader.nTotalChannelNum * sizeof(ChannelTableElem);
+//     res = f_lseek(&fil, offset);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("文件指针偏移失败: %d\n", res);
+//         f_close(&fil);
+//         return -4;
+//     }
+
+//     res = f_read_timeout(&fil, &g_offline_GlobalParam, sizeof(g_offline_GlobalParam), &br, FILE_OP_TIMEOUT);
+//     if ((res != FR_OK) || (g_offline_GlobalParam.nScheduleCount > 16))
+//     {
+//         usb_printf("读取全局参数失败: %d\n", res);
+//         f_close(&fil);
+//         return -5;
+//     }
+
+//     // read ScheduleParams
+//     offset += sizeof(DSAGlobalParams);
+//     res = f_lseek(&fil, offset);
+//     if (res != FR_OK)
+//     {
+//         printf("文件指针偏移失败: %d\n", res);
+//         f_close(&fil);
+//         return -6;
+//     }
+
+//     res = f_read_timeout(&fil, &g_offline_ScheduleParam[0], g_offline_GlobalParam.nScheduleCount * sizeof(ScheduleParams), &br, FILE_OP_TIMEOUT);
+//     if (res != FR_OK)
+//     {
+//         printf("读取计划参数失败: %d\n", res);
+//         f_close(&fil);
+//         return -7;
+//     }
+
+//     res = f_close(&fil);
+//     if (res != FR_OK)
+//     {
+//         printf("关闭文件失败: %d\n", res);
+//         return -9;
+//     }
+
+//     return res;
+// }
+
+// /**
+//  * @brief 离线配置校验
+//  * @return int8_t 结果
+//  */
+// static int8_t CheckOfflineCfgParam(void)
+// {
+//     int8_t ret = 0;
+
+//     if (g_offline_chCfgHeader.nTotalChannelNum > 24)
+//         return -1;
+//     for (uint8_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
+//     {
+//         if (g_offline_chCfgParam[i].nChannelID != i)
+//             return -i - 2;
+//     }
+//     if (g_offline_GlobalParam.nScheduleCount > 16)
+//         return -26;
+
+//     return ret;
+// }
+
+/**
+ * @brief 校验离线配置参数的有效性
+ * @return int8_t  0 表示校验通过
+ *                负值表示校验失败，具体含义见下表：
+ *                  -1  : 总通道数超出允许范围 (0 < nTotalChannelNum <= MAX_OFFLINE_CHANNELS)
+ *                -2～-25 : 通道ID不连续或与索引不匹配 (返回 - (实际索引+2))
+ *                  -26 : 计划表数量超出允许范围 (0 < nScheduleCount <= MAX_OFFLINE_SCHEDULES)
+ *                -27 : 其他未预期错误（预留）
+ */
+static int8_t CheckOfflineCfgParam(void)
+{
+// 定义最大限制（建议移到头文件宏定义，便于统一维护）
+#define MAX_OFFLINE_CHANNELS 24U
+#define MAX_OFFLINE_SCHEDULES 16U
+
+    // 1. 校验总通道数
+    if (g_offline_chCfgHeader.nTotalChannelNum == 0 ||
+        g_offline_chCfgHeader.nTotalChannelNum > MAX_OFFLINE_CHANNELS)
+    {
+        usb_printf("Offline config check failed: invalid total channel count (%u)\n",
+                   g_offline_chCfgHeader.nTotalChannelNum);
+        return -1;
+    }
+
+    // 2. 逐个校验通道ID是否连续且等于索引
+    for (uint8_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
+    {
+        if (g_offline_chCfgParam[i].nChannelID != i)
+        {
+            usb_printf("Offline config check failed: channel index %u has mismatched ID (%u != %u)\n",
+                       i, g_offline_chCfgParam[i].nChannelID, i);
+            return -(int8_t)(i + 2);
+        }
+    }
+
+    // 3. 校验计划表数量
+    if (g_offline_GlobalParam.nScheduleCount == 0 ||
+        g_offline_GlobalParam.nScheduleCount > MAX_OFFLINE_SCHEDULES)
+    {
+        usb_printf("Offline config check failed: invalid schedule count (%u)\n",
+                   g_offline_GlobalParam.nScheduleCount);
+        return -26;
+    }
+
+    for (int i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+    {
+        usb_printf("g_offline_ScheduleParam[%d]: %d - (%f, %d)\n", i, g_offline_ScheduleParam[i].nType, g_offline_ScheduleParam[i].param0, g_offline_ScheduleParam[i].param1);
+    }
+
+    // 可选：增加其他关键字段校验（视实际需求）
+    // if (g_offline_chCfgHeader.fHardwareSampleRate == 0 ||
+    //     g_offline_chCfgHeader.fHardwareSampleRate > SOME_MAX_RATE)
+    // {
+    //     usb_printf("Invalid sample rate in offline config\n");
+    //     return -27;
+    // }
+
+    usb_printf("Offline configuration parameters validation passed\n");
+    return 0;
+}
+
+/**
+ * @brief 创建离线记录文件并写入所有头部信息
+ * @param file_num 文件序号（用于生成文件名，如 00000001.rec）
+ * @return FRESULT 操作结果，FR_OK 表示成功，其它值表示失败
+ */
+FRESULT CreatOfflineRecordFile(uint32_t file_num)
+{
+    char file_name[64];
+    FRESULT res;
+    UINT bw;
+
+    // 1. 构建文件名
+    snprintf(file_name, sizeof(file_name), "%s/%08u.rec", RECORD_FILE_PATH, file_num);
+
+    // 2. 确保目录存在
+    res = f_mkdir(RECORD_FILE_PATH);
+    if (res != FR_OK && res != FR_EXIST)
+    {
+        usb_printf("Failed to create directory '%s': %d\n", RECORD_FILE_PATH, res);
+        return res;
+    }
+
+    // 3. 打开文件（强制覆盖）
+    res = f_open(&g_offline_record_fil, file_name, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK)
+    {
+        if (res == FR_EXIST) // 理论上 CREATE_ALWAYS 不应出现此情况，但以防万一
+        {
+            f_unlink(file_name);
+            res = f_open(&g_offline_record_fil, file_name, FA_CREATE_ALWAYS | FA_WRITE);
+        }
+        if (res != FR_OK)
+        {
+            usb_printf("Failed to open file '%s' for writing: %d\n", file_name, res);
+            return res;
+        }
+    }
+
+// 4. 定义写入段落的统一处理宏（大幅减少重复代码）
+#define WRITE_STRUCT(ptr, size, desc)                                            \
+    do                                                                           \
+    {                                                                            \
+        res = f_write(&g_offline_record_fil, (ptr), (size), &bw);                \
+        if (res != FR_OK || bw != (size))                                        \
+        {                                                                        \
+            usb_printf("Failed to write %s to file '%s': res=%d, wrote=%u/%u\n", \
+                       (desc), file_name, res, bw, (UINT)(size));                \
+            f_close(&g_offline_record_fil);                                      \
+            return res ? res : FR_DENIED;                                        \
+        }                                                                        \
+    } while (0)
+
+    // 5. 按顺序写入各个部分
+    WRITE_STRUCT(&g_recorde_file_head, sizeof(g_recorde_file_head), "file header");
+
+    WRITE_STRUCT(&g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), "channel config header");
+
+    WRITE_STRUCT(&g_offline_chCfgParam[0],
+                 g_offline_chCfgHeader.nTotalChannelNum * sizeof(g_offline_chCfgParam[0]),
+                 "channel config parameters");
+
+    DeviceDetailInfo device_info = {0};
+    WRITE_STRUCT(&device_info, sizeof(device_info), "device info");
+
+    WRITE_STRUCT(&g_offline_GlobalParam, sizeof(g_offline_GlobalParam), "global parameters");
+
+    TriggerParamHeaderDSP trigger_header = {0};
+    WRITE_STRUCT(&trigger_header, sizeof(trigger_header), "trigger header");
+
+    // 6. 全部写入成功
+    usb_printf("Offline record file created successfully: %s\n", file_name);
+
+#undef WRITE_STRUCT
+
+    return FR_OK;
+}
+
+// /**
+//  * @brief 创建离线记录文件
+//  * @param file_num 文件编号
+//  */
+// static void CreatOfflineRecordFile(uint32_t file_num)
+// {
+//     UINT bw, br;
+//     char file_name[64] = "";
+//     FRESULT res;
+//     const uint32_t FILE_OP_TIMEOUT = 5000; // 文件操作超时时间（毫秒）
+
+//     // 构建文件路径
+//     snprintf(file_name, sizeof(file_name), "%s/%08u.rec", RECORD_FILE_PATH, file_num);
+
+//     // 创建目录
+//     res = f_mkdir(RECORD_FILE_PATH);
+//     if (res != FR_OK && res != FR_EXIST)
+//     {
+//         usb_printf("--------0------------: %d\n", res);
+//         return;
+//     }
+
+//     // 打开文件
+//     res = f_open(&g_offline_record_fil, file_name, FA_CREATE_ALWAYS | FA_WRITE);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("--------1------------: %d\n", res);
+//         if (res == FR_EXIST)
+//         {
+//             f_unlink(file_name);
+//             res = f_open(&g_offline_record_fil, file_name, FA_CREATE_ALWAYS | FA_WRITE);
+//             if (res != FR_OK)
+//             {
+//                 usb_printf("--------2------------: %d\n", res);
+//                 return;
+//             }
+//         }
+//         else
+//         {
+//             return;
+//         }
+//     }
+
+//     // 写入文件头
+//     res = f_write(&g_offline_record_fil, &g_recorde_file_head, sizeof(g_recorde_file_head), &bw);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("--------3------------: %d\n", res);
+//         f_close(&g_offline_record_fil);
+//         return;
+//     }
+
+//     // 写入通道配置头
+//     res = f_write(&g_offline_record_fil, &g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), &bw);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("--------4------------: %d\n", res);
+//         f_close(&g_offline_record_fil);
+//         return;
+//     }
+
+//     // 写入通道配置参数
+//     res = f_write(&g_offline_record_fil, &g_offline_chCfgParam[0], g_offline_chCfgHeader.nTotalChannelNum * sizeof(g_offline_chCfgParam[0]), &bw);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("--------5------------: %d\n", res);
+//         f_close(&g_offline_record_fil);
+//         return;
+//     }
+
+//     // 写入设备信息
+//     DeviceDetailInfo device_info = {0};
+//     res = f_write(&g_offline_record_fil, &device_info, sizeof(device_info), &bw);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("--------6-----------: %d\n", res);
+//         f_close(&g_offline_record_fil);
+//         return;
+//     }
+
+//     // 写入全局参数
+//     res = f_write(&g_offline_record_fil, &g_offline_GlobalParam, sizeof(g_offline_GlobalParam), &bw);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("--------7-----------: %d\n", res);
+//         f_close(&g_offline_record_fil);
+//         return;
+//     }
+
+//     // 写入触发参数
+//     TriggerParamHeaderDSP trigger_header = {0};
+//     res = f_write(&g_offline_record_fil, &trigger_header, sizeof(trigger_header), &bw);
+//     if (res != FR_OK)
+//     {
+//         usb_printf("-------8-----------: %d\n", res);
+//         f_close(&g_offline_record_fil);
+//         return;
+//     }
+
+//     usb_printf("-------9-----------: %d\n", res);
+// }
+
+// /**
+//  * @brief 离线数据记录
+//  */
+// static void OfflineDatasRecord(void)
+// {
+//     // 记录离线数据 tagAoLocalColumn+（CH0_0+CH0_1+...+CH0_255）+（CH1_0+CH1_1+...+CH1_255）+（CH2_0+CH2_1+...+CH2_255）
+//     static uint32_t frame_num = 0;
+//     uint32_t cb_len = SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN;
+//     short send_data[BLOCK_LEN][SPI_NUM];
+//     short get_data[SPI_NUM][BLOCK_LEN];
+//     AoLocalColumn data_head;
+//     FRESULT res;
+//     UINT bw, br;
+
+//     int size = cb_size(g_cb_adc);
+//     while (size >= cb_len)
+//     {
+//         frame_num++;
+//         // 创建一个数据头
+//         data_head.nVersion = 0x12345678;
+//         data_head.nDataSource = 0;
+//         data_head.nFrameChCount = SPI_NUM;
+//         data_head.nFrameLen = BLOCK_LEN;
+//         data_head.nTotalFrameNum = frame_num;
+//         data_head.nCurNs = dwt_get_ns();
+//         // 准备数据
+//         cb_read(g_cb_adc, (char *)get_data, cb_len);
+//         transpose(send_data, get_data);
+//         for (uint8_t i = 0; i < SPI_NUM; i++)
+//         {
+//             res = f_write(&g_offline_record_fil, &data_head, sizeof(data_head), &bw);
+//             if (res != FR_OK)
+//             {
+//                 f_close(&g_offline_record_fil);
+//                 return;
+//             }
+//             res = f_write(&g_offline_record_fil, &send_data[0][i], sizeof(send_data[0][i]), &bw);
+//             if (res != FR_OK)
+//             {
+//                 f_close(&g_offline_record_fil);
+//                 return;
+//             }
+//         }
+//     }
+//     if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
+//     {
+//         // 更新离线记录文件头
+//         g_recorde_file_head.nFrameNum = frame_num;
+//         frame_num = 0;
+//         res = f_lseek(&g_offline_record_fil, 0);
+//         if (res != FR_OK)
+//         {
+//             f_close(&g_offline_record_fil);
+//             return;
+//         }
+//         res = f_write(&g_offline_record_fil, &g_recorde_file_head, sizeof(g_recorde_file_head), &bw);
+//         if (res != FR_OK)
+//         {
+//             f_close(&g_offline_record_fil);
+//             return;
+//         }
+//         f_close(&g_offline_record_fil);
+//     }
+// }
+
+/**
+ * @brief 将 ADC 环形缓冲区数据追加写入离线记录文件
+ *        数据格式：每帧 = [AoLocalColumn头] + [通道0所有采样点] + [通道1所有采样点] + ...
+ */
+static void OfflineDatasRecord(void)
+{
+    static uint32_t frame_num = 0;
+    FRESULT res;
+    UINT bw;
+
+    // 计算一次“完整帧组”所需的字节数（所有通道 × BLOCK_LEN 个采样点）
+    const uint32_t bytes_per_frame_group = SPI_NUM * BLOCK_LEN * sizeof(short);
+
+    // 环形缓冲区当前可用字节数
+    int avail = cb_size(g_cb_adc);
+
+    while (avail >= bytes_per_frame_group)
+    {
+        AoLocalColumn data_head = {
+            .nVersion = 0x12345678,
+            .nDataSource = 0,
+            .nFrameChCount = SPI_NUM,
+            .nFrameLen = BLOCK_LEN,
+            .nTotalFrameNum = ++frame_num, // 先自增再使用
+            .nCurNs = dwt_get_ns()};
+
+        // 读取原始数据（通道优先排列）
+        short get_data[SPI_NUM][BLOCK_LEN];
+        cb_read(g_cb_adc, (char *)get_data, bytes_per_frame_group);
+
+        // 写入文件头（每帧只写一次）
+
+        res = f_write(&g_offline_record_fil, &data_head, sizeof(data_head), &bw);
+        // usb_printf("f_write, res=%d\n", res);
+        if (res != FR_OK || bw != sizeof(data_head))
+        {
+            usb_printf("Offline record: failed to write frame header, res=%d\n", res);
+            g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR; // 建议增加错误状态
+            f_close(&g_offline_record_fil);
+            return;
+        }
+
+        // 连续写入所有通道的数据（按通道顺序）
+        for (uint8_t ch = 0; ch < SPI_NUM; ch++)
+        {
+            res = f_write(&g_offline_record_fil,
+                          &get_data[ch][0],
+                          BLOCK_LEN * sizeof(short),
+                          &bw);
+
+            if (res != FR_OK || bw != BLOCK_LEN * sizeof(short))
+            {
+                usb_printf("Offline record: failed to write channel %u data, res=%d\n", ch, res);
+                g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+                f_close(&g_offline_record_fil);
+                return;
+            }
+        }
+
+        // 可选：每写入 N 帧同步一次（权衡性能与掉电安全性）
+        // static uint32_t sync_counter = 0;
+        // if (++sync_counter >= 50) {
+        //     f_sync(&g_offline_record_fil);
+        //     sync_counter = 0;
+        // }
+
+        // 在每个帧组写入后
+        // static uint32_t last_sync_pos = 0;
+        // uint32_t current_pos = f_tell(&g_offline_record_fil);
+
+        // if (current_pos - last_sync_pos >= 65536U)
+        // { // 每 64 KB 同步一次
+        //     FRESULT sync_res = f_sync(&g_offline_record_fil);
+        //     if (sync_res != FR_OK)
+        //     {
+        //         usb_printf("f_sync failed during record, res=%d\n", sync_res);
+        //     }
+        //     last_sync_pos = current_pos;
+        // }
+
+        static uint32_t last_tell = 0;
+        static uint32_t last_time = 0;
+        // 每秒打印一次
+        if (HAL_GetTick() - last_time >= 1000)
+        {
+            uint32_t now_tell = f_tell(&g_offline_record_fil);
+            uint32_t bytes_per_sec = now_tell - last_tell;
+            usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
+            last_tell = now_tell;
+            last_time = HAL_GetTick();
+        }
+
+        // 更新可用字节数
+        avail = cb_size(g_cb_adc);
+    }
+
+    // ── 记录停止时的最终处理 ───────────────────────────────────────
+    if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
+    {
+
+        // 更新文件总帧数
+        g_recorde_file_head.nFrameNum = frame_num;
+
+        // 回写文件头部
+        res = f_lseek(&g_offline_record_fil, 0);
+        if (res == FR_OK)
+        {
+            res = f_write(&g_offline_record_fil,
+                          &g_recorde_file_head,
+                          sizeof(g_recorde_file_head),
+                          &bw);
+        }
+
+        if (res != FR_OK || bw != sizeof(g_recorde_file_head))
+        {
+            usb_printf("Failed to update file header during stop, res=%d\n", res);
+        }
+
+        // 确保所有数据落盘
+        f_sync(&g_offline_record_fil);
+
+        // 关闭文件
+        f_close(&g_offline_record_fil);
+
+        // 重置帧计数，为下一次记录准备
+        frame_num = 0;
+
+        // 可选：清空标志
+        memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
+        g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE; // 建议增加空闲状态
+
+        usb_printf("g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP, res=%d\n", res);
+    }
+}
+
+/**
+ * @brief 删除后缀不匹配的文件（简单高效版）
+ * @param dir_path 目录路径，如："0:/" 或 "0:/data"
+ * @param keep_exts 要保留的后缀数组，如：{".jpg", ".txt", NULL}
+ * @param timeout_ms 超时时间（毫秒）
+ * @return 删除的文件数量，负数表示错误
+ */
+static int delete_files_by_extension(const char *dir_path,
+                                     const char *keep_exts[],
+                                     uint32_t timeout_ms)
+{
+    FRESULT res;
+    DIR dir;
+    FILINFO fno;
+    int deleted = 0;
+    uint32_t start_tick;
+
+    /* 参数检查 */
+    if (dir_path == NULL || keep_exts == NULL)
+    {
+        return -1;
+    }
+
+    start_tick = HAL_GetTick();
+
+    /* 打开目录 */
+    res = f_opendir(&dir, dir_path);
+    if (res != FR_OK)
+    {
+        usb_printf("delete_files_by_extension f_opendir : %d \n", res);
+        return -2;
+    }
+
+    /* 遍历目录 */
+    while (1)
+    {
+        /* 超时检查 */
+        //        if (timeout_ms > 0 && (HAL_GetTick() - start_tick) > timeout_ms) {
+        //            printf("操作超时\n");
+        //            break;
+        //        }
+
+        /* 读取目录项 */
+        res = f_readdir(&dir, &fno);
+        if (res != FR_OK || fno.fname[0] == 0)
+        {
+            break; /* 错误或结束 */
+        }
+
+        /* 跳过目录和特殊文件 */
+        if (fno.fattrib & AM_DIR)
+        {
+            continue; /* 跳过目录 */
+        }
+
+        if (strcmp(fno.fname, ".") == 0 || strcmp(fno.fname, "..") == 0)
+        {
+            continue; /* 跳过特殊项 */
+        }
+
+        /* 检查文件后缀 */
+        const char *dot = strrchr(fno.fname, '.');
+
+        /* 情况1: 文件没有后缀 */
+        if (dot == NULL)
+        {
+            /* 如果配置不允许无后缀文件，则删除 */
+            int found = 0;
+            for (int i = 0; keep_exts[i] != NULL; i++)
+            {
+                if (strcmp("", keep_exts[i]) == 0)
+                {
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                goto delete_file;
+            }
+            continue;
+        }
+
+        /* 情况2: 检查后缀是否在保留列表中 */
+        int should_keep = 0;
+        for (int i = 0; keep_exts[i] != NULL; i++)
+        {
+            /* 不区分大小写比较 */
+            if (strcasecmp(dot, keep_exts[i]) == 0)
+            {
+                should_keep = 1;
+                break;
+            }
+        }
+
+        /* 如果不在保留列表中，删除文件 */
+        if (!should_keep)
+        {
+            char full_path[256];
+        delete_file:
+            snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, fno.fname);
+
+            res = f_unlink(full_path);
+            if (res == FR_OK)
+            {
+                deleted++;
+
+                usb_printf("delete_files_by_extension  %s\n", fno.fname);
+            }
+            else
+            {
+                usb_printf("delete_files_by_extension  %s (error: %d)\n", fno.fname, res);
+            }
+        }
+    }
+
+    /* 关闭目录 */
+    f_closedir(&dir);
+
+    return deleted;
+}
