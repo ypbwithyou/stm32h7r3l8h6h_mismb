@@ -29,7 +29,7 @@
 
 #define USB_SIZ_STRING_SERIAL   0x1AU
 
-/* 导出USB CDC设备描述符 */
-extern USBD_DescriptorsTypeDef CDC_Desc;
+/* 导出USB复合设备描述符 */
+extern USBD_DescriptorsTypeDef Composite_Desc;
 
 #endif

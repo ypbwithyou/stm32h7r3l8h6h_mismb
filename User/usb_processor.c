@@ -183,7 +183,7 @@ void usb_init(void)
 #endif
 
     /* 鍒濆鍖朥SB */
-    USBD_Init(&g_usbd_handle, &CDC_Desc, DEVICE_HS);
+    USBD_Init(&g_usbd_handle, &Composite_Desc, DEVICE_HS);
     USBD_RegisterClass(&g_usbd_handle, USBD_CDC_CLASS);
     USBD_CDC_RegisterInterface(&g_usbd_handle, &USBD_CDC_fops);
     USBD_Start(&g_usbd_handle);
