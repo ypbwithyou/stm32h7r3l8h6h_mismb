@@ -962,7 +962,7 @@ int8_t app_processor(void)
             g_slidingWindow_receiver.frame_flag = 0;
         }
 
-        // USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag && g_IdaSystemStatus.st_dev_mode.work_mode != WORKMODE_ONLINE);
+        USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag && g_IdaSystemStatus.st_dev_mode.work_mode != WORKMODE_ONLINE);
 
         IdaProcessor();
     }
