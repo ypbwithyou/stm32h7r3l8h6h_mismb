@@ -340,7 +340,7 @@
               <MiscControls>-Wno-invalid-source-encoding </MiscControls>
               <Define>USE_HAL_DRIVER,STM32H7R3xx,USE_USB_HS</Define>
               <Undefine></Undefine>
-              <IncludePath>..\..\Drivers;..\..\Drivers\CMSIS\Include;..\..\Drivers\CMSIS\Device\ST\STM32H7RSxx\Include;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc\Legacy;..\..\Middlewares;..\..\User;..\..\Middlewares\USB\USB_APP;..\..\Middlewares\USB\STM32_USB_Device_Library\Class\CDC\Inc;..\..\Middlewares\USB\STM32_USB_Device_Library\Core\Inc;..\..\Drivers\LIBS\lib_usb_protocol</IncludePath>
+              <IncludePath>..\..\Drivers;..\..\Drivers\CMSIS\Include;..\..\Drivers\CMSIS\Device\ST\STM32H7RSxx\Include;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc\Legacy;..\..\Middlewares;..\..\User;..\..\Middlewares\USB\USB_APP;..\..\Middlewares\USB\STM32_USB_Device_Library\Class\CDC\Inc;..\..\Middlewares\USB\STM32_USB_Device_Library\Core\Inc;..\..\Drivers\LIBS\lib_usb_protocol;..\..\Drivers\BSP\DMA_LIST</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -708,6 +708,11 @@
               <FileName>rtc.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Drivers\BSP\RTC\rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>dma_list.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Drivers\BSP\DMA_LIST\dma_list.c</FilePath>
             </File>
           </Files>
         </Group>
