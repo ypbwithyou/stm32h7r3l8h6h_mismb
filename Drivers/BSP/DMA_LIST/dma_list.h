@@ -76,6 +76,15 @@ extern volatile uint8_t g_spi_rx_done_flags;
  */
 void dma_update_xfer_size(uint32_t xfer_bytes);
 
+/**
+ * @brief  配置每路SPI的ADC通道数量
+ * @param  spi1_channels  SPI1的ADC数量 (1-8)
+ * @param  spi2_channels  SPI2的ADC数量 (1-8)
+ * @param  spi3_channels  SPI4的ADC数量 (1-8)
+ * @note   总通道数不能超过24，必须在停止采集后调用
+ */
+void dma_config_spi_channels(uint8_t spi1_channels, uint8_t spi2_channels, uint8_t spi3_channels);
+
 void dma_list_rtx_init(void);                     /* 初始化三路SPI DMA */
 void dma_start_transfer_all(void);                /* 同时启动三路SPI DMA传输 */
 void dma_list_data_init(void);                    /* 初始化缓冲区管理结构 */

@@ -74,6 +74,12 @@ volatile uint8_t g_spi_rx_done_flags  = 0;   /* bit0=SPI1, bit1=SPI2, bit2=SPI4 
 static   uint8_t s_dma_initialized    = 0;
 
 /*---------------------------------------------------------------------------*/
+/* 配置变量                                                                  */
+/*---------------------------------------------------------------------------*/
+static uint8_t g_adc_channels_per_spi[3] = {1, 1, 1}; /* 每路SPI的ADC数量，默认1个 */
+static uint32_t g_current_xfer_bytes = 2;             /* 当前传输字节数，默认2字节(1个ADC) */
+
+/*---------------------------------------------------------------------------*/
 /* 内部函数声明                                                               */
 /*---------------------------------------------------------------------------*/
 static void spi_dma_rx_complete_cb(DMA_HandleTypeDef *hdma);
@@ -272,18 +278,27 @@ static void spi_dma_rx_complete_cb(DMA_HandleTypeDef *hdma)
     /* 拉低CONVST，结束本轮采样 */
     ads8319_stop_transfer();
 
-    /* ── 解析三路ADC数据（每路当前只用adc_num=1，即2字节） ─────── */
-    /* 
-     * 当前配置：adc_num=1（菊花链只读1个ADC），每路2字节
-     * 若后续扩展为8个ADC菊花链，将 [0]改为循环解析即可
-     */
-    uint16_t ch[3];
-    ch[0] = ((uint16_t)spi_rx_buf0[node][0] << 8) | spi_rx_buf0[node][1];
-    ch[1] = ((uint16_t)spi_rx_buf1[node][0] << 8) | spi_rx_buf1[node][1];
-    ch[2] = ((uint16_t)spi_rx_buf2[node][0] << 8) | spi_rx_buf2[node][1];
+    /* ── 解析三路ADC数据（动态ADC数量） ───────────────────────── */
+    uint16_t adc_data[24]; /* 最大24个通道 */
+    uint32_t total_channels = 0;
 
-    /* 写入CircularBuffer（与原逻辑保持一致：3通道×2字节） */
-    cb_write(g_cb_adc, (const char*)ch, sizeof(ch));
+    /* 解析SPI1数据 */
+    for (uint8_t i = 0; i < g_adc_channels_per_spi[0]; i++) {
+        adc_data[total_channels++] = ((uint16_t)spi_rx_buf0[node][0+2*i] << 8) | spi_rx_buf0[node][1+2*i];
+    }
+
+    /* 解析SPI2数据 */
+    for (uint8_t i = 0; i < g_adc_channels_per_spi[1]; i++) {
+        adc_data[total_channels++] = ((uint16_t)spi_rx_buf1[node][0+2*i] << 8) | spi_rx_buf1[node][1+2*i];
+    }
+
+    /* 解析SPI4数据 */
+    for (uint8_t i = 0; i < g_adc_channels_per_spi[2]; i++) {
+        adc_data[total_channels++] = ((uint16_t)spi_rx_buf2[node][0+2*i] << 8) | spi_rx_buf2[node][1+2*i];
+    }
+
+    /* 写入CircularBuffer（动态通道数量×2字节） */
+    cb_write(g_cb_adc, (const char*)adc_data, total_channels * sizeof(uint16_t));
 
     /* ── 推进节点索引 ───────────────────────────────────────────── */
     g_buffer_mgr.current_rx_node =
@@ -397,8 +412,294 @@ static void config_one_spi_dma(
     HAL_NVIC_EnableIRQ(irq_rx);
 }
 
-/*===========================================================================*/
-/* 中断服务函数                                                               */
+/**
+ * @brief  更新DMA链表节点的传输字节数（通道配置变更时调用）
+ * @param  xfer_bytes  每次传输字节数 = adc_channels_per_spi × 2 (每个ADC 16位=2字节)
+ *                     合法范围：[2, 16]，必须是2的倍数，对应1-8个ADC
+ * @note   必须在停止采集后、重启前调用；会重建TX/RX所有链表节点。
+ */
+void dma_update_xfer_size(uint32_t xfer_bytes)
+{
+    DMA_NodeConfTypeDef node_conf = {0};
+    uint32_t i;
+
+    /* 参数校验 */
+    if (xfer_bytes < 2 || xfer_bytes > 16 || (xfer_bytes % 2) != 0) {
+        return; /* 无效参数 */
+    }
+
+    /* 更新配置变量 */
+    g_current_xfer_bytes = xfer_bytes;
+    uint8_t adc_count = xfer_bytes / 2; /* 字节数转换为ADC数量 */
+    g_adc_channels_per_spi[0] = adc_count;
+    g_adc_channels_per_spi[1] = adc_count;
+    g_adc_channels_per_spi[2] = adc_count;
+
+    /* 停止所有DMA传输（如果正在运行） */
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel0);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel1);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel2);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel3);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel4);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel5);
+
+    /* 重建SPI1 TX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_tx1);
+    memset(&g_dma_list_tx1, 0, sizeof(g_dma_list_tx1));
+
+    node_conf.NodeType                          = DMA_GPDMA_LINEAR_NODE;
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI1_TX;
+    node_conf.Init.BlkHWRequest                 = DMA_BREQ_SINGLE_BURST;
+    node_conf.Init.Direction                    = DMA_MEMORY_TO_PERIPH;
+    node_conf.Init.SrcInc                       = DMA_SINC_INCREMENTED;
+    node_conf.Init.DestInc                      = DMA_DINC_FIXED;
+    node_conf.Init.SrcDataWidth                 = DMA_SRC_DATAWIDTH_BYTE;
+    node_conf.Init.DestDataWidth                = DMA_DEST_DATAWIDTH_BYTE;
+    node_conf.Init.Priority                     = DMA_HIGH_PRIORITY;
+    node_conf.Init.SrcBurstLength               = 1;
+    node_conf.Init.DestBurstLength              = 1;
+    node_conf.Init.TransferAllocatedPort        = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+    node_conf.Init.TransferEventMode            = DMA_TCEM_BLOCK_TRANSFER;
+    node_conf.Init.Mode                         = DMA_NORMAL;
+    node_conf.DataHandlingConfig.DataExchange   = DMA_EXCHANGE_NONE;
+    node_conf.DataHandlingConfig.DataAlignment  = DMA_DATA_RIGHTALIGN_ZEROPADDED;
+    node_conf.TriggerConfig.TriggerPolarity     = DMA_TRIG_POLARITY_MASKED;
+    node_conf.DstAddress                        = (uint32_t)&g_spi_handle[0].Instance->TXDR;
+    node_conf.SrcAddress                        = (uint32_t)s_tx_dummy;
+    node_conf.DataSize                          = xfer_bytes;
+
+    HAL_DMAEx_List_BuildNode(&node_conf, &g_node_tx1[0]);
+    SCB_CleanDCache_by_Addr((uint32_t*)&g_node_tx1[0], sizeof(g_node_tx1[0]));
+    HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_tx1, &g_node_tx1[0]);
+
+    /* 重建SPI1 RX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_rx1);
+    memset(&g_dma_list_rx1, 0, sizeof(g_dma_list_rx1));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI1_RX;
+    node_conf.Init.Direction                    = DMA_PERIPH_TO_MEMORY;
+    node_conf.Init.SrcInc                       = DMA_SINC_FIXED;
+    node_conf.Init.DestInc                      = DMA_DINC_INCREMENTED;
+    node_conf.SrcAddress                        = (uint32_t)&g_spi_handle[0].Instance->RXDR;
+
+    for (i = 0; i < DMA_SPI_RX_NODE_USED; i++) {
+        node_conf.DstAddress = (uint32_t)&spi_rx_buf0[i][0];
+        node_conf.DataSize   = xfer_bytes;
+        HAL_DMAEx_List_BuildNode(&node_conf, &g_node_rx1[i]);
+        SCB_CleanDCache_by_Addr((uint32_t*)&g_node_rx1[i], sizeof(g_node_rx1[i]));
+        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_rx1, &g_node_rx1[i]);
+    }
+
+    /* 重建SPI2 TX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_tx2);
+    memset(&g_dma_list_tx2, 0, sizeof(g_dma_list_tx2));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI2_TX;
+    node_conf.DstAddress                        = (uint32_t)&g_spi_handle[1].Instance->TXDR;
+    node_conf.DataSize                          = xfer_bytes;
+
+    HAL_DMAEx_List_BuildNode(&node_conf, &g_node_tx2[0]);
+    SCB_CleanDCache_by_Addr((uint32_t*)&g_node_tx2[0], sizeof(g_node_tx2[0]));
+    HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_tx2, &g_node_tx2[0]);
+
+    /* 重建SPI2 RX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_rx2);
+    memset(&g_dma_list_rx2, 0, sizeof(g_dma_list_rx2));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI2_RX;
+    node_conf.SrcAddress                        = (uint32_t)&g_spi_handle[1].Instance->RXDR;
+
+    for (i = 0; i < DMA_SPI_RX_NODE_USED; i++) {
+        node_conf.DstAddress = (uint32_t)&spi_rx_buf1[i][0];
+        node_conf.DataSize   = xfer_bytes;
+        HAL_DMAEx_List_BuildNode(&node_conf, &g_node_rx2[i]);
+        SCB_CleanDCache_by_Addr((uint32_t*)&g_node_rx2[i], sizeof(g_node_rx2[i]));
+        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_rx2, &g_node_rx2[i]);
+    }
+
+    /* 重建SPI4 TX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_tx3);
+    memset(&g_dma_list_tx3, 0, sizeof(g_dma_list_tx3));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI4_TX;
+    node_conf.DstAddress                        = (uint32_t)&g_spi_handle[2].Instance->TXDR;
+    node_conf.DataSize                          = xfer_bytes;
+
+    HAL_DMAEx_List_BuildNode(&node_conf, &g_node_tx3[0]);
+    SCB_CleanDCache_by_Addr((uint32_t*)&g_node_tx3[0], sizeof(g_node_tx3[0]));
+    HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_tx3, &g_node_tx3[0]);
+
+    /* 重建SPI4 RX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_rx3);
+    memset(&g_dma_list_rx3, 0, sizeof(g_dma_list_rx3));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI4_RX;
+    node_conf.SrcAddress                        = (uint32_t)&g_spi_handle[2].Instance->RXDR;
+
+    for (i = 0; i < DMA_SPI_RX_NODE_USED; i++) {
+        node_conf.DstAddress = (uint32_t)&spi_rx_buf2[i][0];
+        node_conf.DataSize   = xfer_bytes;
+        HAL_DMAEx_List_BuildNode(&node_conf, &g_node_rx3[i]);
+        SCB_CleanDCache_by_Addr((uint32_t*)&g_node_rx3[i], sizeof(g_node_rx3[i]));
+        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_rx3, &g_node_rx3[i]);
+    }
+
+    /* 重新挂载链表 */
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel0, &g_dma_list_tx1);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel1, &g_dma_list_rx1);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel2, &g_dma_list_tx2);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel3, &g_dma_list_rx2);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel4, &g_dma_list_tx3);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel5, &g_dma_list_rx3);
+}
+
+/**
+ * @brief  配置每路SPI的ADC通道数量
+ * @param  spi1_channels  SPI1的ADC数量 (1-8)
+ * @param  spi2_channels  SPI2的ADC数量 (1-8)
+ * @param  spi3_channels  SPI4的ADC数量 (1-8)
+ * @note   总通道数不能超过24，必须在停止采集后调用
+ */
+void dma_config_spi_channels(uint8_t spi1_channels, uint8_t spi2_channels, uint8_t spi3_channels)
+{
+    DMA_NodeConfTypeDef node_conf = {0};
+    uint32_t i;
+
+    /* 参数校验 */
+    if (spi1_channels < 1 || spi1_channels > 8 ||
+        spi2_channels < 1 || spi2_channels > 8 ||
+        spi3_channels < 1 || spi3_channels > 8) {
+        return; /* 无效参数 */
+    }
+
+    uint32_t total_channels = spi1_channels + spi2_channels + spi3_channels;
+    if (total_channels > 24) {
+        return; /* 超过最大通道数 */
+    }
+
+    /* 更新配置 */
+    g_adc_channels_per_spi[0] = spi1_channels;
+    g_adc_channels_per_spi[1] = spi2_channels;
+    g_adc_channels_per_spi[2] = spi3_channels;
+
+    /* 停止所有DMA传输（如果正在运行） */
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel0);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel1);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel2);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel3);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel4);
+    HAL_DMA_Abort(&g_handle_GPDMA1_Channel5);
+
+    /* 重建SPI1 TX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_tx1);
+    memset(&g_dma_list_tx1, 0, sizeof(g_dma_list_tx1));
+
+    node_conf.NodeType                          = DMA_GPDMA_LINEAR_NODE;
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI1_TX;
+    node_conf.Init.BlkHWRequest                 = DMA_BREQ_SINGLE_BURST;
+    node_conf.Init.Direction                    = DMA_MEMORY_TO_PERIPH;
+    node_conf.Init.SrcInc                       = DMA_SINC_INCREMENTED;
+    node_conf.Init.DestInc                      = DMA_DINC_FIXED;
+    node_conf.Init.SrcDataWidth                 = DMA_SRC_DATAWIDTH_BYTE;
+    node_conf.Init.DestDataWidth                = DMA_DEST_DATAWIDTH_BYTE;
+    node_conf.Init.Priority                     = DMA_HIGH_PRIORITY;
+    node_conf.Init.SrcBurstLength               = 1;
+    node_conf.Init.DestBurstLength              = 1;
+    node_conf.Init.TransferAllocatedPort        = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+    node_conf.Init.TransferEventMode            = DMA_TCEM_BLOCK_TRANSFER;
+    node_conf.Init.Mode                         = DMA_NORMAL;
+    node_conf.DataHandlingConfig.DataExchange   = DMA_EXCHANGE_NONE;
+    node_conf.DataHandlingConfig.DataAlignment  = DMA_DATA_RIGHTALIGN_ZEROPADDED;
+    node_conf.TriggerConfig.TriggerPolarity     = DMA_TRIG_POLARITY_MASKED;
+    node_conf.DstAddress                        = (uint32_t)&g_spi_handle[0].Instance->TXDR;
+    node_conf.SrcAddress                        = (uint32_t)s_tx_dummy;
+    node_conf.DataSize                          = spi1_channels * 2;
+
+    HAL_DMAEx_List_BuildNode(&node_conf, &g_node_tx1[0]);
+    SCB_CleanDCache_by_Addr((uint32_t*)&g_node_tx1[0], sizeof(g_node_tx1[0]));
+    HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_tx1, &g_node_tx1[0]);
+
+    /* 重建SPI1 RX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_rx1);
+    memset(&g_dma_list_rx1, 0, sizeof(g_dma_list_rx1));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI1_RX;
+    node_conf.Init.Direction                    = DMA_PERIPH_TO_MEMORY;
+    node_conf.Init.SrcInc                       = DMA_SINC_FIXED;
+    node_conf.Init.DestInc                      = DMA_DINC_INCREMENTED;
+    node_conf.SrcAddress                        = (uint32_t)&g_spi_handle[0].Instance->RXDR;
+
+    for (i = 0; i < DMA_SPI_RX_NODE_USED; i++) {
+        node_conf.DstAddress = (uint32_t)&spi_rx_buf0[i][0];
+        node_conf.DataSize   = spi1_channels * 2;
+        HAL_DMAEx_List_BuildNode(&node_conf, &g_node_rx1[i]);
+        SCB_CleanDCache_by_Addr((uint32_t*)&g_node_rx1[i], sizeof(g_node_rx1[i]));
+        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_rx1, &g_node_rx1[i]);
+    }
+
+    /* 重建SPI2 TX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_tx2);
+    memset(&g_dma_list_tx2, 0, sizeof(g_dma_list_tx2));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI2_TX;
+    node_conf.DstAddress                        = (uint32_t)&g_spi_handle[1].Instance->TXDR;
+    node_conf.DataSize                          = spi2_channels * 2;
+
+    HAL_DMAEx_List_BuildNode(&node_conf, &g_node_tx2[0]);
+    SCB_CleanDCache_by_Addr((uint32_t*)&g_node_tx2[0], sizeof(g_node_tx2[0]));
+    HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_tx2, &g_node_tx2[0]);
+
+    /* 重建SPI2 RX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_rx2);
+    memset(&g_dma_list_rx2, 0, sizeof(g_dma_list_rx2));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI2_RX;
+    node_conf.SrcAddress                        = (uint32_t)&g_spi_handle[1].Instance->RXDR;
+
+    for (i = 0; i < DMA_SPI_RX_NODE_USED; i++) {
+        node_conf.DstAddress = (uint32_t)&spi_rx_buf1[i][0];
+        node_conf.DataSize   = spi2_channels * 2;
+        HAL_DMAEx_List_BuildNode(&node_conf, &g_node_rx2[i]);
+        SCB_CleanDCache_by_Addr((uint32_t*)&g_node_rx2[i], sizeof(g_node_rx2[i]));
+        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_rx2, &g_node_rx2[i]);
+    }
+
+    /* 重建SPI4 TX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_tx3);
+    memset(&g_dma_list_tx3, 0, sizeof(g_dma_list_tx3));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI4_TX;
+    node_conf.DstAddress                        = (uint32_t)&g_spi_handle[2].Instance->TXDR;
+    node_conf.DataSize                          = spi3_channels * 2;
+
+    HAL_DMAEx_List_BuildNode(&node_conf, &g_node_tx3[0]);
+    SCB_CleanDCache_by_Addr((uint32_t*)&g_node_tx3[0], sizeof(g_node_tx3[0]));
+    HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_tx3, &g_node_tx3[0]);
+
+    /* 重建SPI4 RX链表 */
+    HAL_DMAEx_List_ResetQ(&g_dma_list_rx3);
+    memset(&g_dma_list_rx3, 0, sizeof(g_dma_list_rx3));
+
+    node_conf.Init.Request                      = GPDMA1_REQUEST_SPI4_RX;
+    node_conf.SrcAddress                        = (uint32_t)&g_spi_handle[2].Instance->RXDR;
+
+    for (i = 0; i < DMA_SPI_RX_NODE_USED; i++) {
+        node_conf.DstAddress = (uint32_t)&spi_rx_buf2[i][0];
+        node_conf.DataSize   = spi3_channels * 2;
+        HAL_DMAEx_List_BuildNode(&node_conf, &g_node_rx3[i]);
+        SCB_CleanDCache_by_Addr((uint32_t*)&g_node_rx3[i], sizeof(g_node_rx3[i]));
+        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_rx3, &g_node_rx3[i]);
+    }
+
+    /* 重新挂载链表 */
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel0, &g_dma_list_tx1);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel1, &g_dma_list_rx1);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel2, &g_dma_list_tx2);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel3, &g_dma_list_rx2);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel4, &g_dma_list_tx3);
+    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel5, &g_dma_list_rx3);
+}
+
 /*===========================================================================*/
 
 void GPDMA1_Channel0_IRQHandler(void) { HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel0); }

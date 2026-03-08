@@ -19,7 +19,7 @@
 #define __COLLECTOR_PROCESSOR_H
 
 #include <stdint.h>
-#include "app_common.h"
+ 
 #include "./LIBS/lib_circular_buffer/CircularBuffer.h"
 
 /*---------------------------------------------------------------------------*/

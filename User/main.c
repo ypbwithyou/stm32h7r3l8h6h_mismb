@@ -1,7 +1,7 @@
 #include "./SYSTEM/sys/sys.h"
 #include "./SYSTEM/delay/delay.h"
 #include "ida_config.h"
-#include "app_common.h"
+ 
 #include "usb_processor.h"
 #include "usbd_cdc_if.h"
 #include "stm32h7rsxx_it.h"

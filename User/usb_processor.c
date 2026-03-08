@@ -319,12 +319,29 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len)
     //    sample_rate = 1000;
     usb_printf("sample_rate:%d", sample_rate);
 
-    if (sample_rate > 0)
+    // 动态配置通道数（假设均匀分配到3路SPI）
+    uint8_t total_channels = channel_header->nTotalChannelNum;
+    uint8_t ch_per_spi = total_channels / SPI_NUM;
+    
+    usb_printf("Total channels: %d, channels per SPI: %d\r\n", total_channels, ch_per_spi);
+    
+    if (ch_per_spi > 0 && ch_per_spi <= SPI_CH_ADC_MAX_HW && (total_channels % SPI_NUM) == 0)
     {
-        CfgAdcSampleRate(sample_rate);
-
+        // 停止当前采集
+        AdcCollectorContrl(0);
+        
+        // 配置通道和采样率
+        AdcChanCfgSet(ch_per_spi, sample_rate);
+        
+        // 启动采集
         g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+    }
+    else
+    {
+        usb_printf("Invalid channel configuration: total channels must be multiple of %d and per SPI <= %d\r\n", SPI_NUM, SPI_CH_ADC_MAX_HW);
+        // 不启动采集，返回OK但状态为未运行
+        g_IdaSystemStatus.st_dev_run.run_flag = 0;
     }
 
     return PackReplyWithoutDatas(DVSARM_CSP_START_OK);
