@@ -4,6 +4,7 @@
 #include "collector_processor.h"
 #include "./BSP/TIMER/gtim.h"
 #include "./MALLOC/malloc.h"
+#include "./BSP/DMA_LIST/dma_list.h"   /* need dma_update_xfer_size */
 
 /*---------------------------------------------------------------------------*/
 /* 全局运行时配置，默认最大通道                                               */
@@ -59,6 +60,16 @@ int8_t AdcChanCfgSet(uint8_t ch_per_spi, uint32_t sample_rate)
     g_adc_chan_cfg.ch_per_spi       = ch_per_spi;
     g_adc_chan_cfg.total_ch         = (uint8_t)(SPI_NUM * ch_per_spi);
     g_adc_chan_cfg.bytes_per_sample = (uint32_t)SPI_NUM * ch_per_spi * ADC_DATA_LEN;
+
+    /* --- synchronize DMA transfer configuration --- */
+    {
+        uint32_t bytes = (uint32_t)ch_per_spi * ADC_DATA_LEN;
+        /* 每路SPI传输字节数等于每通道2字节（ADC_DATA_LEN==2）乘以通道数 */
+        dma_update_xfer_size(bytes);          /* rebuild DMA linked lists */
+        /* 如果需要分别设置每条 SPI，可使用：
+           dma_config_spi_channels(ch_per_spi, ch_per_spi, ch_per_spi);
+           以上在本项目中全部SPI通道数相同。 */
+    }
 
     if (sample_rate > 0) {
         g_adc_chan_cfg.sample_rate = sample_rate;
