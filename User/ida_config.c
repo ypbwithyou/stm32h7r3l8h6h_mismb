@@ -98,11 +98,18 @@ int8_t IdaDeviceInit(void)
     /* eMMC init */
     SystemCoreClockUpdate();
 
-    if (mmc_init() != 0)
+    // if (mmc_init() != 0)
+    // {
+    //     usb_printf("[eMMC] Init failed\r\n");
+    //     LED0(OFF);
+    //     return RET_ERROR;
+    // }
+    // ida_config.c 里替换为：
+    DSTATUS ds = disk_initialize(0);
+    if (ds != 0)
     {
-        usb_printf("[eMMC] Init failed\r\n");
-        LED0(OFF);
-        return RET_ERROR;
+        usb_printf("[eMMC] disk_initialize failed, status=%d\r\n", ds);
+        
     }
 
     /* verify read sector 0 */

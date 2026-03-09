@@ -33,7 +33,7 @@
 #define SD_SDMMCX_D3_GPIO_CLK_ENABLE()  do { __HAL_RCC_GPIOC_CLK_ENABLE(); } while (0)
  
 /* 超时时间(ms) */
-#define SD_TIMEOUT 500
+#define SD_TIMEOUT 5000
 #define SECTOR_SIZE 512
 
 /* 导出SD句柄 */

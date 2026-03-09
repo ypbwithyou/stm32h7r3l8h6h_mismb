@@ -20,7 +20,7 @@ static volatile uint8_t g_mmc_error = 0;
 /* ------------------------------------------------------------------ */
 uint8_t mmc_init(void)
 {
-     static uint8_t init_done = 0;
+    static uint8_t init_done = 0;
 
     if (init_done)
     {
@@ -40,11 +40,11 @@ uint8_t mmc_init(void)
 
     /* 第一步：先以 1-bit 模式初始化 */
     g_sd_handle.Instance = SD_SDMMCX;
-    g_sd_handle.Init.ClockEdge           = SDMMC_CLOCK_EDGE_RISING;
-    g_sd_handle.Init.ClockPowerSave      = SDMMC_CLOCK_POWER_SAVE_DISABLE;
-    g_sd_handle.Init.BusWide             = SDMMC_BUS_WIDE_1B;
+    g_sd_handle.Init.ClockEdge = SDMMC_CLOCK_EDGE_RISING;
+    g_sd_handle.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
+    g_sd_handle.Init.BusWide = SDMMC_BUS_WIDE_1B;
     g_sd_handle.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
-    g_sd_handle.Init.ClockDiv            = 2;
+    g_sd_handle.Init.ClockDiv = 2;
 
     if (HAL_MMC_Init(&g_sd_handle) != HAL_OK)
     {
@@ -217,13 +217,21 @@ uint8_t sd_read_disk(uint8_t *buf, uint32_t address, uint32_t count)
     if (HAL_MMC_ReadBlocks_DMA(&g_sd_handle, buf, address, count) != HAL_OK)
         return 1;
 
-    return mmc_wait_dma_done(&g_mmc_rx_done);
+    uint8_t ret = mmc_wait_dma_done(&g_mmc_rx_done);
+
+    // ← 加这行！
+    SCB_InvalidateDCache_by_Addr((uint32_t *)buf, count * SECTOR_SIZE);
+
+    return ret;
 }
 
 uint8_t sd_write_disk(uint8_t *buf, uint32_t address, uint32_t count)
 {
     g_mmc_tx_done = 0;
     g_mmc_error = 0;
+
+    // ← 加这行！
+    SCB_InvalidateDCache_by_Addr((uint32_t *)buf, count * SECTOR_SIZE);
 
     if (HAL_MMC_WriteBlocks_DMA(&g_sd_handle, buf, address, count) != HAL_OK)
         return 1;
@@ -433,7 +441,7 @@ void HAL_MMC_MspInit(MMC_HandleTypeDef *hsd)
         HAL_GPIO_Init(SD_SDMMCX_D3_GPIO_PORT, &gpio_init_struct);
 
         /* 配置SDMMC中断 */
-        HAL_NVIC_SetPriority(SDMMC1_IRQn, 5, 0);
+        HAL_NVIC_SetPriority(SDMMC1_IRQn, 2, 0);
         HAL_NVIC_EnableIRQ(SDMMC1_IRQn);
     }
 }
