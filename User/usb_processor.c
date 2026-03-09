@@ -70,25 +70,32 @@ const Dev_ch_cfg_index g_ida_ch_rate[] =
 FRESULT clear_file_content(const char *path);
 static uint32_t USB_DetectPeriod(void);
 
-static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_Disconnect_Reply(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_Run_Reply(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len);
+static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_Disconnect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_Run_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
-static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len);
+static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
 static uint32_t PackReplyWithoutDatas(uint32_t event_id);
 
-typedef uint32_t (*usb_protocol_handler)(uint8_t *data_in, uint32_t data_len);
+/* 协议处理函数指针类型：
+ * @param data_in: 解包后的用户数据
+ * @param data_len: 用户数据长度
+ * @param frame_head: 帧头信息指针
+ * @param user_head: 用户数据头指针
+ * @return: 回复包长度
+ */
+typedef uint32_t (*usb_protocol_handler)(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
 typedef struct
 {
@@ -263,8 +270,12 @@ static uint32_t USB_DetectPeriod(void)
     return packet_len;
 }
 // 处理PC->ARM的DVS_INIT_CONNECT事件
-static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)data_in;      // 未使用用户数据
+    (void)data_len;     // 未使用用户数据长度
+    (void)frame_head;   // 未使用帧头
+    (void)user_head;    // 未使用用户头
 
     g_IdaSystemStatus.st_dev_link.link_status = USB_CONNECTED;
 
@@ -272,16 +283,24 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len)
 }
 
 // 处理PC->ARM的DVS_INIT_DISCONNECT事件
-static uint32_t USB_Disconnect_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_Disconnect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+    (void)user_head;
+
     g_IdaSystemStatus.st_dev_link.link_status = USB_DISCONNECTED;
 
     return PackReplyWithoutDatas(DVS_INIT_DISCONNECT_OK);
 }
 
 // 处理PC->ARM的DVS_INIT_DEVCONFIG_UPDATE_Done事件
-static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)frame_head;
+    (void)user_head;
+
     if (data_len != sizeof(DeviceDetailInfo))
     {
         return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
@@ -302,8 +321,11 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len)
 }
 
 // 处理PC->ARM的DVSARM_CSP_START事件
-static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)frame_head;
+    (void)user_head;
+
     ChannelTableHeader *channel_header;
     DSAGlobalParams *global_params;
     channel_header = (ChannelTableHeader *)data_in;
@@ -331,13 +353,23 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len)
     return PackReplyWithoutDatas(DVSARM_CSP_START_OK);
 }
 // 处理PC->ARM的DVSARM_RUN事件
-static uint32_t USB_Run_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_Run_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+    (void)user_head;
+
     return PackReplyWithoutDatas(DVSARM_RUN_OK);
 }
 // 处理PC->ARM的DVSARM_STOP事件
-static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+    (void)user_head;
+
     uint32_t packet_len = 0;
 
     g_IdaSystemStatus.st_dev_run.run_flag = 0;
@@ -347,8 +379,11 @@ static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len)
     return PackReplyWithoutDatas(DVSARM_STOP_OK);
 }
 // 处理PC->ARM的DVS_CSP_OFFLINE_SETCONFIG_OK事件
-static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)frame_head;
+    (void)user_head;
+
     int32_t ret = RET_OK;
     if (data_len == 0)
     {
@@ -407,35 +442,40 @@ static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len)
 
     ret = (ret != RET_OK) ? -1 : RET_OK;
     // 返回应答数据
-    FrameHeadInfo frame_head = create_default_frame_head(0);
-    UserDataHeadInfo user_head = {0};
-    user_head.nIsValidFlag = 0x12345678;
-    user_head.nEventID = DVS_CSP_OFFLINE_SETCONFIG_OK;
-    user_head.nSourceType = SOURCE_TYPE_NO_DATA;
-    user_head.nDestinationID = DESTINATION_ARM_TO_PC;
-    user_head.nDataLength = 0;
-    user_head.nNanoSecond = dwt_get_ns();
-    user_head.nParameters0 = ret;
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = {0};
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_CSP_OFFLINE_SETCONFIG_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nParameters0 = ret;
 
     uint32_t packet_len = 0;
-    pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     return packet_len;
 }
 // 处理PC->ARM的DVS_INIT_ARM_UPGRADE_REQ_OK事件
-static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
-    FrameHeadInfo frame_head = create_default_frame_head(0);
-    UserDataHeadInfo user_head = {0};
-    user_head.nIsValidFlag = 0x12345678;
-    user_head.nEventID = DVS_INIT_ARM_UPGRADE_REQ_OK;
-    user_head.nSourceType = SOURCE_TYPE_NO_DATA;
-    user_head.nDestinationID = DESTINATION_ARM_TO_PC;
-    user_head.nDataLength = 0;
-    user_head.nNanoSecond = dwt_get_ns();
-    user_head.nParameters0 = 1;
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+    (void)user_head;
+
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = {0};
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_INIT_ARM_UPGRADE_REQ_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nParameters0 = 1;
 
     uint32_t packet_len = 0;
-    pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     g_IdaSystemStatus.st_dev_mode.reset_all_flag = 1; // ready to restart
     g_reset_time = dwt_get_ns();
     return packet_len;
@@ -451,8 +491,13 @@ void transpose(short src[BLOCK_LEN][SPI_NUM], short dst[SPI_NUM][BLOCK_LEN])
     }
 }
 // 处理PC->ARM的DVSARM_DISPNEXT_OK事件
-static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+    (void)user_head;
+
     static uint32_t frame_num = 0;
     uint32_t cb_len = SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN;
     short send_data[BLOCK_LEN][SPI_NUM];
@@ -480,14 +525,14 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len)
 
     uint32_t send_len = sizeof(user_data);
 
-    FrameHeadInfo frame_head = create_default_frame_head(frame_num);
+    FrameHeadInfo reply_frame_head = create_default_frame_head(frame_num);
 
-    UserDataHeadInfo user_head = create_user_data_head(DVSARM_DISPNEXT_OK,
+    UserDataHeadInfo reply_user_head = create_user_data_head(DVSARM_DISPNEXT_OK,
                                                        SOURCE_TYPE_WITH_DATAS,
                                                        DESTINATION_ARM_TO_PC,
                                                        send_len);
     uint32_t packet_len = 0;
-    pack_data((uint8_t *)&user_data, send_len, &user_head, &frame_head, &packet_len);
+    pack_data((uint8_t *)&user_data, send_len, &reply_user_head, &reply_frame_head, &packet_len);
 
     return packet_len;
 }
@@ -503,12 +548,19 @@ void USB_Display_All(uint32_t run_flag)
 
     if (run_flag)
     {
-        USB_Display_Reply(NULL, 0);
+        FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+        UserDataHeadInfo reply_user_head = {0};
+        USB_Display_Reply(NULL, 0, &reply_frame_head, &reply_user_head);
     }
 }
 // 处理PC->ARM的DVS_FILE_GET_FILELIST_OK事件
-static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+    (void)user_head;
+
 #define FILELIST_BUFFER_SIZE (2048)
 
     // 使用动态内存分配
@@ -517,13 +569,13 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
     {
         usb_printf("[GetFilelist] ERROR: Memory allocation failed\n");
         // 返回错误回复
-        FrameHeadInfo frame_head = create_default_frame_head(0);
-        UserDataHeadInfo user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
+        FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+        UserDataHeadInfo reply_user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
                                                            SOURCE_TYPE_NO_DATA,
                                                            DESTINATION_ARM_TO_PC,
                                                            0);
         uint32_t packet_len = 0;
-        pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+        pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
         return packet_len;
     }
 
@@ -604,15 +656,15 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
 
     send_len = strlen((const char *)user_data);
 
-    FrameHeadInfo frame_head = create_default_frame_head(0);
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
 
-    UserDataHeadInfo user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
+    UserDataHeadInfo reply_user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
                                                        SOURCE_TYPE_WITH_DATAS,
                                                        DESTINATION_ARM_TO_PC,
                                                        send_len);
 
     uint32_t packet_len = 0;
-    pack_data((uint8_t *)user_data, send_len, &user_head, &frame_head, &packet_len);
+    pack_data((uint8_t *)user_data, send_len, &reply_user_head, &reply_frame_head, &packet_len);
 
     // 释放动态分配的内存
     myfree(SRAMEX, user_data);
@@ -623,15 +675,17 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
 }
 
 // 处理PC->ARM的DVS_FILE_DELETE_OK事件
-static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)user_head;
+
     int32_t ret = RET_OK;
     FRESULT fres = FR_OK;
     FILINFO finfo = {0};
     char file_path[256] = {0};
     uint64_t op_time_start = 0;
-    FrameHeadInfo frame_head;
-    UserDataHeadInfo user_head;
+    FrameHeadInfo reply_frame_head;
+    UserDataHeadInfo reply_user_head;
     uint32_t packet_len = 0;
 
     // 参数验证
@@ -743,17 +797,17 @@ static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len)
 
 send_reply:
     // 构建回复包
-    frame_head = create_default_frame_head(0);
-    memset(&user_head, 0, sizeof(user_head));
-    user_head.nIsValidFlag = 0x12345678;
-    user_head.nEventID = DVS_FILE_DELETE_OK;
-    user_head.nSourceType = SOURCE_TYPE_NO_DATA;
-    user_head.nDestinationID = DESTINATION_ARM_TO_PC;
-    user_head.nDataLength = 0;
-    user_head.nNanoSecond = dwt_get_ns();
-    user_head.nParameters0 = ret; // 删除结果：0=成功, <0=错误码
+    reply_frame_head = create_default_frame_head(0);
+    memset(&reply_user_head, 0, sizeof(reply_user_head));
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_FILE_DELETE_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nParameters0 = ret; // 删除结果：0=成功, <0=错误码
 
-    pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     return packet_len;
 }
 
@@ -880,8 +934,11 @@ static void download_send_next_pack(void)
 /* --------------------------------------------------------------------------
  * DVS_FILE_DOWNLOAD_START 处理：PC 发起下载请求
  * -------------------------------------------------------------------------- */
-static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)frame_head;
+    (void)user_head;
+
     FileDownloadStartReply reply = {0};
 
     if (g_download_session.active)
@@ -961,8 +1018,11 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len)
 /* --------------------------------------------------------------------------
  * DVS_FILE_DOWNLOAD_DATA_ACK 处理：PC 确认收到一包，MCU 发下一包
  * -------------------------------------------------------------------------- */
-static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)frame_head;
+    (void)user_head;
+
     if (!g_download_session.active)
     {
         usb_printf("[Download] ACK received but no active session\r\n");
@@ -1015,8 +1075,11 @@ static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len)
 /* --------------------------------------------------------------------------
  * DVS_FILE_DOWNLOAD_STOP 处理：PC 通知结束（正常完成或取消）
  * -------------------------------------------------------------------------- */
-static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len)
+static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)frame_head;
+    (void)user_head;
+
     FileDownloadStopReply reply = {0};
 
     if (!g_download_session.active)
@@ -1075,7 +1138,7 @@ void on_frame(const uint8_t *frame, uint32_t frame_len)
             if (unpacked_head.nEventID == protocol_getdata[i].usb_frame_tag)
             {
                 uint32_t reply_len = 0;
-                reply_len = protocol_getdata[i].usb_process_handle(unpacked_data, unpacked_data_len);
+                reply_len = protocol_getdata[i].usb_process_handle(unpacked_data, unpacked_data_len, &unpacked_frame_head, &unpacked_head);
             }
         }
 
