@@ -23,6 +23,7 @@
 
 #include "stdint.h"
 #include "./FATFS/source/ff.h"
+#include "./MALLOC/malloc.h"
 
 /**
  * @brief  File information structure

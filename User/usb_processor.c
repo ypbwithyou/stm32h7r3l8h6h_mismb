@@ -561,7 +561,7 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
     (void)frame_head;
     (void)user_head;
 
-#define FILELIST_BUFFER_SIZE (2048)
+#define FILELIST_BUFFER_SIZE (4096)
 
     // 使用动态内存分配
     uint8_t *user_data = (uint8_t *)mymalloc(SRAMEX, FILELIST_BUFFER_SIZE);
@@ -1110,7 +1110,7 @@ uint64_t heart_recv_time = 0;
 void on_frame(const uint8_t *frame, uint32_t frame_len)
 {
 
-    usb_printf("on_frame: %d\n", frame_len);
+    // usb_printf("on_frame: %d\n", frame_len);
 
     // 解包
     uint8_t *unpacked_data = NULL;

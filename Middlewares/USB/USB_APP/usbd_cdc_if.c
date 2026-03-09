@@ -134,7 +134,7 @@ static int8_t CDC_Receive(uint8_t *Buf, uint32_t *Len)
     USBD_CDC_ReceivePacket(&g_usbd_handle);
 
     SWR_ProcessBytes(&g_slidingWindow_receiver, Buf, *Len);
-    usb_printf("CDC_Receive: %d\n", *Len);
+    // usb_printf("CDC_Receive: %d\n", *Len);
     // usbd_cdc_transmit(Buf, *Len);
 
     // g_usbd_cdc_rx_len = *Len;
