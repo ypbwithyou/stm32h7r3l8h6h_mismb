@@ -733,67 +733,30 @@ typedef struct SendRecordPackHead_t
 typedef struct SendRecordPack_t
 {
     SendRecordPackHead head;
-    uint8_t data[1024];
+    uint8_t data[1]; // 柔性数组，实际大小为 head.packSize
 } SendRecordPack;
 
-
-/* -----------------------------------------------------------------------
- * 文件下载（eMMC -> MCU -> PC）控制结构体
- * ----------------------------------------------------------------------- */
-
-/* DVS_FILE_DOWNLOAD_START 载荷：PC->MCU，指定要下载的文件 */
-typedef struct
-{
-    char     file_path[256];        // 文件路径，如 "0:/data/record.rec"
-    uint32_t pack_size;             // 期望每包大小（字节），0 表示使用默认值 4096
-} FileDownloadStartReq;
-
-/* DVS_FILE_DOWNLOAD_START_OK 载荷：MCU->PC，告知文件信息 */
-typedef struct
-{
-    int32_t  result;                // 0=OK，负数=错误码
-    uint32_t session_id;            // 本次下载会话ID
-    uint32_t total_size;            // 文件总字节数
-    uint32_t total_packs;           // 总包数
-    uint32_t pack_size;             // 实际每包大小
-    char     message[64];           // 可读描述
-} FileDownloadStartReply;
-
-/* DVS_FILE_DOWNLOAD_DATA（MCU->PC）：一个数据分包 */
-typedef struct
-{
-    uint32_t session_id;            // 会话ID
-    uint32_t pack_index;            // 当前包序号（从 0 开始）
-    uint32_t total_packs;           // 总包数（方便PC端显示进度）
-    uint32_t pack_data_len;         // 本包有效数据字节数
-    uint32_t crc32;                 // 本包数据的 CRC32 校验值
-    uint8_t  data[1];               // 柔性数组（实际大小为 pack_data_len）
-} FileDownloadDataPack;
-
-/* DVS_FILE_DOWNLOAD_DATA_ACK（PC->MCU）：PC 收到一包后的确认 */
-typedef struct
-{
-    uint32_t session_id;
-    uint32_t pack_index;            // 已确认收到的包序号
-    int32_t  result;                // 0=OK，负数=要求重传
-} FileDownloadDataAck;
-
-/* DVS_FILE_DOWNLOAD_STOP 载荷：PC->MCU（或超时后MCU主动结束） */
-typedef struct
-{
-    uint32_t session_id;
-    uint8_t  abort;                 // 0=正常完成，1=取消
-} FileDownloadStopReq;
-
-/* DVS_FILE_DOWNLOAD_STOP_OK 载荷：MCU->PC */
-typedef struct
-{
-    uint32_t session_id;
-    int32_t  result;
-    uint32_t bytes_sent;            // 实际已发送字节数
-} FileDownloadStopReply;
-
-
+/**********************************************
+* 文件下载协议说明
+* 
+* DVS_FILE_DOWNLOAD_START: 接收文件名字符串 (char *filename)
+*   - 返回值: UserDataHeadInfo.nParameters0
+*     - 0: 成功，可开始数据下载
+*     - 负数: 错误码
+*
+* DVS_FILE_DOWNLOAD_DATA: 使用 SendRecordPack_t 发送分包数据
+*   - head.totalPackNum: 总包数
+*   - head.currentPackIdx: 当前包序号
+*   - head.packSize: 本包实际数据长度
+*   - head.crc32: 本包CRC32校验值
+*
+* DVS_FILE_DOWNLOAD_STOP: 终止下载
+*   - 返回值: UserDataHeadInfo.nParameters0
+*     - 0: 成功完成
+*     - 负数: 错误码
+*
+**********************************************/
+ 
 #pragma pack(pop)
 /**********************************************
 * 数据包加密参数

@@ -891,33 +891,27 @@ static void download_send_next_pack(void)
     if (fres != FR_OK || br == 0)
     {
         usb_printf("[Download] f_read failed: res=%d br=%u\r\n", fres, br);
-        /* 读取出错，发送 STOP */
-        FileDownloadStopReply stop_reply = {0};
-        stop_reply.session_id = g_download_session.session_id;
-        stop_reply.result = -1;
-        stop_reply.bytes_sent = g_download_session.bytes_sent;
-        download_send_with_data(DVS_FILE_DOWNLOAD_STOP_OK,
-                                &stop_reply, sizeof(stop_reply));
+        /* 读取出错，关闭文件 */
         f_close(&g_download_session.fil);
         memset(&g_download_session, 0, sizeof(g_download_session));
         return;
     }
 
-    /* 构造数据包头部（不含柔性数组） */
-    FileDownloadDataPack pack_head;
-    pack_head.session_id = g_download_session.session_id;
-    pack_head.pack_index = g_download_session.next_pack_index;
-    pack_head.total_packs = g_download_session.total_packs;
-    pack_head.pack_data_len = br;
+    /* 使用 SendRecordPackHead_t 作为数据包头 */
+    SendRecordPackHead pack_head;
+    pack_head.totalPackNum = g_download_session.total_packs;
+    pack_head.currentPackIdx = g_download_session.next_pack_index + 1;  /* 从1开始计数 */
+    pack_head.currentPackAddr = g_download_session.bytes_sent;
+    pack_head.packSize = br;
     pack_head.crc32 = download_crc32(g_download_buf, br);
+    pack_head.reserved = 0;
 
-    /* 组合 pack_head + data 发送（两段发送：先头部再数据）
-     * 由于柔性数组不方便整体拷贝，这里把头和数据合并到一个临时缓冲发送 */
-    static uint8_t tx_buf[sizeof(FileDownloadDataPack) + DOWNLOAD_PACK_SIZE_MAX]
+    /* 组合 pack_head + data 发送 */
+    static uint8_t tx_buf[sizeof(SendRecordPackHead) + DOWNLOAD_PACK_SIZE_MAX]
         __attribute__((aligned(4)));
-    memcpy(tx_buf, &pack_head, sizeof(FileDownloadDataPack) - 1); /* -1 去掉data[1] */
-    memcpy(tx_buf + sizeof(FileDownloadDataPack) - 1, g_download_buf, br);
-    uint32_t tx_len = (sizeof(FileDownloadDataPack) - 1) + br;
+    memcpy(tx_buf, &pack_head, sizeof(SendRecordPackHead));
+    memcpy(tx_buf + sizeof(SendRecordPackHead), g_download_buf, br);
+    uint32_t tx_len = sizeof(SendRecordPackHead) + br;
 
     download_send_with_data(DVS_FILE_DOWNLOAD_DATA, tx_buf, tx_len);
 
@@ -932,54 +926,48 @@ static void download_send_next_pack(void)
 }
 
 /* --------------------------------------------------------------------------
- * DVS_FILE_DOWNLOAD_START 处理：PC 发起下载请求
+ * DVS_FILE_DOWNLOAD_START 处理：PC 发起下载请求（接收文件名字符串）
  * -------------------------------------------------------------------------- */
 static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
     (void)frame_head;
-    (void)user_head;
 
-    FileDownloadStartReply reply = {0};
+    int32_t ret = 0;
+    char file_path[256] = {0};
 
     if (g_download_session.active)
     {
         usb_printf("[Download] Session already active\r\n");
-        reply.result = -1;
-        snprintf(reply.message, sizeof(reply.message), "Session busy");
-        return download_send_with_data(DVS_FILE_DOWNLOAD_START_OK,
-                                       &reply, sizeof(reply));
+        ret = -1;
+        goto send_start_reply;
     }
 
-    if (data_len < sizeof(FileDownloadStartReq))
+    /* 验证输入 */
+    if (data_in == NULL || data_len == 0 || data_len > 255)
     {
-        usb_printf("[Download] START payload too short\r\n");
-        reply.result = -2;
-        snprintf(reply.message, sizeof(reply.message), "Bad request");
-        return download_send_with_data(DVS_FILE_DOWNLOAD_START_OK,
-                                       &reply, sizeof(reply));
+        usb_printf("[Download] START payload invalid (len=%u)\r\n", data_len);
+        ret = -2;
+        goto send_start_reply;
     }
 
-    FileDownloadStartReq *req = (FileDownloadStartReq *)data_in;
-    req->file_path[sizeof(req->file_path) - 1] = '\0';
+    /* 文件名字符串处理 */
+    memcpy(file_path, data_in, data_len);
+    file_path[data_len] = '\0';
 
     /* 打开文件 */
     FRESULT fres = f_open(&g_download_session.fil,
-                          req->file_path,
+                          file_path,
                           FA_OPEN_EXISTING | FA_READ);
     if (fres != FR_OK)
     {
         usb_printf("[Download] f_open failed: path=%s res=%d\r\n",
-                   req->file_path, fres);
-        reply.result = -3;
-        snprintf(reply.message, sizeof(reply.message), "Open failed(%d)", fres);
-        return download_send_with_data(DVS_FILE_DOWNLOAD_START_OK,
-                                       &reply, sizeof(reply));
+                   file_path, fres);
+        ret = -3;
+        goto send_start_reply;
     }
 
     uint32_t file_size = f_size(&g_download_session.fil);
-    uint32_t pack_size = (req->pack_size > 0 && req->pack_size <= DOWNLOAD_PACK_SIZE_MAX)
-                             ? req->pack_size
-                             : DOWNLOAD_PACK_SIZE_DEFAULT;
+    uint32_t pack_size = DOWNLOAD_PACK_SIZE_DEFAULT;  /* 使用默认包大小 */
     uint32_t total_packs = (file_size + pack_size - 1) / pack_size;
     if (total_packs == 0)
         total_packs = 1;
@@ -992,31 +980,38 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, Frame
     g_download_session.pack_size = pack_size;
     g_download_session.next_pack_index = 0;
     g_download_session.bytes_sent = 0;
-    strncpy(g_download_session.file_path, req->file_path,
+    strncpy(g_download_session.file_path, file_path,
             sizeof(g_download_session.file_path) - 1);
 
-    usb_printf("[Download] Session %lu started: path=%s size=%lu packs=%lu\r\n",
-               g_download_session.session_id,
+    usb_printf("[Download] Session started: path=%s size=%lu packs=%lu\r\n",
                g_download_session.file_path,
                file_size, total_packs);
 
-    /* 回复 START_OK */
-    reply.result = 0;
-    reply.session_id = g_download_session.session_id;
-    reply.total_size = file_size;
-    reply.total_packs = total_packs;
-    reply.pack_size = pack_size;
-    snprintf(reply.message, sizeof(reply.message), "Ready");
-    uint32_t start_reply_len = download_send_with_data(DVS_FILE_DOWNLOAD_START_OK, &reply, sizeof(reply));
-
+    ret = 0;  /* 成功 */
     /* 立即发送第一包 */
     download_send_next_pack();
 
-    return start_reply_len;
+send_start_reply:
+    ;
+    /* 回复 START_OK，通过 nParameters0 报告结果 */
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = {0};
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_FILE_DOWNLOAD_START_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nParameters0 = ret;  /* 0=成功, 负数=错误码 */
+
+    uint32_t packet_len = 0;
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+    return packet_len;
 }
 
 /* --------------------------------------------------------------------------
  * DVS_FILE_DOWNLOAD_DATA_ACK 处理：PC 确认收到一包，MCU 发下一包
+ * 数据格式：pack_index (4字节，从1开始），result (4字节，0=OK)
  * -------------------------------------------------------------------------- */
 static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
@@ -1029,88 +1024,85 @@ static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, Fra
         return 0;
     }
 
-    if (data_len < sizeof(FileDownloadDataAck))
+    /* 解析ACK：pack_index(4字节) + result(4字节) */
+    if (data_len < 8)
     {
         usb_printf("[Download] ACK payload too short\r\n");
         return 0;
     }
 
-    FileDownloadDataAck *ack = (FileDownloadDataAck *)data_in;
+    uint32_t pack_index = *(uint32_t *)data_in;
+    int32_t result = *(int32_t *)(data_in + 4);
 
-    if (ack->session_id != g_download_session.session_id)
+    if (result != 0)
     {
-        usb_printf("[Download] ACK session_id mismatch\r\n");
+        /* PC 要求重传：回退文件指针 */
+        usb_printf("[Download] PC requested retransmit pack %lu\r\n", pack_index);
+        uint32_t seek_offset = (pack_index - 1) * g_download_session.pack_size;  /* pack_index从1开始 */
+        f_lseek(&g_download_session.fil, seek_offset);
+        g_download_session.bytes_sent = seek_offset;
+        g_download_session.next_pack_index = pack_index - 1;
+        g_download_session.active = 1;
+        download_send_next_pack();
         return 0;
     }
 
-    if (ack->result != 0)
-    {
-        /* PC 要求重传：回退文件指针 */
-        usb_printf("[Download] PC requested retransmit pack %lu\r\n", ack->pack_index);
-        uint32_t seek_offset = ack->pack_index * g_download_session.pack_size;
-        f_lseek(&g_download_session.fil, seek_offset);
-        g_download_session.bytes_sent = seek_offset;
-        g_download_session.next_pack_index = ack->pack_index;
-        g_download_session.active = 1;
-        download_send_next_pack();
-        return 0;  // 重传没有立即回复
-    }
-
     /* 确认成功，推进包序号 */
-    g_download_session.next_pack_index = ack->pack_index + 1;
+    g_download_session.next_pack_index = pack_index;
     g_download_session.active = 1;
 
     if (g_download_session.next_pack_index >= g_download_session.total_packs)
     {
         /* 所有包已确认，等待 PC 发 STOP */
         usb_printf("[Download] All packs ACKed, waiting for STOP\r\n");
-        return 0;  // 等待STOP，没有立即回复
+        return 0;
     }
 
     /* 发送下一包 */
     download_send_next_pack();
-    return 0;  // 下一包由 download_send_next_pack 发送
+    return 0;
 }
 
 /* --------------------------------------------------------------------------
  * DVS_FILE_DOWNLOAD_STOP 处理：PC 通知结束（正常完成或取消）
+ * 数据格式：abort_flag (1字节，0=正常完成, 1=中止)
  * -------------------------------------------------------------------------- */
 static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    (void)data_in;
+    (void)data_len;
     (void)frame_head;
-    (void)user_head;
 
-    FileDownloadStopReply reply = {0};
+    int32_t ret = 0;
 
-    if (!g_download_session.active)
+    if (g_download_session.active)
     {
-        reply.result = 0;
-        return download_send_with_data(DVS_FILE_DOWNLOAD_STOP_OK,
-                                       &reply, sizeof(reply));
+        f_close(&g_download_session.fil);
+        usb_printf("[Download] Session closed: sent=%lu bytes\r\n",
+                   g_download_session.bytes_sent);
+        memset(&g_download_session, 0, sizeof(g_download_session));
+        ret = 0;  /* 成功 */
+    }
+    else
+    {
+        /* 没有活跃会话，仍返回成功 */
+        ret = 0;
     }
 
-    reply.session_id = g_download_session.session_id;
-    reply.bytes_sent = g_download_session.bytes_sent;
-    reply.result = 0;
+    /* 回复 STOP_OK，通过 nParameters0 报告结果 */
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = {0};
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_FILE_DOWNLOAD_STOP_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nParameters0 = ret;  /* 0=成功, 负数=错误码 */
 
-    uint8_t do_abort = 0;
-    if (data_len >= sizeof(FileDownloadStopReq))
-    {
-        FileDownloadStopReq *req = (FileDownloadStopReq *)data_in;
-        do_abort = req->abort;
-    }
-
-    f_close(&g_download_session.fil);
-
-    usb_printf("[Download] Session %lu %s: sent=%lu bytes\r\n",
-               g_download_session.session_id,
-               do_abort ? "aborted" : "done",
-               g_download_session.bytes_sent);
-
-    memset(&g_download_session, 0, sizeof(g_download_session));
-
-    return download_send_with_data(DVS_FILE_DOWNLOAD_STOP_OK,
-                                   &reply, sizeof(reply));
+    uint32_t packet_len = 0;
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+    return packet_len;
 }
 
 uint64_t heart_recv_time = 0;
