@@ -24,6 +24,109 @@
 
 #include "usbd_cdc_if.h"
 
+#define TEST_FILE_NAME "speed_test.bin"
+#define TEST_FILE_SIZE (4 * 1024 * 1024) // 4MB
+#define TEST_BLOCK_SIZE (16 * 1024)      // 16KB
+
+void sd_file_speed_test(void)
+{
+    FIL file;
+    FRESULT res;
+    UINT bw, br;
+
+    uint8_t *buffer = (uint8_t *)mymalloc(SRAMEX, TEST_BLOCK_SIZE);
+
+    uint32_t total_write = 0;
+    uint32_t total_read = 0;
+
+    uint64_t t_start;
+    uint64_t t_end;
+
+    usb_printf("\r\n===== SD File Speed Test =====\r\n");
+
+    /* 初始化测试数据 */
+    for (uint32_t i = 0; i < TEST_BLOCK_SIZE; i++)
+        buffer[i] = i;
+
+    /*--------------------------------*/
+    /* 写入测试 */
+    /*--------------------------------*/
+    usb_printf("Writing %d MB...\r\n", TEST_FILE_SIZE / 1024 / 1024);
+
+    res = f_open(&file, TEST_FILE_NAME, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK)
+    {
+        usb_printf("File open failed: %d\r\n", res);
+        return;
+    }
+
+    t_start = dwt_get_us();
+
+    while (total_write < TEST_FILE_SIZE)
+    {
+        res = f_write(&file, buffer, TEST_BLOCK_SIZE, &bw);
+        if (res != FR_OK || bw != TEST_BLOCK_SIZE)
+        {
+            usb_printf("Write error\r\n");
+            break;
+        }
+
+        total_write += bw;
+    }
+
+    f_sync(&file);
+    f_close(&file);
+
+    t_end = dwt_get_us();
+
+    float write_time = (t_end - t_start) / 1000000.0f;
+    float write_speed = (float)total_write / 1024.0f / 1024.0f / write_time;
+
+    usb_printf("Write time: %.3f s\r\n", write_time);
+    usb_printf("Write speed: %.2f MB/s\r\n", write_speed);
+
+    /*--------------------------------*/
+    /* 读取测试 */
+    /*--------------------------------*/
+    usb_printf("\r\nReading file...\r\n");
+
+    res = f_open(&file, TEST_FILE_NAME, FA_READ);
+    if (res != FR_OK)
+    {
+        usb_printf("File open failed\r\n");
+        return;
+    }
+
+    t_start = dwt_get_us();
+
+    while (1)
+    {
+        res = f_read(&file, buffer, TEST_BLOCK_SIZE, &br);
+        if (res != FR_OK)
+        {
+            usb_printf("Read error\r\n");
+            break;
+        }
+
+        if (br == 0)
+            break;
+
+        total_read += br;
+    }
+
+    f_close(&file);
+
+    t_end = dwt_get_us();
+
+    float read_time = (t_end - t_start) / 1000000.0f;
+    float read_speed = (float)total_read / 1024.0f / 1024.0f / read_time;
+
+    usb_printf("Read time: %.3f s\r\n", read_time);
+    usb_printf("Read speed: %.2f MB/s\r\n", read_speed);
+
+    usb_printf("===== Test Finished =====\r\n\r\n");
+}
+
 /***********************************宏定义*********************************/
 
 #define SD_CARD_TEST 0
@@ -109,7 +212,6 @@ int8_t IdaDeviceInit(void)
     if (ds != 0)
     {
         usb_printf("[eMMC] disk_initialize failed, status=%d\r\n", ds);
-        
     }
 
     /* verify read sector 0 */
@@ -197,7 +299,7 @@ int8_t IdaDeviceInit(void)
     check_filesystem_status("0:");
 
     test_filesystem();
-
+    sd_file_speed_test();
     return RET_OK;
 }
 
