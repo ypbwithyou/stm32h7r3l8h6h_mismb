@@ -515,8 +515,16 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
     uint8_t *user_data = (uint8_t *)mymalloc(SRAMEX, FILELIST_BUFFER_SIZE);
     if (user_data == NULL)
     {
-        usb_printf("USB_GetFilelist: Memory allocation failed\n");
-        return 0;
+        usb_printf("[GetFilelist] ERROR: Memory allocation failed\n");
+        // 返回错误回复
+        FrameHeadInfo frame_head = create_default_frame_head(0);
+        UserDataHeadInfo user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
+                                                           SOURCE_TYPE_NO_DATA,
+                                                           DESTINATION_ARM_TO_PC,
+                                                           0);
+        uint32_t packet_len = 0;
+        pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+        return packet_len;
     }
 
     uint32_t send_len = 0;
@@ -530,7 +538,7 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
     char date_time_buf[20];
 
     // 获取0:/data目录下的.txt文件列表，最多10个
-    ret = get_file_list_by_extension("0:/RecordDataFiles", ".txt", &file_list, 10);
+    ret = get_file_list_by_extension("0:/RecordDataFiles", ".rec", &file_list, 10);
 
     if (ret == 0 && file_list.count > 0)
     {
@@ -639,9 +647,17 @@ static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len)
     file_path[data_len] = '\0';
 
     // 检查文件路径是否合法（防止路径遍历攻击）
-    if (strlen(file_path) == 0 || file_path[0] != '0' || file_path[1] != ':')
+    if (strlen(file_path) == 0)
     {
         usb_printf("[DeleteFile] ERROR: Invalid/empty path (path=%s)\r\n", file_path);
+        ret = -2;
+        goto send_reply;
+    }
+    
+    // 检查路径格式（至少包含 'X:' 盘符）
+    if (strlen(file_path) < 2 || file_path[1] != ':')
+    {
+        usb_printf("[DeleteFile] ERROR: Invalid path format (path=%s)\r\n", file_path);
         ret = -2;
         goto send_reply;
     }
@@ -934,12 +950,12 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len)
     reply.total_packs = total_packs;
     reply.pack_size = pack_size;
     snprintf(reply.message, sizeof(reply.message), "Ready");
-    download_send_with_data(DVS_FILE_DOWNLOAD_START_OK, &reply, sizeof(reply));
+    uint32_t start_reply_len = download_send_with_data(DVS_FILE_DOWNLOAD_START_OK, &reply, sizeof(reply));
 
     /* 立即发送第一包 */
     download_send_next_pack();
 
-    return 0;
+    return start_reply_len;
 }
 
 /* --------------------------------------------------------------------------
@@ -977,7 +993,7 @@ static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len)
         g_download_session.next_pack_index = ack->pack_index;
         g_download_session.active = 1;
         download_send_next_pack();
-        return 0;
+        return 0;  // 重传没有立即回复
     }
 
     /* 确认成功，推进包序号 */
@@ -988,12 +1004,12 @@ static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len)
     {
         /* 所有包已确认，等待 PC 发 STOP */
         usb_printf("[Download] All packs ACKed, waiting for STOP\r\n");
-        return 0;
+        return 0;  // 等待STOP，没有立即回复
     }
 
     /* 发送下一包 */
     download_send_next_pack();
-    return 0;
+    return 0;  // 下一包由 download_send_next_pack 发送
 }
 
 /* --------------------------------------------------------------------------
