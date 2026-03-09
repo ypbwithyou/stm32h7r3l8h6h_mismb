@@ -299,7 +299,7 @@ int8_t IdaDeviceInit(void)
     check_filesystem_status("0:");
 
     test_filesystem();
-    sd_file_speed_test();
+    // sd_file_speed_test();
     return RET_OK;
 }
 
@@ -580,33 +580,33 @@ static int8_t test_filesystem(void)
         return -1;
     }
 
-    // /* 3. Re-open file and read data */
-    // fres = f_open(&fil, "0:/OfflineCfgSchedule.txt", FA_READ);
-    // if (fres == FR_OK)
-    // {
-    //     usb_printf("File opened successfully for reading\n");
+    /* 3. Re-open file and read data */
+    fres = f_open(&fil, "0:/OfflineCfgSchedule.txt", FA_READ);
+    if (fres == FR_OK)
+    {
+        usb_printf("File opened successfully for reading\n");
 
-    //     /* Read data */
-    //     fres = f_read(&fil, read_buffer, sizeof(read_buffer) - 1, &bytes_read);
-    //     if (fres == FR_OK)
-    //     {
-    //         read_buffer[bytes_read] = '\0'; /* Null-terminate the string */
-    //         usb_printf("Read %u bytes successfully\n", bytes_read);
-    //         usb_printf("File content:\n%s\n", read_buffer);
-    //     }
-    //     else
-    //     {
-    //         usb_printf("Failed to read data: %d\n", fres);
-    //     }
+        /* Read data */
+        fres = f_read(&fil, read_buffer, sizeof(read_buffer) - 1, &bytes_read);
+        if (fres == FR_OK)
+        {
+            read_buffer[bytes_read] = '\0'; /* Null-terminate the string */
+            usb_printf("Read %u bytes successfully\n", bytes_read);
+            usb_printf("File content:\n%s\n", read_buffer);
+        }
+        else
+        {
+            usb_printf("Failed to read data: %d\n", fres);
+        }
 
-    //     /* Close file */
-    //     f_close(&fil);
-    // }
-    // else
-    // {
-    //     usb_printf("Failed to open file for reading: %d\n", fres);
-    //     return -1;
-    // }
+        /* Close file */
+        f_close(&fil);
+    }
+    else
+    {
+        usb_printf("Failed to open file for reading: %d\n", fres);
+        return -1;
+    }
 
     /* 4. List directory contents */
     DIR dir;
@@ -1071,7 +1071,7 @@ int8_t app_processor(void)
             g_slidingWindow_receiver.frame_flag = 0;
         }
 
-        USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag && g_IdaSystemStatus.st_dev_mode.work_mode != WORKMODE_ONLINE);
+        USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag);
 
         IdaProcessor();
     }

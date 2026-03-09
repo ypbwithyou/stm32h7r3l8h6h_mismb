@@ -1,143 +1,95 @@
-/*******************************************************************************
-  文件名称：collector_processor.c
-*******************************************************************************/
 #include "collector_processor.h"
 #include "./BSP/TIMER/gtim.h"
-#include "./MALLOC/malloc.h"
-#include "./BSP/DMA_LIST/dma_list.h"   /* need dma_update_xfer_size */
 
-/*---------------------------------------------------------------------------*/
-/* 全局运行时配置，默认最大通道                                               */
-/*---------------------------------------------------------------------------*/
-AdcChanCfg_t g_adc_chan_cfg = {
-    .ch_per_spi       = SPI_CH_ADC_MAX_HW,
-    .total_ch         = SPI_NUM * SPI_CH_ADC_MAX_HW,
-    .sample_rate      = 0,
-    .bytes_per_sample = (uint32_t)SPI_NUM * SPI_CH_ADC_MAX_HW * ADC_DATA_LEN,
-};
+CircularBuffer* g_cb_adc;
 
-CircularBuffer *g_cb_adc = NULL;
-
-/*===========================================================================*/
-/* CircularBuffer 初始化                                                      */
-/*===========================================================================*/
-
-CircularBuffer *collect_cb_init(uint32_t cb_len)
+CircularBuffer* collect_cb_init(uint32_t cb_len)
 {
-    return cb_init((int)cb_len);
+    return cb_init(cb_len);
 }
 
-CircularBuffer *collect_cb_init_ex(uint32_t cb_len)
-{
-    CircularBuffer *cb = (CircularBuffer *)mymalloc(SRAMIN, sizeof(CircularBuffer));
-    if (!cb) return NULL;
-
-    char *buf = (char *)mymalloc(SRAMEX, cb_len);
-    if (!buf) {
-        myfree(SRAMIN, cb);
-        return NULL;
-    }
-
-    cb->buffer    = buf;
-    cb->capacity  = (int)cb_len;
-    cb->size      = 0;
-    cb->read_pos  = 0;
-    cb->write_pos = 0;
-
-    return cb;
-}
-
-/*===========================================================================*/
-/* 动态通道配置                                                               */
-/*===========================================================================*/
-
-int8_t AdcChanCfgSet(uint8_t ch_per_spi, uint32_t sample_rate)
-{
-    if (ch_per_spi == 0 || ch_per_spi > SPI_CH_ADC_MAX_HW) {
-        return -1;
-    }
-
-    g_adc_chan_cfg.ch_per_spi       = ch_per_spi;
-    g_adc_chan_cfg.total_ch         = (uint8_t)(SPI_NUM * ch_per_spi);
-    g_adc_chan_cfg.bytes_per_sample = (uint32_t)SPI_NUM * ch_per_spi * ADC_DATA_LEN;
-
-    /* --- synchronize DMA transfer configuration --- */
-    {
-        uint32_t bytes = (uint32_t)ch_per_spi * ADC_DATA_LEN;
-        /* 每路SPI传输字节数等于每通道2字节（ADC_DATA_LEN==2）乘以通道数 */
-        dma_update_xfer_size(bytes);          /* rebuild DMA linked lists */
-        /* 如果需要分别设置每条 SPI，可使用：
-           dma_config_spi_channels(ch_per_spi, ch_per_spi, ch_per_spi);
-           以上在本项目中全部SPI通道数相同。 */
-    }
-
-    if (sample_rate > 0) {
-        g_adc_chan_cfg.sample_rate = sample_rate;
-        CfgAdcSampleRate(sample_rate);
-    }
-
-    /* 清空旧数据，避免帧格式错乱 */
-    if (g_cb_adc) {
-        cb_clear(g_cb_adc);
-    }
-
-    return 0;
-}
-
-/*===========================================================================*/
-/* ADC 数据写入 CircularBuffer                                                */
-/*===========================================================================*/
-
-/*
- * CB内数据布局（以 ch_per_spi=3 为例，每样本18字节）：
- *
- *   [SPI0_CH0_Hi][SPI0_CH0_Lo][SPI0_CH1_Hi][SPI0_CH1_Lo][SPI0_CH2_Hi][SPI0_CH2_Lo]
- *   [SPI1_CH0_Hi][SPI1_CH0_Lo][SPI1_CH1_Hi][SPI1_CH1_Lo][SPI1_CH2_Hi][SPI1_CH2_Lo]
- *   [SPI2_CH0_Hi][SPI2_CH0_Lo][SPI2_CH1_Hi][SPI2_CH1_Lo][SPI2_CH2_Hi][SPI2_CH2_Lo]
- *
- * data[spi][0..ch_per_spi-1] 在内存中连续，每路写 ch_per_spi×2 字节。
- * data[spi][ch_per_spi..7] 是无效列，不写入CB。
+/**
+ * @brief  ADC采集数据处理函数
+ * @param  data: ADC采集数据+时间戳
  */
 void process_adc_data(ADC_Data_t *data)
 {
-    const uint8_t  n   = g_adc_chan_cfg.ch_per_spi;
-    const uint32_t row = (uint32_t)n * ADC_DATA_LEN;
-
-    for (uint8_t spi = 0; spi < SPI_NUM; spi++) {
-        int ret = cb_write(g_cb_adc, (const char *)data->data[spi], (int)row);
-        if (ret != (int)row) {
-            /* CB溢出，停止写入（不写入半帧数据，保持帧对齐）*/
-            break;
-        }
+    // 添加采集数据到采集数据缓存buffer
+    int ret = 0;
+    ret = cb_write(g_cb_adc, (const char*)data, sizeof(data->data));
+    if (ret != sizeof(data->data)){
+        return;
     }
 }
 
-/*===========================================================================*/
-/* 采样率 / 采集控制                                                          */
-/*===========================================================================*/
+///**
+// * @brief  发送ISR获取的ADC采集数据到队列
+// * @param  spi_num: SPI号
+// * @param  adc_num: ADC通道号
+// * @param  data: ADC采集数据
+// * @retval 队列追加结果
+// */
+//BaseType_t adc_send_data_from_isr(uint8_t spi_num, uint8_t adc_num, uint16_t data)
+//{
+//    static ADC_Data_t current_sample = {0};
+//    static uint8_t data_ready = 0;
+//    static uint32_t sample_timestamp = 0;
+//    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//    BaseType_t result = pdFALSE;
+//    
+//    // 存储当前采样点的数据
+//    if(spi_num < SPI_NUM && adc_num < SPI_CH_ADC_MAX) {
+//        current_sample.data[spi_num][adc_num] = data;
+//    }
+//    
+//    // 如果是最后一个ADC的最后一个数据，完成一次采样
+//    if(spi_num == (SPI_NUM-1) && adc_num == (SPI_CH_ADC_MAX-1)) {
+//        current_sample.timestamp = sample_timestamp++;
+//        data_ready = 1;
+//    }
+//    
+//    // 数据准备好时发送到队列
+//    if(data_ready && adc_data_queue != NULL) {
+//        // 尝试发送到队列
+//        result = xQueueSendToBackFromISR(adc_data_queue, &current_sample, &xHigherPriorityTaskWoken);
+//        
+//        if(result == pdTRUE) {
+//            // 发送成功，通知任务处理
+//            xSemaphoreGiveFromISR(adc_semaphore, &xHigherPriorityTaskWoken);
+//        } else {
+//            // 队列已满，丢弃数据（可以增加错误计数）
+//        }
+//        
+//        data_ready = 0;
+//    }
+//    
+//    // 如果需要上下文切换
+//    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+//    
+//    return result;
+//}
 
-/*
- * 采样率计算（ARR=99固定，PSC动态）：
- *   TIM2 CLK = 300MHz
- *   PSC = 300,000,000 / (sample_rate × 100) - 1
- *
- * 常用采样率对应PSC值：
- *   51200 Hz → PSC = 57  → 实际 51724 Hz（误差 +1%）
- *   102400Hz → PSC = 28  → 实际 103448Hz（误差 +1%）
- *   204800Hz → PSC = 13  → 实际 214286Hz（误差 +4.6%）
- *   25600 Hz → PSC = 116 → 实际 25641 Hz（误差 +0.16%）
- *
- * 如需精确采样率，用 arr=(PSC+1)*n-1 配合更大PSC来降低误差。
+/**
+ * @brief  采样率配置
+ * @param  采样率
+ * @retval 无
  */
 void CfgAdcSampleRate(uint32_t sample_rate)
 {
-    const uint32_t tim_clk = 300000000U;
-    const uint32_t arr     = 100U - 1U;
-    uint32_t psc = (tim_clk / (sample_rate * (arr + 1U)));
-    if (psc > 0) psc -= 1U;
-    gtim_timx_cfg((uint16_t)arr, (uint16_t)psc);
+    uint32_t tim_freq, arr, psc;
+
+    tim_freq = 300000000;       // 定时器时钟
+    arr = 100 - 1;              // 
+    psc = (tim_freq / (sample_rate * (arr + 1))) - 1;
+    
+    gtim_timx_cfg(arr, psc);
 }
 
+/**
+ * @brief  ADC采集控制函数
+ * @param  采集运行状态
+ * @retval 无
+ */
 void AdcCollectorContrl(uint8_t run_status)
 {
     if (run_status) {
@@ -147,7 +99,12 @@ void AdcCollectorContrl(uint8_t run_status)
     }
 }
 
+/**
+ * @brief  采集数据缓存清除
+ * @param  无
+ * @retval 无
+ */
 void AdcCbClear(void)
 {
-    if (g_cb_adc) cb_clear(g_cb_adc);
+    cb_clear(g_cb_adc);
 }

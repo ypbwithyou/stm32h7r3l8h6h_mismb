@@ -83,13 +83,9 @@ typedef struct
     float       ch_cfg_value; 
     uint32_t    ch_set_index; 
 } Dev_ch_cfg_index; 
-#define MAX_USB_CHANNELS  (SPI_NUM * SPI_CH_ADC_MAX_HW)
-
 struct UserData {
     ArmBackFrameHeader data_head;
-    /* send_frame dimensions now support worst-case total channels.  Actual
-       number of valid rows is given by data_head.nFrameChCount. */
-    short send_frame[MAX_USB_CHANNELS][BLOCK_LEN];
+    short send_frame[SPI_NUM][BLOCK_LEN];
 };
 struct OffsetUserData {
     AoLocalColumn data_head;

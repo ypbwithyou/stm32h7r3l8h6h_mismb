@@ -565,28 +565,11 @@ static void ExecuteScheduleAction(uint8_t idx, uint32_t elapsed_seconds)
 //     }
 // }
 
-/* 配置加载失败类型 */
-typedef enum
-{
-    CFG_ERR_NONE    = 0,
-    CFG_ERR_NO_FILE = 1,   /* 文件不存在 */
-    CFG_ERR_CORRUPT = 2,   /* 文件内容非法 */
-    CFG_ERR_FS      = 3,   /* 文件系统错误 */
-} OfflineCfgErrType;
-
-#define CFG_RETRY_INTERVAL_MS  (5000U)   /* 两次重试间最小间隔 */
-#define CFG_RETRY_MAX          (3U)      /* 最多重试次数，超出后进入永久等待 */
-
 void offline_processor(uint8_t mode)
 {
-    static uint8_t  prev_mode        = WORKMODE_ONLINE;
-    static uint32_t base_tick_ms     = 0;
-    static uint8_t  config_done      = 0;
-
-    /* 配置重试状态（模式切换时清零） */
-    static OfflineCfgErrType s_cfg_err_type  = CFG_ERR_NONE;
-    static uint32_t          s_cfg_retry_tick = 0;
-    static uint8_t           s_cfg_retry_cnt  = 0;
+    static uint8_t prev_mode = WORKMODE_ONLINE;
+    static uint32_t base_tick_ms = 0;
+    static uint8_t config_done = 0;
 
     // ---------------------------
     // 1 模式切换处理
@@ -603,142 +586,36 @@ void offline_processor(uint8_t mode)
         }
 
         AdcCbClear();
+
         SysRunStatusInit();
 
-        prev_mode        = mode;
-        config_done      = 0;
-        s_cfg_err_type   = CFG_ERR_NONE;
-        s_cfg_retry_tick = 0;
-        s_cfg_retry_cnt  = 0;
-        base_tick_ms     = HAL_GetTick();
+        prev_mode = mode;
+        config_done = 0;
+        base_tick_ms = HAL_GetTick();
     }
 
     if (mode != WORKMODE_OFFLINE)
         return;
 
     // ---------------------------
-    // 2 离线配置（含缺失/损坏处理）
+    // 2 离线配置
     // ---------------------------
 
     if (!config_done)
     {
-        uint32_t now_ms = HAL_GetTick();
-
-        /* 上次已失败，判断是否需要等待或永久挂起 */
-        if (s_cfg_err_type != CFG_ERR_NONE)
-        {
-            if (s_cfg_retry_cnt >= CFG_RETRY_MAX)
-            {
-                /* 超过最大重试次数：每 30s 打印一次提示，停止 IO */
-                static uint32_t last_warn_ms = 0;
-                if ((now_ms - last_warn_ms) >= 30000U)
-                {
-                    last_warn_ms = now_ms;
-                    if (s_cfg_err_type == CFG_ERR_NO_FILE)
-                        usb_printf("[Offline] Waiting for config '%s'."
-                                   " Please upload it via USB.\n",
-                                   OFFLINE_SCHEDULE_FILE);
-                    else
-                        usb_printf("[Offline] Config invalid (err=%d)."
-                                   " Please re-upload a valid config file.\n",
-                                   (int)s_cfg_err_type);
-                }
-                return;
-            }
-
-            /* 未超最大次数：等待重试间隔 */
-            if ((now_ms - s_cfg_retry_tick) < CFG_RETRY_INTERVAL_MS)
-                return;
-
-            usb_printf("[Offline] Retrying config load (attempt %u/%u)...\n",
-                       s_cfg_retry_cnt + 1, CFG_RETRY_MAX);
-        }
-
-        s_cfg_retry_tick = HAL_GetTick();
-
-        /* 先用 f_stat 判断文件是否存在，给出更准确的提示 */
-        FILINFO fno;
-        FRESULT fres = f_stat(OFFLINE_SCHEDULE_FILE, &fno);
-        if (fres == FR_NO_FILE || fres == FR_NO_PATH)
-        {
-            s_cfg_err_type = CFG_ERR_NO_FILE;
-            s_cfg_retry_cnt++;
-            g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
-            usb_printf("[Offline] Config file not found: '%s'"
-                       " (retry %u/%u, next in %us)\n",
-                       OFFLINE_SCHEDULE_FILE,
-                       s_cfg_retry_cnt, CFG_RETRY_MAX,
-                       CFG_RETRY_INTERVAL_MS / 1000U);
-            return;
-        }
-        else if (fres != FR_OK)
-        {
-            s_cfg_err_type = CFG_ERR_FS;
-            s_cfg_retry_cnt++;
-            g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
-            usb_printf("[Offline] FS error when checking config: res=%d"
-                       " (retry %u/%u)\n",
-                       fres, s_cfg_retry_cnt, CFG_RETRY_MAX);
-            return;
-        }
-
-        /* 文件存在，尝试读取并校验 */
         if (GetOfflineCfgParam(OFFLINE_SCHEDULE_FILE) < 0)
-        {
-            s_cfg_err_type = CFG_ERR_CORRUPT;
-            s_cfg_retry_cnt++;
-            g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
-            usb_printf("[Offline] Failed to parse config (retry %u/%u)\n",
-                       s_cfg_retry_cnt, CFG_RETRY_MAX);
             return;
-        }
 
         if (CheckOfflineCfgParam() < 0)
-        {
-            s_cfg_err_type = CFG_ERR_CORRUPT;
-            s_cfg_retry_cnt++;
-            g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_ERR;
-            usb_printf("[Offline] Config validation failed (retry %u/%u)\n",
-                       s_cfg_retry_cnt, CFG_RETRY_MAX);
             return;
-        }
 
-        /* 配置加载成功 */
-        s_cfg_err_type  = CFG_ERR_NONE;
-        s_cfg_retry_cnt = 0;
-        g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_OK;
-
-        /* 从配置中查表确定采样率，找不到则保底 25600 Hz */
-        uint32_t sample_rate = 0;
-        for (uint8_t i = 0;
-             i < (uint8_t)(sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0]));
-             i++)
-        {
-            if (g_offline_chCfgHeader.fHardwareSampleRate
-                    == g_off_ida_ch_rate[i].ch_cfg_value)
-            {
-                sample_rate = (uint32_t)g_off_ida_ch_rate[i].ch_cfg_value;
-                break;
-            }
-        }
-        if (sample_rate == 0)
-        {
-            usb_printf("[Offline] Sample rate %.1f Hz not in table,"
-                       " using default 25600 Hz\n",
-                       g_offline_chCfgHeader.fHardwareSampleRate);
-            sample_rate = 25600;
-        }
+        uint32_t sample_rate = 25600; // GetOfflineSampleRate();
 
         CfgAdcSampleRate(sample_rate);
 
-        /* 在配置成功时才重置时间基准，避免调度时序偏移 */
-        base_tick_ms = HAL_GetTick();
-        config_done  = 1;
+        config_done = 1;
 
-        usb_printf("[Offline] Config OK: %u ch, %u schedules, %lu Hz\n",
-                   g_offline_chCfgHeader.nTotalChannelNum,
-                   g_offline_GlobalParam.nScheduleCount,
-                   sample_rate);
+        usb_printf("Offline cfg ok\n");
     }
 
     // ---------------------------

@@ -83,7 +83,6 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len);
 static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len);
 static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len);
 static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len);
-static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len); 
 
 static uint32_t PackReplyWithoutDatas(uint32_t event_id);
 
@@ -112,7 +111,6 @@ static const USB_ProtocoItems protocol_getdata[] =
         {DVS_FILE_DELETE, USB_DeleteFile},
         {DVS_FILE_DOWNLOAD_START, USB_DownloadFileStart},
         {DVS_FILE_DOWNLOAD_STOP, USB_DownloadFileStop},
-        {DVS_FILE_DOWNLOAD_DATA_ACK, USB_DownloadFileDataAck},
 };
 
 /*********************************************************************************/
@@ -183,7 +181,7 @@ void usb_init(void)
 #endif
 
     /* 鍒濆鍖朥SB */
-    USBD_Init(&g_usbd_handle, &Composite_Desc, DEVICE_HS);
+    USBD_Init(&g_usbd_handle, &CDC_Desc, DEVICE_HS);
     USBD_RegisterClass(&g_usbd_handle, USBD_CDC_CLASS);
     USBD_CDC_RegisterInterface(&g_usbd_handle, &USBD_CDC_fops);
     USBD_Start(&g_usbd_handle);
@@ -319,29 +317,12 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len)
     //    sample_rate = 1000;
     usb_printf("sample_rate:%d", sample_rate);
 
-    // 动态配置通道数（假设均匀分配到3路SPI）
-    uint8_t total_channels = channel_header->nTotalChannelNum;
-    uint8_t ch_per_spi = total_channels / SPI_NUM;
-    
-    usb_printf("Total channels: %d, channels per SPI: %d\r\n", total_channels, ch_per_spi);
-    
-    if (ch_per_spi > 0 && ch_per_spi <= SPI_CH_ADC_MAX_HW && (total_channels % SPI_NUM) == 0)
+    if (sample_rate > 0)
     {
-        // 停止当前采集
-        AdcCollectorContrl(0);
-        
-        // 配置通道和采样率
-        AdcChanCfgSet(ch_per_spi, sample_rate);
-        
-        // 启动采集
+        CfgAdcSampleRate(sample_rate);
+
         g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
-    }
-    else
-    {
-        usb_printf("Invalid channel configuration: total channels must be multiple of %d and per SPI <= %d\r\n", SPI_NUM, SPI_CH_ADC_MAX_HW);
-        // 不启动采集，返回OK但状态为未运行
-        g_IdaSystemStatus.st_dev_run.run_flag = 0;
     }
 
     return PackReplyWithoutDatas(DVSARM_CSP_START_OK);
@@ -470,41 +451,34 @@ void transpose(short src[BLOCK_LEN][SPI_NUM], short dst[SPI_NUM][BLOCK_LEN])
 static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len)
 {
     static uint32_t frame_num = 0;
+    uint32_t cb_len = SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN;
+    short send_data[BLOCK_LEN][SPI_NUM];
+    struct UserData user_data;
 
-    /* determine current channel configuration */
-    uint8_t ch_per_spi = g_adc_chan_cfg.ch_per_spi;
-    uint8_t total_ch   = g_adc_chan_cfg.total_ch;           /* =SPI_NUM*ch_per_spi */
-    uint32_t cb_len    = (uint32_t)total_ch * ADC_DATA_LEN * BLOCK_LEN;
-
-    /* wait until a full block of samples is available */
     if (cb_size(g_cb_adc) < cb_len)
     {
-        return 0; /* nothing to send */
+        return NULL;
     }
 
     frame_num++;
 
-    struct UserData user_data;
-    user_data.data_head.nVersion       = 0x12345678;
-    user_data.data_head.nDataSource    = 0;
-    user_data.data_head.nFrameChCount  = total_ch;          /* dynamic channel count */
-    user_data.data_head.nFrameLen      = BLOCK_LEN;
+    //    ArmBackFrameHeader data_head;
+    user_data.data_head.nVersion = 0x12345678;
+    user_data.data_head.nDataSource = 0;
+    user_data.data_head.nFrameChCount = SPI_NUM;
+    user_data.data_head.nFrameLen = BLOCK_LEN;
     user_data.data_head.nTotalFrameNum = frame_num;
-    user_data.data_head.nCurNs         = dwt_get_ns();
+    user_data.data_head.nCurNs = dwt_get_ns();
 
-    /* read raw samples out of circular buffer; layout is
-       [ch0, ch1, ..., chN-1] per time step, repeated BLOCK_LEN times */
-    /* we can read directly into the send_frame array since its first
-       dimension is large enough for max channels */
-    cb_read(g_cb_adc, (char *)user_data.send_frame, cb_len);
+    //    memset(send_data, 0, sizeof(send_data));
+    //    memcpy(send_data, &data_head, sizeof(data_head));
+    cb_read(g_cb_adc, (char *)send_data, cb_len);
+    transpose(send_data, user_data.send_frame);
 
-    /* note: internal representation is already channel-major (ch,index)
-       so no need to transpose; just ensure we don't send unused rows */
-
-    uint32_t send_len = sizeof(ArmBackFrameHeader)
-                        + total_ch * BLOCK_LEN * sizeof(short);
+    uint32_t send_len = sizeof(user_data);
 
     FrameHeadInfo frame_head = create_default_frame_head(frame_num);
+
     UserDataHeadInfo user_head = create_user_data_head(DVSARM_DISPNEXT_OK,
                                                        SOURCE_TYPE_WITH_DATAS,
                                                        DESTINATION_ARM_TO_PC,
@@ -595,298 +569,16 @@ static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len)
     return PackReplyWithoutDatas(DVS_FILE_DELETE_OK);
 }
 
-// 处理PC->ARM的DVS_FILE_DOWNLOAD_STOP_OK事件
-static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len);
-
-/* ==========================================================================
- * 文件下载（eMMC -> MCU -> PC）实现
- *
- * 协议流程（ACK握手模式，保证可靠传输）：
- *   PC  --[DVS_FILE_DOWNLOAD_START    + FileDownloadStartReq  ]--> MCU
- *   MCU --[DVS_FILE_DOWNLOAD_START_OK + FileDownloadStartReply]--> PC
- *   MCU --[DVS_FILE_DOWNLOAD_DATA     + FileDownloadDataPack  ]--> PC  (第0包)
- *   PC  --[DVS_FILE_DOWNLOAD_DATA_ACK + FileDownloadDataAck   ]--> MCU (确认第0包)
- *   MCU --[DVS_FILE_DOWNLOAD_DATA     + FileDownloadDataPack  ]--> PC  (第1包)
- *   ...
- *   PC  --[DVS_FILE_DOWNLOAD_STOP     + FileDownloadStopReq   ]--> MCU (全部收完后)
- *   MCU --[DVS_FILE_DOWNLOAD_STOP_OK  + FileDownloadStopReply ]--> PC
- * ========================================================================== */
-
-#define DOWNLOAD_PACK_SIZE_DEFAULT  (4096U)   /* 默认每包字节数 */
-#define DOWNLOAD_PACK_SIZE_MAX      (8192U)   /* 最大每包字节数 */
-
-/* 下载会话状态 */
-typedef struct
-{
-    uint8_t   active;               /* 0=空闲, 1=下载中, 2=等待ACK */
-    uint32_t  session_id;
-    uint32_t  total_size;
-    uint32_t  total_packs;
-    uint32_t  pack_size;            /* 实际每包大小 */
-    uint32_t  next_pack_index;      /* 下一个要发送的包序号 */
-    uint32_t  bytes_sent;           /* 已发送字节数 */
-    FIL       fil;
-    char      file_path[256];
-} FileDownloadSession;
-
-static FileDownloadSession g_download_session = {0};
-
-/* 读文件缓冲（静态，4字节对齐，避免 IDMA 问题） */
-static uint8_t g_download_buf[DOWNLOAD_PACK_SIZE_MAX] __attribute__((aligned(4)));
-
-/* CRC32（标准多项式 0xEDB88320） */
-static uint32_t download_crc32(const uint8_t *buf, uint32_t len)
-{
-    uint32_t crc = 0xFFFFFFFF;
-    for (uint32_t i = 0; i < len; i++)
-    {
-        crc ^= buf[i];
-        for (int j = 0; j < 8; j++)
-            crc = (crc >> 1) ^ (0xEDB88320U & (-(int32_t)(crc & 1)));
-    }
-    return ~crc;
-}
-
-/* 发送带数据的帧 */
-static uint32_t download_send_with_data(uint32_t event_id,
-                                        const void *payload,
-                                        uint32_t payload_len)
-{
-    FrameHeadInfo frame_head = create_default_frame_head(0);
-    UserDataHeadInfo user_head = create_user_data_head(
-        event_id,
-        SOURCE_TYPE_WITH_DATAS,
-        DESTINATION_ARM_TO_PC,
-        payload_len);
-    uint32_t packet_len = 0;
-    pack_data((const uint8_t *)payload, payload_len,
-              &user_head, &frame_head, &packet_len);
-    return packet_len;
-}
-
-/* 发送下一个数据包（内部调用） */
-static void download_send_next_pack(void)
-{
-    if (!g_download_session.active)
-        return;
-
-    UINT br = 0;
-    FRESULT fres = f_read(&g_download_session.fil,
-                          g_download_buf,
-                          g_download_session.pack_size,
-                          &br);
-    if (fres != FR_OK || br == 0)
-    {
-        usb_printf("[Download] f_read failed: res=%d br=%u\r\n", fres, br);
-        /* 读取出错，发送 STOP */
-        FileDownloadStopReply stop_reply = {0};
-        stop_reply.session_id  = g_download_session.session_id;
-        stop_reply.result      = -1;
-        stop_reply.bytes_sent  = g_download_session.bytes_sent;
-        download_send_with_data(DVS_FILE_DOWNLOAD_STOP_OK,
-                                &stop_reply, sizeof(stop_reply));
-        f_close(&g_download_session.fil);
-        memset(&g_download_session, 0, sizeof(g_download_session));
-        return;
-    }
-
-    /* 构造数据包头部（不含柔性数组） */
-    FileDownloadDataPack pack_head;
-    pack_head.session_id    = g_download_session.session_id;
-    pack_head.pack_index    = g_download_session.next_pack_index;
-    pack_head.total_packs   = g_download_session.total_packs;
-    pack_head.pack_data_len = br;
-    pack_head.crc32         = download_crc32(g_download_buf, br);
-
-    /* 组合 pack_head + data 发送（两段发送：先头部再数据）
-     * 由于柔性数组不方便整体拷贝，这里把头和数据合并到一个临时缓冲发送 */
-    static uint8_t tx_buf[sizeof(FileDownloadDataPack) + DOWNLOAD_PACK_SIZE_MAX]
-        __attribute__((aligned(4)));
-    memcpy(tx_buf, &pack_head, sizeof(FileDownloadDataPack) - 1); /* -1 去掉data[1] */
-    memcpy(tx_buf + sizeof(FileDownloadDataPack) - 1, g_download_buf, br);
-    uint32_t tx_len = (sizeof(FileDownloadDataPack) - 1) + br;
-
-    download_send_with_data(DVS_FILE_DOWNLOAD_DATA, tx_buf, tx_len);
-
-    g_download_session.bytes_sent      += br;
-    g_download_session.active           = 2; /* 等待 ACK */
-
-    usb_printf("[Download] Pack %lu/%lu sent, bytes=%u, total_sent=%lu\r\n",
-               g_download_session.next_pack_index + 1,
-               g_download_session.total_packs,
-               br,
-               g_download_session.bytes_sent);
-}
-
-/* --------------------------------------------------------------------------
- * DVS_FILE_DOWNLOAD_START 处理：PC 发起下载请求
- * -------------------------------------------------------------------------- */
+// 处理PC->ARM的DVS_FILE_DOWNLOAD_START_OK事件
 static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len)
 {
-    FileDownloadStartReply reply = {0};
-
-    if (g_download_session.active)
-    {
-        usb_printf("[Download] Session already active\r\n");
-        reply.result = -1;
-        snprintf(reply.message, sizeof(reply.message), "Session busy");
-        return download_send_with_data(DVS_FILE_DOWNLOAD_START_OK,
-                                       &reply, sizeof(reply));
-    }
-
-    if (data_len < sizeof(FileDownloadStartReq))
-    {
-        usb_printf("[Download] START payload too short\r\n");
-        reply.result = -2;
-        snprintf(reply.message, sizeof(reply.message), "Bad request");
-        return download_send_with_data(DVS_FILE_DOWNLOAD_START_OK,
-                                       &reply, sizeof(reply));
-    }
-
-    FileDownloadStartReq *req = (FileDownloadStartReq *)data_in;
-    req->file_path[sizeof(req->file_path) - 1] = '\0';
-
-    /* 打开文件 */
-    FRESULT fres = f_open(&g_download_session.fil,
-                          req->file_path,
-                          FA_OPEN_EXISTING | FA_READ);
-    if (fres != FR_OK)
-    {
-        usb_printf("[Download] f_open failed: path=%s res=%d\r\n",
-                   req->file_path, fres);
-        reply.result = -3;
-        snprintf(reply.message, sizeof(reply.message), "Open failed(%d)", fres);
-        return download_send_with_data(DVS_FILE_DOWNLOAD_START_OK,
-                                       &reply, sizeof(reply));
-    }
-
-    uint32_t file_size  = f_size(&g_download_session.fil);
-    uint32_t pack_size  = (req->pack_size > 0 && req->pack_size <= DOWNLOAD_PACK_SIZE_MAX)
-                          ? req->pack_size : DOWNLOAD_PACK_SIZE_DEFAULT;
-    uint32_t total_packs = (file_size + pack_size - 1) / pack_size;
-    if (total_packs == 0) total_packs = 1;
-
-    /* 初始化会话 */
-    g_download_session.active          = 1;
-    g_download_session.session_id      = HAL_GetTick();
-    g_download_session.total_size      = file_size;
-    g_download_session.total_packs     = total_packs;
-    g_download_session.pack_size       = pack_size;
-    g_download_session.next_pack_index = 0;
-    g_download_session.bytes_sent      = 0;
-    strncpy(g_download_session.file_path, req->file_path,
-            sizeof(g_download_session.file_path) - 1);
-
-    usb_printf("[Download] Session %lu started: path=%s size=%lu packs=%lu\r\n",
-               g_download_session.session_id,
-               g_download_session.file_path,
-               file_size, total_packs);
-
-    /* 回复 START_OK */
-    reply.result      = 0;
-    reply.session_id  = g_download_session.session_id;
-    reply.total_size  = file_size;
-    reply.total_packs = total_packs;
-    reply.pack_size   = pack_size;
-    snprintf(reply.message, sizeof(reply.message), "Ready");
-    download_send_with_data(DVS_FILE_DOWNLOAD_START_OK, &reply, sizeof(reply));
-
-    /* 立即发送第一包 */
-    download_send_next_pack();
-
-    return 0;
+    return PackReplyWithoutDatas(DVS_FILE_DOWNLOAD_START_OK);
 }
 
-/* --------------------------------------------------------------------------
- * DVS_FILE_DOWNLOAD_DATA_ACK 处理：PC 确认收到一包，MCU 发下一包
- * -------------------------------------------------------------------------- */
-static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len)
-{
-    if (!g_download_session.active)
-    {
-        usb_printf("[Download] ACK received but no active session\r\n");
-        return 0;
-    }
-
-    if (data_len < sizeof(FileDownloadDataAck))
-    {
-        usb_printf("[Download] ACK payload too short\r\n");
-        return 0;
-    }
-
-    FileDownloadDataAck *ack = (FileDownloadDataAck *)data_in;
-
-    if (ack->session_id != g_download_session.session_id)
-    {
-        usb_printf("[Download] ACK session_id mismatch\r\n");
-        return 0;
-    }
-
-    if (ack->result != 0)
-    {
-        /* PC 要求重传：回退文件指针 */
-        usb_printf("[Download] PC requested retransmit pack %lu\r\n", ack->pack_index);
-        uint32_t seek_offset = ack->pack_index * g_download_session.pack_size;
-        f_lseek(&g_download_session.fil, seek_offset);
-        g_download_session.bytes_sent      = seek_offset;
-        g_download_session.next_pack_index = ack->pack_index;
-        g_download_session.active          = 1;
-        download_send_next_pack();
-        return 0;
-    }
-
-    /* 确认成功，推进包序号 */
-    g_download_session.next_pack_index = ack->pack_index + 1;
-    g_download_session.active          = 1;
-
-    if (g_download_session.next_pack_index >= g_download_session.total_packs)
-    {
-        /* 所有包已确认，等待 PC 发 STOP */
-        usb_printf("[Download] All packs ACKed, waiting for STOP\r\n");
-        return 0;
-    }
-
-    /* 发送下一包 */
-    download_send_next_pack();
-    return 0;
-}
-
-/* --------------------------------------------------------------------------
- * DVS_FILE_DOWNLOAD_STOP 处理：PC 通知结束（正常完成或取消）
- * -------------------------------------------------------------------------- */
+// 处理PC->ARM的DVS_FILE_DOWNLOAD_STOP_OK事件
 static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len)
 {
-    FileDownloadStopReply reply = {0};
-
-    if (!g_download_session.active)
-    {
-        reply.result = 0;
-        return download_send_with_data(DVS_FILE_DOWNLOAD_STOP_OK,
-                                       &reply, sizeof(reply));
-    }
-
-    reply.session_id  = g_download_session.session_id;
-    reply.bytes_sent  = g_download_session.bytes_sent;
-    reply.result      = 0;
-
-    uint8_t do_abort = 0;
-    if (data_len >= sizeof(FileDownloadStopReq))
-    {
-        FileDownloadStopReq *req = (FileDownloadStopReq *)data_in;
-        do_abort = req->abort;
-    }
-
-    f_close(&g_download_session.fil);
-
-    usb_printf("[Download] Session %lu %s: sent=%lu bytes\r\n",
-               g_download_session.session_id,
-               do_abort ? "aborted" : "done",
-               g_download_session.bytes_sent);
-
-    memset(&g_download_session, 0, sizeof(g_download_session));
-
-    return download_send_with_data(DVS_FILE_DOWNLOAD_STOP_OK,
-                                   &reply, sizeof(reply));
+    return PackReplyWithoutDatas(DVS_FILE_DOWNLOAD_STOP_OK);
 }
 
 uint64_t heart_recv_time = 0;

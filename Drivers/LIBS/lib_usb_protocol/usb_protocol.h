@@ -209,11 +209,8 @@ enum EventsId
     DVS_FILE_DOWNLOAD_PAUSE_OK          = (EVTSEG_FILE + 38),     // 0x26：
     DVS_FILE_DOWNLOAD_CONTINUE          = (EVTSEG_FILE + 39),     // 0x27：
     DVS_FILE_DOWNLOAD_CONTINUE_OK       = (EVTSEG_FILE + 40),     // 0x28：
-    DVS_FILE_DOWNLOAD_STOP              = (EVTSEG_FILE + 41),     // 0x29：PC->MCU 终止文件下载
-    DVS_FILE_DOWNLOAD_STOP_OK           = (EVTSEG_FILE + 42),     // 0x2a：MCU->PC
-
-    DVS_FILE_DOWNLOAD_DATA              = (EVTSEG_FILE + 43),     // 0x2b：MCU->PC 下载数据分包
-    DVS_FILE_DOWNLOAD_DATA_ACK          = (EVTSEG_FILE + 44),     // 0x2c：PC->MCU 数据包确认/要求重传
+    DVS_FILE_DOWNLOAD_STOP              = (EVTSEG_FILE + 41),     // 0x29：终止文件下载
+    DVS_FILE_DOWNLOAD_STOP_OK           = (EVTSEG_FILE + 42),     // 0x2a：
 
     ARM_EVTSEG_INIT                     = 0x10000,
     ARM_EVTSEG_RUN                      = 0x20000,
@@ -735,62 +732,6 @@ typedef struct SendRecordPack_t
     SendRecordPackHead head;
     uint8_t data[1024];
 } SendRecordPack;
-
-/* -----------------------------------------------------------------------
- * 文件下载（eMMC -> MCU -> PC）控制结构体
- * ----------------------------------------------------------------------- */
-
-/* DVS_FILE_DOWNLOAD_START 载荷：PC->MCU，指定要下载的文件 */
-typedef struct
-{
-    char     file_path[256];        // 文件路径，如 "0:/data/record.rec"
-    uint32_t pack_size;             // 期望每包大小（字节），0 表示使用默认值 4096
-} FileDownloadStartReq;
-
-/* DVS_FILE_DOWNLOAD_START_OK 载荷：MCU->PC，告知文件信息 */
-typedef struct
-{
-    int32_t  result;                // 0=OK，负数=错误码
-    uint32_t session_id;            // 本次下载会话ID
-    uint32_t total_size;            // 文件总字节数
-    uint32_t total_packs;           // 总包数
-    uint32_t pack_size;             // 实际每包大小
-    char     message[64];           // 可读描述
-} FileDownloadStartReply;
-
-/* DVS_FILE_DOWNLOAD_DATA（MCU->PC）：一个数据分包 */
-typedef struct
-{
-    uint32_t session_id;            // 会话ID
-    uint32_t pack_index;            // 当前包序号（从 0 开始）
-    uint32_t total_packs;           // 总包数（方便PC端显示进度）
-    uint32_t pack_data_len;         // 本包有效数据字节数
-    uint32_t crc32;                 // 本包数据的 CRC32 校验值
-    uint8_t  data[1];               // 柔性数组（实际大小为 pack_data_len）
-} FileDownloadDataPack;
-
-/* DVS_FILE_DOWNLOAD_DATA_ACK（PC->MCU）：PC 收到一包后的确认 */
-typedef struct
-{
-    uint32_t session_id;
-    uint32_t pack_index;            // 已确认收到的包序号
-    int32_t  result;                // 0=OK，负数=要求重传
-} FileDownloadDataAck;
-
-/* DVS_FILE_DOWNLOAD_STOP 载荷：PC->MCU（或超时后MCU主动结束） */
-typedef struct
-{
-    uint32_t session_id;
-    uint8_t  abort;                 // 0=正常完成，1=取消
-} FileDownloadStopReq;
-
-/* DVS_FILE_DOWNLOAD_STOP_OK 载荷：MCU->PC */
-typedef struct
-{
-    uint32_t session_id;
-    int32_t  result;
-    uint32_t bytes_sent;            // 实际已发送字节数
-} FileDownloadStopReply;
 
 #pragma pack(pop)
 /**********************************************
