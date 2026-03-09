@@ -16,6 +16,7 @@
 #include "usb_processor.h"
 #include "collector_processor.h"
 #include "./FATFS/exfuns/fattester.h"
+#include "offline_processor.h"
 
 /*********************************************************************************/
 // typedef struct
@@ -491,6 +492,13 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len)
 // 处理PC->ARM的DVSARM_DISPNEXT_OK事件，循环发送数据
 void USB_Display_All(uint32_t run_flag)
 {
+    // 互斥处理：离线记录时不能发送
+    if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
+    {
+        // 正在记录，禁止发送
+        return;
+    }
+    
     if (run_flag)
     {
         USB_Display_Reply(NULL, 0);
