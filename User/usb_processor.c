@@ -272,10 +272,10 @@ static uint32_t USB_DetectPeriod(void)
 // 处理PC->ARM的DVS_INIT_CONNECT事件
 static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
-    (void)data_in;      // 未使用用户数据
-    (void)data_len;     // 未使用用户数据长度
-    (void)frame_head;   // 未使用帧头
-    (void)user_head;    // 未使用用户头
+    (void)data_in;    // 未使用用户数据
+    (void)data_len;   // 未使用用户数据长度
+    (void)frame_head; // 未使用帧头
+    (void)user_head;  // 未使用用户头
 
     g_IdaSystemStatus.st_dev_link.link_status = USB_CONNECTED;
 
@@ -528,9 +528,9 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     FrameHeadInfo reply_frame_head = create_default_frame_head(frame_num);
 
     UserDataHeadInfo reply_user_head = create_user_data_head(DVSARM_DISPNEXT_OK,
-                                                       SOURCE_TYPE_WITH_DATAS,
-                                                       DESTINATION_ARM_TO_PC,
-                                                       send_len);
+                                                             SOURCE_TYPE_WITH_DATAS,
+                                                             DESTINATION_ARM_TO_PC,
+                                                             send_len);
     uint32_t packet_len = 0;
     pack_data((uint8_t *)&user_data, send_len, &reply_user_head, &reply_frame_head, &packet_len);
 
@@ -571,9 +571,9 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
         // 返回错误回复
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
-                                                           SOURCE_TYPE_NO_DATA,
-                                                           DESTINATION_ARM_TO_PC,
-                                                           0);
+                                                                 SOURCE_TYPE_NO_DATA,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 0);
         uint32_t packet_len = 0;
         pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
         return packet_len;
@@ -659,9 +659,9 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
 
     UserDataHeadInfo reply_user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
-                                                       SOURCE_TYPE_WITH_DATAS,
-                                                       DESTINATION_ARM_TO_PC,
-                                                       send_len);
+                                                             SOURCE_TYPE_WITH_DATAS,
+                                                             DESTINATION_ARM_TO_PC,
+                                                             send_len);
 
     uint32_t packet_len = 0;
     pack_data((uint8_t *)user_data, send_len, &reply_user_head, &reply_frame_head, &packet_len);
@@ -707,7 +707,7 @@ static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len, FrameHeadInf
         ret = -2;
         goto send_reply;
     }
-    
+
     // 检查路径格式（至少包含 'X:' 盘符）
     if (strlen(file_path) < 2 || file_path[1] != ':')
     {
@@ -900,14 +900,14 @@ static void download_send_next_pack(void)
     /* 使用 SendRecordPackHead_t 作为数据包头 */
     SendRecordPackHead pack_head;
     pack_head.totalPackNum = g_download_session.total_packs;
-    pack_head.currentPackIdx = g_download_session.next_pack_index + 1;  /* 从1开始计数 */
+    pack_head.currentPackIdx = g_download_session.next_pack_index + 1; /* 从1开始计数 */
     pack_head.currentPackAddr = g_download_session.bytes_sent;
     pack_head.packSize = br;
     pack_head.crc32 = download_crc32(g_download_buf, br);
     pack_head.reserved = 0;
 
     /* 组合 pack_head + data 发送 */
-    static uint8_t tx_buf[sizeof(SendRecordPackHead) + DOWNLOAD_PACK_SIZE_MAX]
+    uint8_t tx_buf[sizeof(SendRecordPackHead) + DOWNLOAD_PACK_SIZE_MAX]
         __attribute__((aligned(4)));
     memcpy(tx_buf, &pack_head, sizeof(SendRecordPackHead));
     memcpy(tx_buf + sizeof(SendRecordPackHead), g_download_buf, br);
@@ -931,6 +931,11 @@ static void download_send_next_pack(void)
 static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
     (void)frame_head;
+
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = {0};
+
+    uint32_t packet_len = 0;
 
     int32_t ret = 0;
     char file_path[256] = {0};
@@ -967,7 +972,7 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, Frame
     }
 
     uint32_t file_size = f_size(&g_download_session.fil);
-    uint32_t pack_size = DOWNLOAD_PACK_SIZE_DEFAULT;  /* 使用默认包大小 */
+    uint32_t pack_size = DOWNLOAD_PACK_SIZE_DEFAULT; /* 使用默认包大小 */
     uint32_t total_packs = (file_size + pack_size - 1) / pack_size;
     if (total_packs == 0)
         total_packs = 1;
@@ -987,25 +992,38 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, Frame
                g_download_session.file_path,
                file_size, total_packs);
 
-    ret = 0;  /* 成功 */
-    /* 立即发送第一包 */
-    download_send_next_pack();
+    ret = 0; /* 成功 */
 
-send_start_reply:
-    ;
     /* 回复 START_OK，通过 nParameters0 报告结果 */
-    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
-    UserDataHeadInfo reply_user_head = {0};
+
     reply_user_head.nIsValidFlag = 0x12345678;
     reply_user_head.nEventID = DVS_FILE_DOWNLOAD_START_OK;
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
     reply_user_head.nNanoSecond = dwt_get_ns();
-    reply_user_head.nParameters0 = ret;  /* 0=成功, 负数=错误码 */
+    reply_user_head.nParameters0 = ret; /* 0=成功, 负数=错误码 */
 
-    uint32_t packet_len = 0;
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+
+    /* 立即发送第一包 */
+    download_send_next_pack();
+
+    return packet_len;
+
+send_start_reply:;
+    /* 回复 START_OK，通过 nParameters0 报告结果 */
+
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_FILE_DOWNLOAD_START_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nParameters0 = ret; /* 0=成功, 负数=错误码 */
+
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+
     return packet_len;
 }
 
@@ -1015,6 +1033,8 @@ send_start_reply:
  * -------------------------------------------------------------------------- */
 static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
+    usb_printf("[Download] USB_DownloadFileDataAck ====================== \r\n");
+
     (void)frame_head;
     (void)user_head;
 
@@ -1024,32 +1044,32 @@ static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, Fra
         return 0;
     }
 
-    /* 解析ACK：pack_index(4字节) + result(4字节) */
-    if (data_len < 8)
-    {
-        usb_printf("[Download] ACK payload too short\r\n");
-        return 0;
-    }
+    // /* 解析ACK：pack_index(4字节) + result(4字节) */
+    // if (data_len < 8)
+    // {
+    //     usb_printf("[Download] ACK payload too short\r\n");
+    //     return 0;
+    // }
 
-    uint32_t pack_index = *(uint32_t *)data_in;
-    int32_t result = *(int32_t *)(data_in + 4);
+    // uint32_t pack_index = *(uint32_t *)data_in;
+    // int32_t result = *(int32_t *)(data_in + 4);
 
-    if (result != 0)
-    {
-        /* PC 要求重传：回退文件指针 */
-        usb_printf("[Download] PC requested retransmit pack %lu\r\n", pack_index);
-        uint32_t seek_offset = (pack_index - 1) * g_download_session.pack_size;  /* pack_index从1开始 */
-        f_lseek(&g_download_session.fil, seek_offset);
-        g_download_session.bytes_sent = seek_offset;
-        g_download_session.next_pack_index = pack_index - 1;
-        g_download_session.active = 1;
-        download_send_next_pack();
-        return 0;
-    }
+    // if (result != 0)
+    // {
+    //     /* PC 要求重传：回退文件指针 */
+    //     usb_printf("[Download] PC requested retransmit pack %lu\r\n", pack_index);
+    //     uint32_t seek_offset = (pack_index - 1) * g_download_session.pack_size; /* pack_index从1开始 */
+    //     f_lseek(&g_download_session.fil, seek_offset);
+    //     g_download_session.bytes_sent = seek_offset;
+    //     g_download_session.next_pack_index = pack_index - 1;
+    //     g_download_session.active = 1;
+    //     download_send_next_pack();
+    //     return 0;
+    // }
 
-    /* 确认成功，推进包序号 */
-    g_download_session.next_pack_index = pack_index;
-    g_download_session.active = 1;
+    // /* 确认成功，推进包序号 */
+    // g_download_session.next_pack_index = pack_index;
+    // g_download_session.active = 1;
 
     if (g_download_session.next_pack_index >= g_download_session.total_packs)
     {
@@ -1081,7 +1101,7 @@ static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameH
         usb_printf("[Download] Session closed: sent=%lu bytes\r\n",
                    g_download_session.bytes_sent);
         memset(&g_download_session, 0, sizeof(g_download_session));
-        ret = 0;  /* 成功 */
+        ret = 0; /* 成功 */
     }
     else
     {
@@ -1098,7 +1118,7 @@ static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameH
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
     reply_user_head.nNanoSecond = dwt_get_ns();
-    reply_user_head.nParameters0 = ret;  /* 0=成功, 负数=错误码 */
+    reply_user_head.nParameters0 = ret; /* 0=成功, 负数=错误码 */
 
     uint32_t packet_len = 0;
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
@@ -1110,7 +1130,7 @@ uint64_t heart_recv_time = 0;
 void on_frame(const uint8_t *frame, uint32_t frame_len)
 {
 
-    // usb_printf("on_frame: %d\n", frame_len);
+    usb_printf("on_frame: %d\n", frame_len);
 
     // 解包
     uint8_t *unpacked_data = NULL;
@@ -1133,17 +1153,13 @@ void on_frame(const uint8_t *frame, uint32_t frame_len)
                 reply_len = protocol_getdata[i].usb_process_handle(unpacked_data, unpacked_data_len, &unpacked_frame_head, &unpacked_head);
             }
         }
-
-        //        if (unpacked_data) {
-        //            printf("User data: %s\n", unpacked_data);
-        //            free_unpacked_user_data(unpacked_data);
-        //        }
     }
     else
     {
-        printf("Unpack failed with error code: %d\n", result);
+        usb_printf("Unpack failed with error code: %d\n", result);
     }
 }
+
 // 处理ARM->PC的事件
 void IdaProcessor(void)
 {
