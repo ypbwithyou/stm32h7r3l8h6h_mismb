@@ -12,7 +12,7 @@
 #include "./LIBS/lib_base_calculation/calculate_check.h"
 #include "./LIBS/lib_file_utils/file_utils.h"
 #include "./LIBS/lib_ini_fatfs/ini_fatfs.h"
-
+#include "./MALLOC/malloc.h"
 #include "usb_processor.h"
 #include "collector_processor.h"
 #include "./FATFS/exfuns/fattester.h"
@@ -509,43 +509,79 @@ void USB_Display_All(uint32_t run_flag)
 // 处理PC->ARM的DVS_FILE_GET_FILELIST_OK事件
 static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
 {
-    uint8_t user_data[2048];
+#define FILELIST_BUFFER_SIZE (2048)
+
+    // 使用动态内存分配
+    uint8_t *user_data = (uint8_t *)mymalloc(SRAMEX, FILELIST_BUFFER_SIZE);
+    if (user_data == NULL)
+    {
+        usb_printf("USB_GetFilelist: Memory allocation failed\n");
+        return 0;
+    }
+
     uint32_t send_len = 0;
 
+    // 初始化缓冲区
+    memset(user_data, 0, FILELIST_BUFFER_SIZE);
+
     /* todo : get_file_list_by_extension*/
-    FileList_t file_list;
+    FileList_t file_list = {0};
     int8_t ret;
     char date_time_buf[20];
 
     // 获取0:/data目录下的.txt文件列表，最多10个
-    ret = get_file_list_by_extension("0:/data", ".txt", &file_list, 10);
+    ret = get_file_list_by_extension("0:/RecordDataFiles", ".txt", &file_list, 10);
 
-    if (ret == 0)
+    if (ret == 0 && file_list.count > 0)
     {
-        printf("Found %d files:\n", file_list.count);
+        usb_printf("Found %d files:\n", file_list.count);
 
         for (uint32_t i = 0; i < file_list.count; i++)
         {
+            // 检查缓冲区是否足够
+            uint32_t used_len = strlen((const char *)user_data);
+            uint32_t remaining = FILELIST_BUFFER_SIZE - used_len - 1;
+
+            // 估算需要空间（路径+分隔符+数字+日期+分隔符）
+            uint32_t needed = strlen(file_list.files[i].path) + strlen(date_time_buf) + 50;
+
+            if (remaining < needed)
+            {
+                usb_printf("Buffer exhausted at file %u\n", i);
+                break;
+            }
+
             // 格式化日期时间
             format_date_time(file_list.files[i].create_date,
                              file_list.files[i].create_time,
                              date_time_buf, sizeof(date_time_buf));
 
             // 打印文件信息
-            printf("File %d:\n", i + 1);
-            printf("  Path: %s\n", file_list.files[i].path);
-            printf("  Size: %u bytes\n", file_list.files[i].size);
-            printf("  Created: %s\n", date_time_buf);
-            printf("\n");
+            usb_printf("File %d:\n", i + 1);
+            usb_printf("  Path: %s\n", file_list.files[i].path);
+            usb_printf("  Size: %u bytes\n", file_list.files[i].size);
+            usb_printf("  Created: %s\n", date_time_buf);
+            usb_printf("\n");
 
-            strcat((char *)user_data, file_list.files[i].path);
-            strcat((char *)user_data, ",");
-            char str[8];
-            sprintf(str, "%u", file_list.files[i].size);
-            strcat((char *)user_data, str);
-            strcat((char *)user_data, ",");
-            strcat((char *)user_data, date_time_buf);
-            strcat((char *)user_data, "|");
+            // 使用安全的字符串操作
+            strncat((char *)user_data, file_list.files[i].path, remaining);
+            remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
+
+            strncat((char *)user_data, ",", remaining);
+            remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
+
+            char str[16];
+            snprintf(str, sizeof(str), "%u", file_list.files[i].size);
+            strncat((char *)user_data, str, remaining);
+            remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
+
+            strncat((char *)user_data, ",", remaining);
+            remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
+
+            strncat((char *)user_data, date_time_buf, remaining);
+            remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
+
+            strncat((char *)user_data, "|", remaining);
         }
 
         // 释放文件列表
@@ -553,30 +589,156 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len)
     }
     else
     {
-        printf("Failed to get file list: %d\n", ret);
+        usb_printf("Failed to get file list: ret=%d, count=%d\n", ret,
+                   (ret == 0 ? file_list.count : 0));
+        snprintf((char *)user_data, FILELIST_BUFFER_SIZE, "ERROR:GetListFailed");
     }
 
     send_len = strlen((const char *)user_data);
 
-    // 鍒涘缓涓€涓抚澶?
     FrameHeadInfo frame_head = create_default_frame_head(0);
-    // 鍒涘缓涓€涓敤鎴锋暟鎹ご
+
     UserDataHeadInfo user_head = create_user_data_head(DVS_FILE_GET_FILELIST_OK,
                                                        SOURCE_TYPE_WITH_DATAS,
                                                        DESTINATION_ARM_TO_PC,
                                                        send_len);
 
     uint32_t packet_len = 0;
-    pack_data((uint8_t *)&user_data, send_len, &user_head, &frame_head, &packet_len);
+    pack_data((uint8_t *)user_data, send_len, &user_head, &frame_head, &packet_len);
+
+    // 释放动态分配的内存
+    myfree(SRAMEX, user_data);
+
+#undef FILELIST_BUFFER_SIZE
 
     return packet_len;
 }
+
 // 处理PC->ARM的DVS_FILE_DELETE_OK事件
 static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len)
 {
-    /*todo : 删除文件*/
+    int32_t ret = RET_OK;
+    FRESULT fres = FR_OK;
+    FILINFO finfo = {0};
+    char file_path[256] = {0};
+    uint64_t op_time_start = 0;
+    FrameHeadInfo frame_head;
+    UserDataHeadInfo user_head;
+    uint32_t packet_len = 0;
 
-    return PackReplyWithoutDatas(DVS_FILE_DELETE_OK);
+    // 参数验证
+    if (data_in == NULL || data_len == 0 || data_len > 255)
+    {
+        usb_printf("[DeleteFile] ERROR: Invalid input (data_len=%u)\r\n", data_len);
+        ret = -1;
+        goto send_reply;
+    }
+
+    // 文件路径处理（确保以null终止）
+    memcpy(file_path, data_in, data_len);
+    file_path[data_len] = '\0';
+
+    // 检查文件路径是否合法（防止路径遍历攻击）
+    if (strlen(file_path) == 0 || file_path[0] != '0' || file_path[1] != ':')
+    {
+        usb_printf("[DeleteFile] ERROR: Invalid/empty path (path=%s)\r\n", file_path);
+        ret = -2;
+        goto send_reply;
+    }
+
+    // 防止删除受保护的关键文件
+    if (strstr(file_path, "DeviceInfo.ini") != NULL ||
+        strstr(file_path, "OfflineCfgSchedule.txt") != NULL)
+    {
+        usb_printf("[DeleteFile] ERROR: Protected file (path=%s)\r\n", file_path);
+        ret = -7;
+        goto send_reply;
+    }
+
+    op_time_start = dwt_get_ns();
+    usb_printf("[DeleteFile] START: path=%s\r\n", file_path);
+
+    // 验证文件存在（删除前检查）
+    fres = f_stat(file_path, &finfo);
+    if (fres != FR_OK)
+    {
+        if (fres == FR_NO_FILE)
+        {
+            usb_printf("[DeleteFile] WARNING: File not found (path=%s)\r\n", file_path);
+            ret = -3; // 文件不存在
+        }
+        else if (fres == FR_INVALID_NAME)
+        {
+            usb_printf("[DeleteFile] ERROR: Invalid path format (path=%s, code=%d)\r\n", file_path, fres);
+            ret = -4; // 路径无效
+        }
+        else
+        {
+            usb_printf("[DeleteFile] ERROR: Stat failed (path=%s, code=%d)\r\n", file_path, fres);
+            ret = -6;
+        }
+        goto send_reply;
+    }
+
+    // 防止删除目录
+    if (finfo.fattrib & AM_DIR)
+    {
+        usb_printf("[DeleteFile] ERROR: Cannot delete directory (path=%s)\r\n", file_path);
+        ret = -8;
+        goto send_reply;
+    }
+
+    uint32_t file_size = finfo.fsize;
+    usb_printf("[DeleteFile] File info: size=%u bytes\r\n", file_size);
+
+    // 调用FATFS删除文件
+    fres = f_unlink(file_path);
+
+    if (fres == FR_OK)
+    {
+        // 验证删除结果（二次确认文件已不存在）
+        memset(&finfo, 0, sizeof(finfo));
+        FRESULT verify_res = f_stat(file_path, &finfo);
+
+        if (verify_res == FR_NO_FILE)
+        {
+            uint64_t op_time_end = dwt_get_ns();
+            usb_printf("[DeleteFile] SUCCESS: File deleted (path=%s, size=%u bytes, time=%llu ns)\r\n",
+                       file_path, file_size, op_time_end - op_time_start);
+            ret = RET_OK;
+        }
+        else
+        {
+            usb_printf("[DeleteFile] ERROR: Delete verification failed (path=%s, verify_code=%d)\r\n",
+                       file_path, verify_res);
+            ret = -9; // 删除验证失败
+        }
+    }
+    else if (fres == FR_DENIED)
+    {
+        usb_printf("[DeleteFile] ERROR: Access denied (path=%s, code=%d)\r\n", file_path, fres);
+        ret = -5; // 拒绝访问
+    }
+    else
+    {
+        usb_printf("[DeleteFile] ERROR: Operation failed (path=%s, code=%d)\r\n", file_path, fres);
+        ret = -6; // 其他错误
+    }
+
+send_reply:
+    // 构建回复包
+    frame_head = create_default_frame_head(0);
+    memset(&user_head, 0, sizeof(user_head));
+    user_head.nIsValidFlag = 0x12345678;
+    user_head.nEventID = DVS_FILE_DELETE_OK;
+    user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    user_head.nDataLength = 0;
+    user_head.nNanoSecond = dwt_get_ns();
+    user_head.nParameters0 = ret; // 删除结果：0=成功, <0=错误码
+
+    pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+    return packet_len;
 }
 
 /* ==========================================================================
