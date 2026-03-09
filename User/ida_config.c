@@ -264,6 +264,7 @@ int8_t IdaDeviceInit(void)
     }
 
     /* mount eMMC */
+    // format_emmc();
     res = safe_f_mount(fs[0], "0:", 1, 2);
     if (res == FR_NO_FILESYSTEM)
     {
@@ -1054,7 +1055,7 @@ int8_t app_processor(void)
         //           offline_processor(g_IdaSystemStatus.st_dev_offline.start_flag);
         //       }
 
-        // offline_processor(1);
+        offline_processor(1);
 
         // USB通信数据处理
         // USB_CDC_Receive_From_Queue(usb_rx_buf, &data_len);
@@ -1071,7 +1072,7 @@ int8_t app_processor(void)
             g_slidingWindow_receiver.frame_flag = 0;
         }
 
-        USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag);
+        // USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag );
 
         IdaProcessor();
     }
