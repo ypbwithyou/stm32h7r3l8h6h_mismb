@@ -30,6 +30,7 @@ typedef struct
 
     uint32_t frame_len_current;
     uint8_t frame_flag;
+    uint32_t frame_start_pos; // ← 新增
 
     SWR_FrameCallback on_frame;
     void *user_ctx;

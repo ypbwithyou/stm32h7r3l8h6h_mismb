@@ -907,8 +907,10 @@ static void download_send_next_pack(void)
     pack_head.reserved = 0;
 
     /* 组合 pack_head + data 发送 */
-    uint8_t tx_buf[sizeof(SendRecordPackHead) + DOWNLOAD_PACK_SIZE_MAX]
+    // download_send_next_pack() 中，将栈变量改为静态或使用 g_download_buf 分段发送
+    static uint8_t tx_buf[sizeof(SendRecordPackHead) + DOWNLOAD_PACK_SIZE_MAX]
         __attribute__((aligned(4)));
+
     memcpy(tx_buf, &pack_head, sizeof(SendRecordPackHead));
     memcpy(tx_buf + sizeof(SendRecordPackHead), g_download_buf, br);
     uint32_t tx_len = sizeof(SendRecordPackHead) + br;
@@ -1032,16 +1034,14 @@ send_start_reply:;
  * -------------------------------------------------------------------------- */
 static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
-    usb_printf("[Download] USB_DownloadFileDataAck ======================> \r\n");
-
     (void)frame_head;
     (void)user_head;
 
-    // if (!g_download_session.active)
-    // {
-    //     usb_printf("[Download] ACK received but no active session\r\n");
-    //     return 0;
-    // }
+    if (!g_download_session.active)
+    {
+        usb_printf("[Download] ACK received but no active session\r\n");
+        return 0;
+    }
 
     // /* 解析ACK：pack_index(4字节) + result(4字节) */
     // if (data_len < 8)
@@ -1126,36 +1126,54 @@ static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameH
 
 uint64_t heart_recv_time = 0;
 // 处理PC->ARM的事件
-void on_frame(const uint8_t *frame, uint32_t frame_len)
+void on_frame(uint8_t *data, uint32_t len)
 {
 
-    usb_printf("on_frame: %d\n", frame_len);
+    // // 解包
+    // uint8_t *unpacked_data = NULL;
+    // UserDataHeadInfo unpacked_head;
+    // FrameHeadInfo unpacked_frame_head;
+    // uint32_t unpacked_data_len = 0;
 
-    // 解包
-    uint8_t *unpacked_data = NULL;
-    UserDataHeadInfo unpacked_head;
-    FrameHeadInfo unpacked_frame_head;
-    uint32_t unpacked_data_len = 0;
+    // int result = unpack_data(frame, frame_len, &unpacked_data,
+    //                          &unpacked_head, &unpacked_frame_head,
+    //                          &unpacked_data_len);
 
-    int result = unpack_data(frame, frame_len, &unpacked_data,
-                             &unpacked_head, &unpacked_frame_head,
-                             &unpacked_data_len);
+    uint8_t *ptr = data;
 
-    if (result == 0)
+    // ----------------FrameHeadInfo------------------
+
+    FrameHeadInfo *frameHeadInfo = (FrameHeadInfo *)ptr;
+
+    ptr += sizeof(FrameHeadInfo);
+
+    // ----------------FrameLen------------------
+
+    uint32_t *frameLen = (uint32_t *)ptr;
+
+    ptr += sizeof(uint32_t);
+
+    // ----------------UserDataHeadInfo------------------
+
+    UserDataHeadInfo *userDataHeadInfo = (UserDataHeadInfo *)ptr;
+
+    ptr += sizeof(UserDataHeadInfo);
+
+    // -----------------Data------------------
+
+    uint8_t *userData = ptr;
+
+    // -----------------------------------
+
+    // usb_printf("---------------------on_frame: %d %d \n", len, userDataHeadInfo->nDataLength);
+
+    heart_recv_time = dwt_get_us();
+    for (uint8_t i = 0; i < sizeof(protocol_getdata) / sizeof(protocol_getdata[0]); i++)
     {
-        heart_recv_time = dwt_get_us();
-        for (uint8_t i = 0; i < sizeof(protocol_getdata) / sizeof(protocol_getdata[0]); i++)
+        if (userDataHeadInfo->nEventID == protocol_getdata[i].usb_frame_tag)
         {
-            if (unpacked_head.nEventID == protocol_getdata[i].usb_frame_tag)
-            {
-                uint32_t reply_len = 0;
-                reply_len = protocol_getdata[i].usb_process_handle(unpacked_data, unpacked_data_len, &unpacked_frame_head, &unpacked_head);
-            }
+            protocol_getdata[i].usb_process_handle(userData, userDataHeadInfo->nDataLength, frameHeadInfo, userDataHeadInfo);
         }
-    }
-    else
-    {
-        usb_printf("Unpack failed with error code: %d\n", result);
     }
 }
 

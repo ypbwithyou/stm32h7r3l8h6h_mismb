@@ -40,7 +40,6 @@ void SWR_ProcessBytes(
     const uint8_t *data,
     uint32_t len)
 {
-    // usb_printf("frame_flag:%d \n", r->frame_flag);
     if (r->frame_flag == 1)
     {
         return;
@@ -58,12 +57,17 @@ void SWR_ProcessBytes(
             memmove(r->buffer, r->buffer + r->read_pos, remain);
             r->write_pos = remain;
             r->read_pos = 0;
+            /* frame_start_pos 同步修正 */
+            if (r->frame_start_pos >= r->read_pos)   // ← 新增
+                r->frame_start_pos -= r->read_pos;    // ← 新增
+            else
+                r->frame_start_pos = 0;               // ← 新增
         }
         else
         {
-            /* 极端异常：直接丢弃 */
             r->write_pos = 0;
             r->read_pos = 0;
+            r->frame_start_pos = 0;                   // ← 新增
         }
     }
 
@@ -75,20 +79,14 @@ void SWR_ProcessBytes(
     {
         uint8_t *p = r->buffer + r->read_pos;
 
-        /* 1. Header */
         if (read_u32_be(p) != SWR_HEADER)
         {
             r->read_pos += 1;
             continue;
         }
 
-        // usb_printf("Header:%08x \n", read_u32_be(p));
-
-        /* 2. Length（小端） */
         uint32_t payload_len = read_u32_le(p + 20);
         uint32_t frame_len = SWR_FIXED_SIZE + payload_len;
-
-        // usb_printf("payload_len:%d \n", payload_len);
 
         if (frame_len > SWR_BUFFER_SIZE)
         {
@@ -101,20 +99,15 @@ void SWR_ProcessBytes(
             break;
         }
 
-        // usb_printf("Tail:%08x \n", read_u32_be(p + frame_len - 4));
-
-        /* 3. Tail */
         if (read_u32_be(p + frame_len - 4) != SWR_TAIL)
         {
             r->read_pos += 4;
             continue;
         }
 
-        /* 4. 回调（任务上下文，安全） */
-
+        r->frame_start_pos = r->read_pos;
         r->frame_len_current = frame_len;
         r->frame_flag = 1;
-        // usb_printf(" r->frame_flag = 1: %d\n", frame_len);
         r->read_pos += frame_len;
     }
 
@@ -123,5 +116,7 @@ void SWR_ProcessBytes(
     {
         r->read_pos = 0;
         r->write_pos = 0;
+        r->frame_start_pos = 0;                       // ← 新增
     }
 }
+
