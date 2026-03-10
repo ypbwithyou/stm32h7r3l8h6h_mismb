@@ -24,7 +24,7 @@ uint8_t *pack_data(
         return NULL;
     }
 
-    uint8_t *packet = (uint8_t *)mymalloc(SRAMEX, 2 * 1024 * 1024);
+    uint8_t *packet = (uint8_t *)mymalloc(SRAM12, 8 * 1024);
 
     // 计算用户数据部分总长度（用户数据头 + 实际用户数据）
     uint32_t user_part_len = sizeof(UserDataHeadInfo) + user_data_len;

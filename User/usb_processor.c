@@ -995,7 +995,6 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, Frame
     ret = 0; /* 成功 */
 
     /* 回复 START_OK，通过 nParameters0 报告结果 */
-
     reply_user_head.nIsValidFlag = 0x12345678;
     reply_user_head.nEventID = DVS_FILE_DOWNLOAD_START_OK;
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
@@ -1033,16 +1032,16 @@ send_start_reply:;
  * -------------------------------------------------------------------------- */
 static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
-    usb_printf("[Download] USB_DownloadFileDataAck ====================== \r\n");
+    usb_printf("[Download] USB_DownloadFileDataAck ======================> \r\n");
 
     (void)frame_head;
     (void)user_head;
 
-    if (!g_download_session.active)
-    {
-        usb_printf("[Download] ACK received but no active session\r\n");
-        return 0;
-    }
+    // if (!g_download_session.active)
+    // {
+    //     usb_printf("[Download] ACK received but no active session\r\n");
+    //     return 0;
+    // }
 
     // /* 解析ACK：pack_index(4字节) + result(4字节) */
     // if (data_len < 8)
@@ -1068,8 +1067,8 @@ static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, Fra
     // }
 
     // /* 确认成功，推进包序号 */
-    // g_download_session.next_pack_index = pack_index;
-    // g_download_session.active = 1;
+    g_download_session.next_pack_index++;
+    g_download_session.active = 1;
 
     if (g_download_session.next_pack_index >= g_download_session.total_packs)
     {
