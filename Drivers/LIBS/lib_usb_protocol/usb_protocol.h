@@ -386,7 +386,7 @@ typedef struct tagChannelTableElem
 
     int32_t  nReserved4;
     float    fRealSampleRate;       // 真实的采样率，FPGA不支持则DSP降采，即界面显示的采样率
-    float    fReserved5;
+    float    fChRangeTransFactor;   // 通道量程转换系数，用于记录文件 通道记录原始
 
     /* nGroupID不同，则nVar定义不同*/
     int32_t    nVar1;               // 应力应变：bit15--bit0 --> 桥路类型索引nBridgeType（1-8），bit31--bit16 --> 分流校准类型（0--10）;
@@ -526,21 +526,57 @@ typedef struct ArmBackFrameHeader
     int nReserve[8];
 } ArmBackFrameHeader;
 
+// 原始数据类型
+enum   SourceDataType  
+{
+	Float32 = 0, // 32位浮点数
+	Double64 = 1, // 64位浮点数
+	UInt8 = 10, // 8位无符号整数
+	UInt16, // 16位无符号整数
+	UInt24, // 24位无符号整数
+	UInt32, // 32位无符号整数
+	UInt64, // 64位无符号整数
+	Int8 = 20, // 8位有符号整数
+	Int16, // 16位有符号整数
+	Int24, // 24位有符号整数
+	Int32, // 32位有符号整数
+	Int64, // 64位有符号整数
+};
 
 // 文件记录：文件头信息
 typedef struct tagRecordHeader
 {   
-    int         nVersion;       // 版本号
-    int         nReserved0; 
-    char        Name[STR_32];   // 文件名
-    long long   nCreateTime;    // 文件创建时间
-    uint32_t    nDeviceChNum;   // 设备通道数量
-    uint32_t    nRecordNum;     // 记录通道数量
-    uint32_t    nFrameNum;      // 记录数据帧数量
-    uint32_t    nRecordMask;    // 记录通道标识：
-                                    // bit-x: channel x record enable
-    int         nReserved[STR_128];
-} tagRecordHeader;
+    // 版本号
+	int	nVersion;		//>11086  ；新版头15002。
+	int nReserved0;
+	// 文件名
+	char Name[32];
+	// 文件创建时间
+	long long nCreateTime;//ms
+	// 设备通道数量
+	unsigned int nDeviceChNum;
+	// 记录通道数量
+	unsigned int nRecordNum;
+	// 记录数据帧数量
+	unsigned int nFrameNum;
+	// 记录通道标识
+	// bit0: channel 1 record enable
+	// bit1: channel 2 record enable...
+	unsigned int nRecordMask;
+	unsigned int nHeaderLength;      //RecordFrameHeader前面的数据总长度
+	unsigned int nReserved1;		//针对普通记录文件，四字节对齐用；针对合并文件：代表设备个数。
+	unsigned long long nIndexPos;		//索引起始位置，默认为0
+	double dRecValidStartTime;		// 记录有效数据开始时间
+	double dRecValidEndTime;		// 记录有效数据结束时间
+
+	int nFrameDataSize;		//每帧数据buffer大小，由DSP返回。
+	int nIsCalculate;			//是否有计算数据
+	int16_t nDataType; // 记录原始数据类型
+	int16_t nUseRangeFactor ; // 应用通道量程转换系数
+	int16_t nUseCalib; // 应用校准
+	int16_t nUseSenserity; // 应用灵敏度
+	int nReserved[116];
+} RECORD_FILE_HEADER;
 
 // 文件记录：文件记录状态
 typedef struct tagDeviceRecordStatus
@@ -565,6 +601,7 @@ typedef struct tagDeviceRecordStatus
     
     int 		nReserved[STR_08]; 
 } tagDeviceRecordStatus;
+
 typedef struct RecodeStatusReply
 {
     UserDataHeadInfo data_head;

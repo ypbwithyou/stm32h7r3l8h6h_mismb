@@ -68,11 +68,12 @@ typedef enum ScheduleItemRunStatus
 } ScheduleStatus;
 
 ChannelTableHeader g_offline_chCfgHeader;
-ChannelTableElem g_offline_chCfgParam[24];    // 离线通道配置缓存（最多24通道）
+ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
 DSAGlobalParams g_offline_GlobalParam;
-// SignalDataSource g_offline_signal_source[24]; // 离线信号数据来源配置缓存（最多24组）
+SignalDataSource g_offline_signal_source[24];                      // 离线信号数据来源配置缓存（最多24组）
+TriggerParamHeaderDSP g_offline_TriggerParamHeader;                // 离线触发参数表头配置缓存
 ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存（最多16组）
-tagRecordHeader g_recorde_file_head;
+RECORD_FILE_HEADER g_recorde_file_head;
 
 uint8_t g_schedule_run_status[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表项目执行情况:
                                                           // 0--未执行，1--执行中，2--执行完成
@@ -184,6 +185,18 @@ static void HandleRecordStart(uint8_t idx)
     g_recorde_file_head.nCreateTime = dwt_get_ns();
     g_recorde_file_head.nDeviceChNum = DEFAULT_CHANNEL_COUNT;
     g_recorde_file_head.nRecordNum = DEFAULT_CHANNEL_COUNT;
+    g_recorde_file_head.nFrameNum = 0;
+    g_recorde_file_head.nRecordMask = 0;
+    g_recorde_file_head.nHeaderLength = sizeof(RECORD_FILE_HEADER) +
+                                        sizeof(ChannelTableHeader) +
+                                        sizeof(ChannelTableElem) * g_recorde_file_head.nDeviceChNum +
+                                        sizeof(DeviceDetailInfo) +
+                                        sizeof(DSAGlobalParams) +
+                                        sizeof(SignalDataSource) * g_recorde_file_head.nDeviceChNum +
+                                        sizeof(TriggerParamHeaderDSP);
+    g_recorde_file_head.nIndexPos = 0;
+    g_recorde_file_head.nFrameDataSize = g_offline_GlobalParam.nBlockSize;
+    g_recorde_file_head.nIsCalculate = 1;
 
     file_num++;
 
@@ -605,7 +618,7 @@ static int8_t GetOfflineCfgParam(const char *f_name)
     if (res != FR_OK)
     {
         usb_printf("Failed to open configuration file '%s': %d\n", f_name, res);
-        return -8;
+        return -13;
     }
 
     // Read ChannelTableHeader
@@ -658,8 +671,7 @@ static int8_t GetOfflineCfgParam(const char *f_name)
 
     usb_printf("nBlockSize: %d nScheduleCount: %d nSignalCount: %d\n", g_offline_GlobalParam.nBlockSize, g_offline_GlobalParam.nScheduleCount, g_offline_GlobalParam.nSignalCount);
 
-    
-    // // SignalDataSource
+    // // Read SignalDataSource
     // offset += sizeof(DSAGlobalParams);
     // res = f_lseek(&fil, offset);
     // if (res != FR_OK)
@@ -679,14 +691,35 @@ static int8_t GetOfflineCfgParam(const char *f_name)
     //     return -7;
     // }
 
+    // // Read TriggerParamHeaderDSP
+    // offset += g_offline_GlobalParam.nSignalCount * sizeof(SignalDataSource);
+    // res = f_lseek(&fil, offset);
+    // if (res != FR_OK)
+    // {
+    //     usb_printf("Failed to seek to TriggerParamHeaderDSP offset: %d\n", res);
+    //     f_close(&fil);
+    //     return -8;
+    // }
+
+    // res = f_read_timeout(&fil, &g_offline_TriggerParamHeader,
+    //                      sizeof(TriggerParamHeaderDSP),
+    //                      &br, FILE_OP_TIMEOUT);
+    // if (res != FR_OK)
+    // {
+    //     usb_printf("Failed to read TriggerParamHeaderDSP parameters: %d\n", res);
+    //     f_close(&fil);
+    //     return -9;
+    // }
+
     // Read ScheduleParams
+    // offset +=  sizeof(TriggerParamHeaderDSP);
     offset += sizeof(DSAGlobalParams);
     res = f_lseek(&fil, offset);
     if (res != FR_OK)
     {
         usb_printf("Failed to seek to schedule parameters offset: %d\n", res);
         f_close(&fil);
-        return -6;
+        return -10;
     }
 
     res = f_read_timeout(&fil, &g_offline_ScheduleParam[0],
@@ -696,7 +729,7 @@ static int8_t GetOfflineCfgParam(const char *f_name)
     {
         usb_printf("Failed to read schedule parameters: %d\n", res);
         f_close(&fil);
-        return -7;
+        return -11;
     }
 
     // Close the file
@@ -704,7 +737,7 @@ static int8_t GetOfflineCfgParam(const char *f_name)
     if (res != FR_OK)
     {
         usb_printf("Failed to close configuration file: %d\n", res);
-        return -9;
+        return -12;
     }
 
     usb_printf("Successfully loaded offline configuration from file '%s'\n", f_name);
@@ -829,17 +862,16 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     WRITE_STRUCT(&g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), "channel config header");
 
-    WRITE_STRUCT(&g_offline_chCfgParam[0],
-                 g_offline_chCfgHeader.nTotalChannelNum * sizeof(g_offline_chCfgParam[0]),
-                 "channel config parameters");
+    WRITE_STRUCT(&g_offline_chCfgParam[0], g_offline_chCfgHeader.nTotalChannelNum * sizeof(g_offline_chCfgParam[0]), "channel config parameters");
 
     DeviceDetailInfo device_info = {0};
     WRITE_STRUCT(&device_info, sizeof(device_info), "device info");
 
     WRITE_STRUCT(&g_offline_GlobalParam, sizeof(g_offline_GlobalParam), "global parameters");
 
-    TriggerParamHeaderDSP trigger_header = {0};
-    WRITE_STRUCT(&trigger_header, sizeof(trigger_header), "trigger header");
+    WRITE_STRUCT(&g_offline_signal_source, sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount, "global parameters");
+
+    WRITE_STRUCT(&g_offline_TriggerParamHeader, sizeof(TriggerParamHeaderDSP), "trigger header");
 
     // 6. 全部写入成功
     usb_printf("Offline record file created successfully: %s\n", file_name);
