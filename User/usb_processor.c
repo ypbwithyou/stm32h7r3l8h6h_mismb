@@ -478,6 +478,9 @@ static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadI
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     g_IdaSystemStatus.st_dev_mode.reset_all_flag = 1; // ready to restart
     g_reset_time = dwt_get_ns();
+
+    NVIC_SystemReset();
+
     return packet_len;
 }
 

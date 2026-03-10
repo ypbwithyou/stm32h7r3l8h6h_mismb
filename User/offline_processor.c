@@ -86,7 +86,7 @@ static int delete_files_by_extension(const char *dir_path,
                                      uint32_t timeout_ms);
 
 FIL g_offline_record_fil; // 离线记录文件指针
- 
+
 // 如文件中尚未定义，可添加以下宏
 #define RECORD_FILE_VERSION 0x12345678U
 #define DEFAULT_CHANNEL_COUNT 3U
@@ -277,7 +277,7 @@ static void ExecuteScheduleAction(uint8_t idx, uint32_t elapsed_seconds)
         break;
     }
 }
- 
+
 /* 配置加载失败类型 */
 typedef enum
 {
@@ -655,6 +655,8 @@ static int8_t GetOfflineCfgParam(const char *f_name)
         return -5;
     }
 
+    usb_printf("nBlockSize: %d nScheduleCount: %d nSignalCount: %d\n", g_offline_GlobalParam.nBlockSize, g_offline_GlobalParam.nScheduleCount, g_offline_GlobalParam.nSignalCount);
+
     // Read ScheduleParams
     offset += sizeof(DSAGlobalParams);
     res = f_lseek(&fil, offset);
@@ -824,7 +826,7 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     return FR_OK;
 }
- 
+
 /**
  * @brief 将 ADC 环形缓冲区数据追加写入离线记录文件
  *        数据格式：每帧 = [AoLocalColumn头] + [通道0所有采样点] + [通道1所有采样点] + ...

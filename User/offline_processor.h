@@ -2,14 +2,7 @@
 #define __OFFLINE_PROCESSOR_H
 
 #include <stdint.h>
-
-// enum offline_status{
-//     OFFLINE_IDLE = 0,       //
-//     OFFLINE_INIT,
-//     OFFLINE_CONFIGURED,
-////    OFFLINE_SCHEDULE,
-//    OFFLINE_RUN
-//};
+ 
 enum ScheduleActionType
 {
     Customize_Action = 1000,
