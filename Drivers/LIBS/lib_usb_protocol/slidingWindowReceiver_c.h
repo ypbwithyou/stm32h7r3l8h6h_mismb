@@ -9,7 +9,7 @@
 #define SWR_TAIL 0x3E3E3E3E
 
 #define SWR_FIXED_SIZE (20 + 4 + 4 + 4)
-#define SWR_MAX_PAYLOAD 2048
+#define SWR_MAX_PAYLOAD (512 * 1024)
 #define SWR_BUFFER_SIZE (SWR_FIXED_SIZE + SWR_MAX_PAYLOAD)
 
 /* ================= 回调 ================= */
@@ -23,7 +23,7 @@ typedef void (*SWR_FrameCallback)(
 
 typedef struct
 {
-    uint8_t buffer[SWR_BUFFER_SIZE];
+    uint8_t *buffer;
 
     uint32_t read_pos;
     uint32_t write_pos;

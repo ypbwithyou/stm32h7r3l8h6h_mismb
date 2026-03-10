@@ -679,6 +679,15 @@ typedef struct tagAoLocalColumn
     int gp11; // 用于记录发下去的当前通道Id，方便后续合并数据时区分不同设备的数据包（仅占用localColumnX）
 } AoLocalColumn;
 
+typedef struct tagRecordFrameHeader
+{
+	AoLocalColumn RecLocalColumn;
+	unsigned int nValidNum; // 文件记录数据个数
+	int nChID;
+	int nReserved[4];
+	// float pData[nValidNum]; // 记录通道数据，长度为nValidNum
+} RECORD_FRAMEHEADER;
+
 typedef struct tagSignalDataSource
 {
     int nSignalID; // nSignalID

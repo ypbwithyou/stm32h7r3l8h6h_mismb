@@ -68,8 +68,9 @@ typedef enum ScheduleItemRunStatus
 } ScheduleStatus;
 
 ChannelTableHeader g_offline_chCfgHeader;
-ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
+ChannelTableElem g_offline_chCfgParam[24];    // 离线通道配置缓存（最多24通道）
 DSAGlobalParams g_offline_GlobalParam;
+// SignalDataSource g_offline_signal_source[24]; // 离线信号数据来源配置缓存（最多24组）
 ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存（最多16组）
 tagRecordHeader g_recorde_file_head;
 
@@ -656,6 +657,27 @@ static int8_t GetOfflineCfgParam(const char *f_name)
     }
 
     usb_printf("nBlockSize: %d nScheduleCount: %d nSignalCount: %d\n", g_offline_GlobalParam.nBlockSize, g_offline_GlobalParam.nScheduleCount, g_offline_GlobalParam.nSignalCount);
+
+    
+    // // SignalDataSource
+    // offset += sizeof(DSAGlobalParams);
+    // res = f_lseek(&fil, offset);
+    // if (res != FR_OK)
+    // {
+    //     usb_printf("Failed to seek to signal data source offset: %d\n", res);
+    //     f_close(&fil);
+    //     return -6;
+    // }
+
+    // res = f_read_timeout(&fil, &g_offline_signal_source[0],
+    //                      g_offline_GlobalParam.nSignalCount * sizeof(SignalDataSource),
+    //                      &br, FILE_OP_TIMEOUT);
+    // if (res != FR_OK)
+    // {
+    //     usb_printf("Failed to read signal data source parameters: %d\n", res);
+    //     f_close(&fil);
+    //     return -7;
+    // }
 
     // Read ScheduleParams
     offset += sizeof(DSAGlobalParams);

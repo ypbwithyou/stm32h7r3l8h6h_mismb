@@ -1,6 +1,7 @@
 #include "slidingWindowReceiver_c.h"
 #include <string.h>
 #include "usbd_cdc_if.h"
+#include "./MALLOC/malloc.h"
 /* =============== 工具函数 =============== */
 
 static uint32_t read_u32_be(const uint8_t *p)
@@ -26,6 +27,11 @@ void SWR_Init(
     SWR_FrameCallback cb,
     void *ctx)
 {
+    r->buffer = (uint8_t *)mymalloc(SRAMIN, SWR_BUFFER_SIZE);
+    if (!r->buffer)
+    {
+        return;
+    }
     r->read_pos = 0;
     r->write_pos = 0;
     r->on_frame = cb;
@@ -58,16 +64,16 @@ void SWR_ProcessBytes(
             r->write_pos = remain;
             r->read_pos = 0;
             /* frame_start_pos 同步修正 */
-            if (r->frame_start_pos >= r->read_pos)   // ← 新增
-                r->frame_start_pos -= r->read_pos;    // ← 新增
+            if (r->frame_start_pos >= r->read_pos) // ← 新增
+                r->frame_start_pos -= r->read_pos; // ← 新增
             else
-                r->frame_start_pos = 0;               // ← 新增
+                r->frame_start_pos = 0; // ← 新增
         }
         else
         {
             r->write_pos = 0;
             r->read_pos = 0;
-            r->frame_start_pos = 0;                   // ← 新增
+            r->frame_start_pos = 0; // ← 新增
         }
     }
 
@@ -116,7 +122,6 @@ void SWR_ProcessBytes(
     {
         r->read_pos = 0;
         r->write_pos = 0;
-        r->frame_start_pos = 0;                       // ← 新增
+        r->frame_start_pos = 0; // ← 新增
     }
 }
-

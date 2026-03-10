@@ -1038,6 +1038,8 @@ int8_t app_processor(void)
     //       t_off = t_now - t_last;
     //    }
 
+    uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMIN, SWR_BUFFER_SIZE);
+ 
     while (1)
     {
         t_now = ticks_timx_get_counter();
@@ -1057,7 +1059,7 @@ int8_t app_processor(void)
         //           offline_processor(g_IdaSystemStatus.st_dev_offline.start_flag);
         //       }
 
-        offline_processor(1);
+        // offline_processor(1);
 
         // USB通信数据处理
         // USB_CDC_Receive_From_Queue(usb_rx_buf, &data_len);
@@ -1070,8 +1072,6 @@ int8_t app_processor(void)
         if (g_slidingWindow_receiver.frame_flag)
         {
             // 主循环外定义，只分配一次
-            static uint8_t frame_copy[SWR_BUFFER_SIZE];
-
             uint32_t flen = g_slidingWindow_receiver.frame_len_current;
 
             // 1. 拷贝到静态缓冲
