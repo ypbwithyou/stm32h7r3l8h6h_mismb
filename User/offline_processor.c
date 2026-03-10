@@ -287,6 +287,55 @@ FIL g_offline_record_fil; // 离线记录文件指针
 
 static uint32_t file_num = 0;
 
+// 扫描目录获取当前最大文件编号
+static uint32_t ScanMaxFileNum(const char *dir_path)
+{
+    DIR dir;
+    FILINFO finfo;
+    uint32_t max_num = 0;
+
+    FRESULT res = f_opendir(&dir, dir_path);
+    if (res != FR_OK)
+    {
+        usb_printf("[Record] opendir failed: %s res=%d\r\n", dir_path, res);
+        return 0;
+    }
+
+    while (1)
+    {
+        res = f_readdir(&dir, &finfo);
+        if (res != FR_OK || finfo.fname[0] == 0)
+            break; // 读完或出错
+
+        // 跳过目录
+        if (finfo.fattrib & AM_DIR)
+            continue;
+
+        // 检查扩展名是否为 .rec
+        char *dot = strrchr(finfo.fname, '.');
+        if (dot == NULL || strcasecmp(dot, ".rec") != 0)
+            continue;
+
+        // 解析文件名中的数字，例如 "00000001.rec" → 1
+        uint32_t num = (uint32_t)strtoul(finfo.fname, NULL, 10);
+        if (num > max_num)
+            max_num = num;
+    }
+
+    f_closedir(&dir);
+
+    usb_printf("[Record] ScanMaxFileNum: max=%lu\r\n", max_num);
+    return max_num;
+}
+
+// 初始化时调用一次
+void OfflineRecordInit(void)
+{
+    file_num = ScanMaxFileNum("0:/RecordDataFiles");
+    usb_printf("[Record] file_num init to %lu, next will be %lu\r\n",
+               file_num, file_num + 1);
+}
+
 // 安全的毫秒差计算（防止 uint32_t 溢出）
 static uint32_t SafeElapsedMs(uint32_t old_tick, uint32_t new_tick)
 {
@@ -739,6 +788,9 @@ void offline_processor(uint8_t mode)
                    g_offline_chCfgHeader.nTotalChannelNum,
                    g_offline_GlobalParam.nScheduleCount,
                    sample_rate);
+
+        // 离线计划启动时
+        g_IdaSystemStatus.st_dev_offline.start_flag = 1;
     }
 
     // ---------------------------
@@ -794,7 +846,9 @@ void offline_processor(uint8_t mode)
                 }
 
                 if (g_offline_ScheduleParam[i].nType == ACQ_Start)
-                {
+                { 
+                    // 离线计划结束时
+                    g_IdaSystemStatus.st_dev_offline.start_flag = 0;
                     g_IdaSystemStatus.st_dev_run.run_flag = 0;
                     AdcCollectorContrl(0);
                 }

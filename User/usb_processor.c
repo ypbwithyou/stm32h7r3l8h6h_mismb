@@ -539,6 +539,10 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
 // 处理PC->ARM的DVSARM_DISPNEXT_OK事件，循环发送数据
 void USB_Display_All(uint32_t run_flag)
 {
+    // 离线计划运行中，禁止发送
+    if (g_IdaSystemStatus.st_dev_offline.start_flag == 1)
+        return;
+
     // 互斥处理：离线记录时不能发送
     if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
     {

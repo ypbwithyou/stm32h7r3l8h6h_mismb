@@ -45,5 +45,6 @@ enum collect_cfg_status
 
 void SysRunStatusInit(void);
 void offline_processor(uint8_t mode);
+void OfflineRecordInit(void);
 
 #endif /* __OFFLINE_PROCESSOR_H */

@@ -299,6 +299,8 @@ int8_t IdaDeviceInit(void)
 
     check_filesystem_status("0:");
 
+    OfflineRecordInit();
+
     test_filesystem();
     // sd_file_speed_test();
     return RET_OK;
@@ -1055,7 +1057,7 @@ int8_t app_processor(void)
         //           offline_processor(g_IdaSystemStatus.st_dev_offline.start_flag);
         //       }
 
-        // offline_processor(1);
+        offline_processor(1);
 
         // USB通信数据处理
         // USB_CDC_Receive_From_Queue(usb_rx_buf, &data_len);
