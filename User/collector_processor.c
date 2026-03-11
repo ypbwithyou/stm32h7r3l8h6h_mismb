@@ -3,89 +3,45 @@
 
 #include "usbd_cdc_if.h"
 
-CircularBuffer* g_cb_adc;
+CircularBuffer* g_cb_ch[ADC_CH_TOTAL];   // 24通道环形缓冲区
+uint32_t        g_ch_enable_mask = 0xFFFFFF;  // 默认全部24通道使能
 
-CircularBuffer* collect_cb_init(uint32_t cb_len)
+int8_t collect_cb_init_all(uint32_t cb_len_per_ch)
 {
-    return cb_init(cb_len);
-}
-
-/**
- * @brief  ADC采集数据处理函数
- * @param  data: ADC采集数据+时间戳
- */
-void process_adc_data(ADC_Data_t *data)
-{
-    // 添加采集数据到采集数据缓存buffer
-    int ret = 0;
-    ret = cb_write(g_cb_adc, (const char*)data, sizeof(data->data));
-    if (ret != sizeof(data->data)){
-        return;
+    for (int i = 0; i < ADC_CH_TOTAL; i++) {
+        g_cb_ch[i] = cb_init(cb_len_per_ch);
+        if (!g_cb_ch[i]) {
+            /* 回滚已分配的缓冲区 */
+            for (int j = 0; j < i; j++) { cb_free(g_cb_ch[j]); g_cb_ch[j] = NULL; }
+            return RET_ERROR;
+        }
     }
+    return RET_OK;
 }
 
-///**
-// * @brief  发送ISR获取的ADC采集数据到队列
-// * @param  spi_num: SPI号
-// * @param  adc_num: ADC通道号
-// * @param  data: ADC采集数据
-// * @retval 队列追加结果
-// */
-//BaseType_t adc_send_data_from_isr(uint8_t spi_num, uint8_t adc_num, uint16_t data)
-//{
-//    static ADC_Data_t current_sample = {0};
-//    static uint8_t data_ready = 0;
-//    static uint32_t sample_timestamp = 0;
-//    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-//    BaseType_t result = pdFALSE;
-//    
-//    // 存储当前采样点的数据
-//    if(spi_num < SPI_NUM && adc_num < SPI_CH_ADC_MAX) {
-//        current_sample.data[spi_num][adc_num] = data;
-//    }
-//    
-//    // 如果是最后一个ADC的最后一个数据，完成一次采样
-//    if(spi_num == (SPI_NUM-1) && adc_num == (SPI_CH_ADC_MAX-1)) {
-//        current_sample.timestamp = sample_timestamp++;
-//        data_ready = 1;
-//    }
-//    
-//    // 数据准备好时发送到队列
-//    if(data_ready && adc_data_queue != NULL) {
-//        // 尝试发送到队列
-//        result = xQueueSendToBackFromISR(adc_data_queue, &current_sample, &xHigherPriorityTaskWoken);
-//        
-//        if(result == pdTRUE) {
-//            // 发送成功，通知任务处理
-//            xSemaphoreGiveFromISR(adc_semaphore, &xHigherPriorityTaskWoken);
-//        } else {
-//            // 队列已满，丢弃数据（可以增加错误计数）
-//        }
-//        
-//        data_ready = 0;
-//    }
-//    
-//    // 如果需要上下文切换
-//    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-//    
-//    return result;
-//}
-
-/**
- * @brief  采样率配置
- * @param  采样率
- * @retval 无
- */
-// void CfgAdcSampleRate(uint32_t sample_rate)
-// {
-//     uint32_t tim_freq, arr, psc;
-
-//     tim_freq = 300000000;       // 定时器时钟
-//     arr = 100 - 1;              // 
-//     psc = (tim_freq / (sample_rate * (arr + 1))) - 1;
+void collect_cb_free_all(void)
+{
     
-//     gtim_timx_cfg(arr, psc);
-// }
+}
+
+void AdcCbClear(void)
+{
+    for (int i = 0; i < ADC_CH_TOTAL; i++)
+        if (g_cb_ch[i]) cb_clear(g_cb_ch[i]);
+}     
+
+/* 从中断/DMA回调中调用，spi_idx: 0~2, adc_data: 8个通道数据 */
+void adc_write_spi_channels(uint8_t spi_idx, const uint16_t adc_data[SPI_CH_NUM],
+                            uint32_t timestamp)
+{
+    for (uint8_t adc = 0; adc < SPI_CH_NUM; adc++) {
+        uint8_t ch = spi_idx * SPI_CH_NUM + adc;
+        if (!(g_ch_enable_mask & (1u << ch))) continue;  // 通道未使能，跳过
+        /* cb_write 写入2字节（uint16_t） */
+        cb_write(g_cb_ch[ch], (const char*)&adc_data[adc], ADC_DATA_LEN);
+    }
+    (void)timestamp;  /* 如需时间戳，可另建时间戳缓冲 */
+}
 
 void CfgAdcSampleRate(uint32_t sample_rate)
 {
@@ -165,13 +121,4 @@ void AdcCollectorContrl(uint8_t run_status)
         gtim_timx_stop();
     }
 }
-
-/**
- * @brief  采集数据缓存清除
- * @param  无
- * @retval 无
- */
-void AdcCbClear(void)
-{
-    cb_clear(g_cb_adc);
-}
+ 

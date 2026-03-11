@@ -84,11 +84,13 @@ typedef struct
     float ch_cfg_value;
     uint32_t ch_set_index;
 } Dev_ch_cfg_index;
+
 struct UserData
 {
     ArmBackFrameHeader data_head;
-    short send_frame[SPI_NUM][BLOCK_LEN];
+    short send_frame[ADC_CH_TOTAL][BLOCK_LEN]; // 24×BLOCK_LEN
 };
+
 struct OffsetUserData
 {
     AoLocalColumn data_head;

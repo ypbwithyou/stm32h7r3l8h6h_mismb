@@ -105,7 +105,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         // 传输完成
         ads8319_stop_transfer();
         uint32_t stop_time = ticks_timx_get_counter();
-        int8_t ret = cb_write(g_cb_adc, (const char*)&adc_data[0][0], SPI_USED_MAX*2);
+        // int8_t ret = cb_write(g_cb_adc, (const char*)&adc_data[0][0], SPI_USED_MAX*2);
 //        timestamp_t tl = dwt_get_timestamp();
     }
 }

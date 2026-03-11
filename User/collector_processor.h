@@ -1,6 +1,6 @@
 /******************************************************************************
   * This software can only be used for  production/manufacturing equipments.
-  * Without permission, it cannot be copied and used in any form or provided to any 
+  * Without permission, it cannot be copied and used in any form or provided to any
     third party.
   ------------------------------------------------------------------------
   文件名称：collector_processor.h
@@ -18,33 +18,38 @@
 #include "app_common.h"
 #include "./LIBS/lib_circular_buffer/CircularBuffer.h"
 
-
 /* 配置参数 */
-#define ADC_SAMPLE_RATE     10000     // 50KSPS
-//#define ADC_BUFFER_SIZE     1024      // ADC数据缓冲区大小
-#define ADC_DATA_QUEUE_SIZE 256       // 数据队列大小
-#define SPI_NUM             3         // SPI总线数量
-#define SPI_CH_ADC_MAX      1         // 单SPI总线上ADC个数
-#define ADC_DATA_LEN        2           // 单个ADC数据字节数
+#define ADC_SAMPLE_RATE 10000   // 50KSPS
+#define ADC_DATA_QUEUE_SIZE 256 // 数据队列大小
+
+#define SPI_NUM 3                           // SPI总线数量
+#define SPI_CH_NUM 8                        // 单SPI总线上ADC通道数（菊花链）
+#define ADC_CH_TOTAL (SPI_NUM * SPI_CH_NUM) // 总逻辑通道数 = 24
+#define ADC_DATA_LEN 2                      // 单个ADC数据字节数（uint16_t）
+#define ADC_CH_ENABLED_MAX ADC_CH_TOTAL     // 最大使能通道数
 
 /* ADC数据结构 */
-typedef struct {
-    uint16_t data[SPI_NUM][SPI_CH_ADC_MAX];  // 3个SPI，每个1个ADC数据
-    uint32_t timestamp;   // 时间戳
-} ADC_Data_t;
+typedef struct
+{
+  uint16_t data[ADC_CH_TOTAL]; // [spi*8+adc] = data
+  uint32_t timestamp;
+} ADC_Sample_t;
 
-/* 全局变量 */
-extern CircularBuffer* g_cb_adc;
+#define ADC_CB_SIZE_PER_CH (BLOCK_LEN * ADC_DATA_LEN * 4) // 每通道缓冲，建议4×BLOCK
+extern CircularBuffer *g_cb_ch[ADC_CH_TOTAL];             // 24个独立通道缓冲区
 
-/* 本地函数声明 */
-//int8_t collect_cb_init(CircularBuffer* cb, uint32_t cb_len);
-CircularBuffer* collect_cb_init(uint32_t cb_len);
+/* 通道使能掩码（运行时由配置文件设置）*/
+extern uint32_t g_ch_enable_mask; // bit-i: 通道i使能标志
 
-void process_adc_data(ADC_Data_t *data);
-//BaseType_t adc_send_data_from_isr(uint8_t spi_num, uint8_t adc_num, uint16_t data);
+int8_t collect_cb_init_all(uint32_t cb_len_per_ch);
+void collect_cb_free_all(void);
 
-void CfgAdcSampleRate(uint32_t sample_rate);
-void AdcCollectorContrl(uint8_t run_status);
 void AdcCbClear(void);
+
+void AdcCollectorContrl(uint8_t run_status);
+void CfgAdcSampleRate(uint32_t sample_rate);
+
+void adc_write_spi_channels(uint8_t spi_idx, const uint16_t adc_data[SPI_CH_NUM],
+                            uint32_t timestamp);
 
 #endif // __COLLECTOR_PROCESSOR_H

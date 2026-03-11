@@ -128,10 +128,7 @@ static const USB_ProtocoItems protocol_getdata[] =
 /*********************************************************************************/
 
 USBD_HandleTypeDef g_usbd_handle = {0};
-
-// SystemStatus g_IdaSystemStatus;
-extern CircularBuffer *g_cb_adc;
-
+ 
 // 主卡设备信息
 DeviceInfo g_dev_info;
 // 子卡设备信息
@@ -376,7 +373,7 @@ static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInf
 
     g_IdaSystemStatus.st_dev_run.run_flag = 0;
     AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
-    cb_clear(g_cb_adc);
+    AdcCbClear();
 
     return PackReplyWithoutDatas(DVSARM_STOP_OK);
 }
@@ -390,9 +387,7 @@ static int32_t f_write_dma_safe(FIL *fil, const uint8_t *src, uint32_t len, UINT
     UINT bw = 0;
     *bw_total = 0;
 
- 
     uint8_t dma_buf[WRITE_CHUNK_SIZE] __attribute__((aligned(4))); // 32字节对齐，确保DMA访问安全
-   
 
     while (offset < len)
     {
@@ -420,7 +415,7 @@ static int32_t f_write_dma_safe(FIL *fil, const uint8_t *src, uint32_t len, UINT
             break;
         }
     }
- 
+
     return ret;
 }
 
@@ -540,7 +535,55 @@ void transpose(short src[BLOCK_LEN][SPI_NUM], short dst[SPI_NUM][BLOCK_LEN])
     }
 }
 // 处理PC->ARM的DVSARM_DISPNEXT_OK事件
-static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+// static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+// {
+//     (void)data_in;
+//     (void)data_len;
+//     (void)frame_head;
+//     (void)user_head;
+
+//     static uint32_t frame_num = 0;
+//     uint32_t cb_len = SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN;
+//     short send_data[BLOCK_LEN][SPI_NUM];
+//     struct UserData user_data;
+
+//     if (cb_size(g_cb_adc) < cb_len)
+//     {
+//         return NULL;
+//     }
+
+//     frame_num++;
+
+//     //    ArmBackFrameHeader data_head;
+//     user_data.data_head.nVersion = 0x12345678;
+//     user_data.data_head.nDataSource = 0;
+//     user_data.data_head.nFrameChCount = SPI_NUM;
+//     user_data.data_head.nFrameLen = BLOCK_LEN;
+//     user_data.data_head.nTotalFrameNum = frame_num;
+//     user_data.data_head.nCurNs = dwt_get_ns();
+
+//     //    memset(send_data, 0, sizeof(send_data));
+//     //    memcpy(send_data, &data_head, sizeof(data_head));
+//     cb_read(g_cb_adc, (char *)send_data, cb_len);
+//     transpose(send_data, user_data.send_frame);
+
+//     uint32_t send_len = sizeof(user_data);
+
+//     FrameHeadInfo reply_frame_head = create_default_frame_head(frame_num);
+
+//     UserDataHeadInfo reply_user_head = create_user_data_head(DVSARM_DISPNEXT_OK,
+//                                                              SOURCE_TYPE_WITH_DATAS,
+//                                                              DESTINATION_ARM_TO_PC,
+//                                                              send_len);
+//     uint32_t packet_len = 0;
+//     pack_data((uint8_t *)&user_data, send_len, &reply_user_head, &reply_frame_head, &packet_len);
+
+//     return packet_len;
+// }
+
+static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
+                                  FrameHeadInfo *frame_head,
+                                  UserDataHeadInfo *user_head)
 {
     (void)data_in;
     (void)data_len;
@@ -548,43 +591,56 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     (void)user_head;
 
     static uint32_t frame_num = 0;
-    uint32_t cb_len = SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN;
-    short send_data[BLOCK_LEN][SPI_NUM];
-    struct UserData user_data;
+    const uint32_t cb_needed = BLOCK_LEN * ADC_DATA_LEN; // 单通道需要字节数
 
-    if (cb_size(g_cb_adc) < cb_len)
+    /* 统计使能且数据就绪的通道 */
+    uint8_t ready_chs[ADC_CH_TOTAL];
+    uint8_t ready_cnt = 0;
+    for (uint8_t i = 0; i < ADC_CH_TOTAL; i++)
     {
-        return NULL;
+        if ((g_ch_enable_mask & (1u << i)) &&
+            g_cb_ch[i] &&
+            cb_size(g_cb_ch[i]) >= (int)cb_needed)
+        {
+            ready_chs[ready_cnt++] = i;
+        }
     }
+    if (ready_cnt == 0)
+        return 0;
 
+    /* 填充帧头 */
+    struct UserData user_data;
+    memset(&user_data, 0, sizeof(user_data));
     frame_num++;
-
-    //    ArmBackFrameHeader data_head;
     user_data.data_head.nVersion = 0x12345678;
     user_data.data_head.nDataSource = 0;
-    user_data.data_head.nFrameChCount = SPI_NUM;
+    user_data.data_head.nFrameChCount = ready_cnt; // 实际发送通道数
     user_data.data_head.nFrameLen = BLOCK_LEN;
     user_data.data_head.nTotalFrameNum = frame_num;
     user_data.data_head.nCurNs = dwt_get_ns();
 
-    //    memset(send_data, 0, sizeof(send_data));
-    //    memcpy(send_data, &data_head, sizeof(data_head));
-    cb_read(g_cb_adc, (char *)send_data, cb_len);
-    transpose(send_data, user_data.send_frame);
+    /* 按通道顺序读取数据，写入连续发送区 */
+    for (uint8_t n = 0; n < ready_cnt; n++)
+    {
+        uint8_t ch = ready_chs[n];
+        cb_read(g_cb_ch[ch], (char *)user_data.send_frame[n], cb_needed);
+    }
 
-    uint32_t send_len = sizeof(user_data);
+    /* 实际发送大小：帧头 + ready_cnt×BLOCK_LEN×2字节 */
+    uint32_t send_len = sizeof(ArmBackFrameHeader) + (uint32_t)ready_cnt * BLOCK_LEN * sizeof(short);
 
     FrameHeadInfo reply_frame_head = create_default_frame_head(frame_num);
-
-    UserDataHeadInfo reply_user_head = create_user_data_head(DVSARM_DISPNEXT_OK,
-                                                             SOURCE_TYPE_WITH_DATAS,
-                                                             DESTINATION_ARM_TO_PC,
-                                                             send_len);
+    UserDataHeadInfo reply_user_head =
+        create_user_data_head(DVSARM_DISPNEXT_OK,
+                              SOURCE_TYPE_WITH_DATAS,
+                              DESTINATION_ARM_TO_PC,
+                              send_len);
     uint32_t packet_len = 0;
-    pack_data((uint8_t *)&user_data, send_len, &reply_user_head, &reply_frame_head, &packet_len);
-
+    pack_data((uint8_t *)&user_data, send_len,
+              &reply_user_head, &reply_frame_head, &packet_len);
     return packet_len;
 }
+
 // 处理PC->ARM的DVSARM_DISPNEXT_OK事件，循环发送数据
 void USB_Display_All(uint32_t run_flag)
 {
@@ -1271,7 +1327,7 @@ void IdaProcessor(void)
 
             SystemStatusInit();
             AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
-            cb_clear(g_cb_adc);
+            AdcCbClear();
         }
     }
     if (g_IdaSystemStatus.st_dev_mode.reset_all_flag == 1)

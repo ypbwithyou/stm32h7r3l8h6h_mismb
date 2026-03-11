@@ -941,7 +941,7 @@ static void CheckMcuRunStatus(void)
             led_state = !led_state; // 切换状态
         }
         if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
-        { 
+        {
             // 离线记录中，绿灯闪烁
             if (led_state)
             {
@@ -1007,11 +1007,9 @@ int8_t app_processor(void)
     uint32_t t_now = 0;
     uint32_t t_off = 0;
 
-    // 初始化采集数据缓存Buffer
-    g_cb_adc = collect_cb_init(SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN);
-    if (!g_cb_adc)
+    if (collect_cb_init_all(ADC_CB_SIZE_PER_CH) != RET_OK)
     {
-        usb_printf("collect_cb_init err.\n");
+        printf("collect_cb_init_all err.\n");
         return 0;
     }
 
