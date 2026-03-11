@@ -9,7 +9,7 @@
 #define SWR_TAIL 0x3E3E3E3E
 
 #define SWR_FIXED_SIZE (20 + 4 + 4 + 4)
-#define SWR_MAX_PAYLOAD (4 * 1024)
+#define SWR_MAX_PAYLOAD (512 * 1024)
 #define SWR_BUFFER_SIZE (SWR_FIXED_SIZE + SWR_MAX_PAYLOAD)
 
 /* ================= 回调 ================= */

@@ -194,7 +194,7 @@ int8_t IdaDeviceInit(void)
     ads8319_spi_gpio_init(SPI2_SPI);
     ads8319_spi_gpio_init(SPI3_SPI);
     ads8319_common_gpio_init();
- 
+
     usb_init();
 
     delay_ms(1000);
@@ -1046,7 +1046,7 @@ int8_t app_processor(void)
     //       t_off = t_now - t_last;
     //    }
 
-    // uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMDTCM, SWR_BUFFER_SIZE);
+    uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMEX, SWR_BUFFER_SIZE);
 
     while (1)
     {
@@ -1079,23 +1079,7 @@ int8_t app_processor(void)
         // ─── 最高优先级：接收到的完整协议帧 ───
         if (g_slidingWindow_receiver.frame_flag)
         {
-            // // 主循环外定义，只分配一次
-            // uint32_t flen = g_slidingWindow_receiver.frame_len_current;
-
-            // // 1. 拷贝到静态缓冲
-            // memcpy(frame_copy,
-            //        g_slidingWindow_receiver.buffer + g_slidingWindow_receiver.frame_start_pos,
-            //        flen);
-
-            // // 2. 清标志
-            // g_slidingWindow_receiver.frame_flag = 0;
-
-            // // 3. 处理
-            // on_frame(frame_copy, flen);
-
-             // 主循环外定义，只分配一次
-            static uint8_t frame_copy[SWR_BUFFER_SIZE];
-
+            // 主循环外定义，只分配一次
             uint32_t flen = g_slidingWindow_receiver.frame_len_current;
 
             // 1. 拷贝到静态缓冲
@@ -1108,7 +1092,6 @@ int8_t app_processor(void)
 
             // 3. 处理
             on_frame(frame_copy, flen);
-
         }
 
         USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag);
