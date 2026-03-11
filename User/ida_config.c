@@ -16,6 +16,7 @@
 #include "./FATFS/source/diskio.h"
 #include "./LIBS/lib_dwt/lib_dwt_timestamp.h"
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
+#include "./BSP/EXTI/exti.h"
 
 #include "rs485_processor.h"
 #include "offline_processor.h"
@@ -183,6 +184,7 @@ int8_t IdaDeviceInit(void)
 
     // PCA9554A初始化
     PCA9554A_init();
+    external_io_init();
 
     // RS485初始化
     rs485_init(RS485_BAUDRATE);
@@ -192,6 +194,8 @@ int8_t IdaDeviceInit(void)
     ads8319_spi_gpio_init(SPI2_SPI);
     ads8319_spi_gpio_init(SPI3_SPI);
     ads8319_common_gpio_init();
+
+    // exti_init();
 
     usb_init();
 
@@ -891,6 +895,7 @@ static void CheckMcuPwrStatus(void)
 {
     SysPwrLED_Output();
 }
+
 /**
  * @brief   系统运行指示灯输出控制
  * @param   无
@@ -904,8 +909,9 @@ static void CheckMcuRunStatus(void)
     static uint32_t t_last = 0;
     uint32_t t_now = 0;
     uint32_t t_off = 0;
+    static bool led_state = 0; // 0: 灭，1: 亮
 
-    t_now = ticks_timx_get_counter();
+    t_now = HAL_GetTick();
 
     ret = PCA9554_Get(&read_val);
     if (ret != PCA9554A_OK)
@@ -925,16 +931,33 @@ static void CheckMcuRunStatus(void)
     }
     else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_link.link_status != USB_CONNECTED))
     {
-        // 未连接但已运行时蓝灯闪烁（离线运行）
         t_off = t_now - t_last;
         if (t_off > 500)
         {
             t_last = t_now;
-            PCA9554_Set(PCA9544A_STS_B(read_val));
+            led_state = !led_state; // 切换状态
+        }
+        if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
+        { // 离线记录中，绿灯闪烁
+            if (led_state)
+            {
+                PCA9554_Set(PCA9544A_STS_G(read_val));
+            }
+            else
+            {
+                PCA9554_Set(PCA9544A_STS_I(read_val));
+            }
         }
         else
-        {
-            PCA9554_Set(PCA9544A_STS_I(read_val));
+        { // 离线运行未记录，蓝灯闪烁
+            if (led_state)
+            {
+                PCA9554_Set(PCA9544A_STS_B(read_val));
+            }
+            else
+            {
+                PCA9554_Set(PCA9544A_STS_I(read_val));
+            }
         }
     }
     else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_record.record_status != RECORD_RUN))
@@ -942,21 +965,8 @@ static void CheckMcuRunStatus(void)
         // 已运行但未记录时绿灯常亮
         PCA9554_Set(PCA9544A_STS_G(read_val));
     }
-    else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN))
-    {
-        // 已运行且在记录中时绿灯闪烁（离线记录）
-        t_off = t_now - t_last;
-        if (t_off > 100)
-        {
-            t_last = t_now;
-            PCA9554_Set(PCA9544A_STS_G(read_val));
-        }
-        else
-        {
-            PCA9554_Set(PCA9544A_STS_I(read_val));
-        }
-    }
 }
+
 // rs485写子卡设备信息测试
 void WriteSubDevicelnfo_test(void)
 {
@@ -1039,7 +1049,7 @@ int8_t app_processor(void)
     //    }
 
     uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMIN, SWR_BUFFER_SIZE);
- 
+
     while (1)
     {
         t_now = ticks_timx_get_counter();
