@@ -231,7 +231,7 @@ static uint32_t USB_DetectPeriod(void)
     // }
     SubDevicelnfo subden_info[SUBDEN_NUM];
     subden_num = 1;
-    strcpy((char *)&subden_info[0].SerialNumber[0], "MIRA3102501001");
+    strcpy((char *)&subden_info[0].SerialNumber[0], "MIRA3102501002");
     strcpy((char *)&subden_info[0].DeviceName[0], Name_Mini_SliceAccel);
     strcpy((char *)&subden_info[0].Version[0], "1.0.0.0_20260114");
     subden_info[0].DeviceType = Mini_SliceAccel;
@@ -242,7 +242,7 @@ static uint32_t USB_DetectPeriod(void)
     strcpy((char *)&g_dev_info.Version[0], "1.0.0.0_20260114");
     strcpy((char *)&g_dev_info.DeviceName[0], Name_Mini_SliceMicro);
     strcpy((char *)&g_dev_info.AccessCode[0], "NTS2026");
-    strcpy((char *)&g_dev_info.SerialNumber[0], "MISMB102501001");
+    strcpy((char *)&g_dev_info.SerialNumber[0], "MISMB102501002");
     g_dev_info.DeviceType = Mini_SliceMicro;
     // 获取base板设备信息
     if (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED)

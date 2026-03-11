@@ -70,8 +70,8 @@ typedef enum ScheduleItemRunStatus
 ChannelTableHeader g_offline_chCfgHeader;
 ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
 DSAGlobalParams g_offline_GlobalParam;
-SignalDataSource g_offline_signal_source[24];                      // 离线信号数据来源配置缓存（最多24组）
-TriggerParamHeaderDSP g_offline_TriggerParamHeader;                // 离线触发参数表头配置缓存
+// SignalDataSource g_offline_signal_source[24];                      // 离线信号数据来源配置缓存（最多24组）
+// TriggerParamHeaderDSP g_offline_TriggerParamHeader;                // 离线触发参数表头配置缓存
 ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存（最多16组）
 RECORD_FILE_HEADER g_recorde_file_head;
 
@@ -534,7 +534,7 @@ void offline_processor(uint8_t mode)
                     g_IdaSystemStatus.st_dev_offline.start_flag = 0;
                     g_IdaSystemStatus.st_dev_run.run_flag = 0;
                     AdcCollectorContrl(0);
-                    
+
                     g_IdaSystemStatus.st_dev_offline.offline_mode = 0;
                 }
             }
@@ -876,9 +876,9 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     WRITE_STRUCT(&g_offline_GlobalParam, sizeof(g_offline_GlobalParam), "global parameters");
 
-    WRITE_STRUCT(&g_offline_signal_source, sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount, "global parameters");
+    // WRITE_STRUCT(&g_offline_signal_source, sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount, "global parameters");
 
-    WRITE_STRUCT(&g_offline_TriggerParamHeader, sizeof(TriggerParamHeaderDSP), "trigger header");
+    // WRITE_STRUCT(&g_offline_TriggerParamHeader, sizeof(TriggerParamHeaderDSP), "trigger header");
 
     // 6. 全部写入成功
     usb_printf("Offline record file created successfully: %s\n", file_name);
