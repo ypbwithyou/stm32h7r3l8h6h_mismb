@@ -899,6 +899,11 @@ static void CheckMcuPwrStatus(void)
  * @param   无
  * @retval  无
  */
+/**
+ * @brief   系统运行指示灯输出控制
+ * @param   无
+ * @retval  无
+ */
 static void CheckMcuRunStatus(void)
 {
     static uint16_t i = 0;
@@ -936,7 +941,8 @@ static void CheckMcuRunStatus(void)
             led_state = !led_state; // 切换状态
         }
         if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
-        { // 离线记录中，绿灯闪烁
+        { 
+            // 离线记录中，绿灯闪烁
             if (led_state)
             {
                 PCA9554_Set(PCA9544A_STS_G(read_val));
@@ -1050,11 +1056,11 @@ int8_t app_processor(void)
 
     while (1)
     {
-        t_now = ticks_timx_get_counter();
+        t_now = HAL_GetTick();
 
         t_off = t_now - t_last;
         // 系统指示灯控制
-        if (t_off > 500 * 1000)
+        if (t_off > 100)
         {
             t_last = t_now;
             CheckMcuPwrStatus();

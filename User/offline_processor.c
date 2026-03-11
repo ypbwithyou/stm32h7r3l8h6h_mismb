@@ -70,8 +70,8 @@ typedef enum ScheduleItemRunStatus
 ChannelTableHeader g_offline_chCfgHeader;
 ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
 DSAGlobalParams g_offline_GlobalParam;
-// SignalDataSource g_offline_signal_source[24];                      // 离线信号数据来源配置缓存（最多24组）
-// TriggerParamHeaderDSP g_offline_TriggerParamHeader;                // 离线触发参数表头配置缓存
+SignalDataSource g_offline_signal_source[24];                      // 离线信号数据来源配置缓存（最多24组）
+TriggerParamHeaderDSP g_offline_TriggerParamHeader;                // 离线触发参数表头配置缓存
 ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存（最多16组）
 RECORD_FILE_HEADER g_recorde_file_head;
 
@@ -194,7 +194,7 @@ static void HandleRecordStart(uint8_t idx)
                                         sizeof(ChannelTableElem) * g_recorde_file_head.nDeviceChNum +
                                         sizeof(DeviceDetailInfo) +
                                         sizeof(DSAGlobalParams) +
-                                        sizeof(SignalDataSource) * g_recorde_file_head.nDeviceChNum +
+                                        sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount +
                                         sizeof(TriggerParamHeaderDSP);
     g_recorde_file_head.nIndexPos = 0;
     g_recorde_file_head.nFrameDataSize = g_offline_GlobalParam.nBlockSize;
