@@ -131,6 +131,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     {
         // g_IdaSystemStatus.st_dev_offline.event_flag = 1;
 
+        g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
+
         usb_printf("---------------------------> HAL_GPIO_EXTI_Callback EVENT_GPIO_PIN \r\n");
     }
     break;
