@@ -390,13 +390,9 @@ static int32_t f_write_dma_safe(FIL *fil, const uint8_t *src, uint32_t len, UINT
     UINT bw = 0;
     *bw_total = 0;
 
-    /* 从 AHB-SRAM (0x30000000) 动态申请DMA安全缓冲区 */
-    uint8_t *dma_buf = (uint8_t *)mymalloc(SRAM12, WRITE_CHUNK_SIZE);
-    if (dma_buf == NULL)
-    {
-        usb_printf("f_write_dma_safe: malloc failed");
-        return -1;
-    }
+ 
+    uint8_t dma_buf[WRITE_CHUNK_SIZE] __attribute__((aligned(4))); // 32字节对齐，确保DMA访问安全
+   
 
     while (offset < len)
     {
@@ -424,9 +420,7 @@ static int32_t f_write_dma_safe(FIL *fil, const uint8_t *src, uint32_t len, UINT
             break;
         }
     }
-
-    /* 释放动态申请的缓冲区 */
-    myfree(SRAM12, dma_buf);
+ 
     return ret;
 }
 
