@@ -194,9 +194,7 @@ int8_t IdaDeviceInit(void)
     ads8319_spi_gpio_init(SPI2_SPI);
     ads8319_spi_gpio_init(SPI3_SPI);
     ads8319_common_gpio_init();
-
-    // exti_init();
-
+ 
     usb_init();
 
     delay_ms(1000);
@@ -1069,7 +1067,7 @@ int8_t app_processor(void)
         //           offline_processor(g_IdaSystemStatus.st_dev_offline.start_flag);
         //       }
 
-        // offline_processor(1);
+        // offline_processor(g_IdaSystemStatus.st_dev_offline.offline_mode);
 
         // USB通信数据处理
         // USB_CDC_Receive_From_Queue(usb_rx_buf, &data_len);

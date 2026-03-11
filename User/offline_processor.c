@@ -139,6 +139,8 @@ static uint32_t ScanMaxFileNum(const char *dir_path)
 // 初始化时调用一次
 void OfflineRecordInit(void)
 {
+    g_IdaSystemStatus.st_dev_offline.offline_mode = 0; // 默认离线模式为待机
+
     file_num = ScanMaxFileNum("0:/RecordDataFiles");
     usb_printf("[Record] file_num init to %lu, next will be %lu\r\n",
                file_num, file_num + 1);
@@ -521,14 +523,19 @@ void offline_processor(uint8_t mode)
                 if (g_offline_ScheduleParam[i].nType == Record_Start)
                 {
                     HandleRecordEnd(i);
+
+                    g_IdaSystemStatus.st_dev_offline.offline_mode = 0;
                 }
 
                 if (g_offline_ScheduleParam[i].nType == ACQ_Start)
                 {
                     // 离线计划结束时
+              
                     g_IdaSystemStatus.st_dev_offline.start_flag = 0;
                     g_IdaSystemStatus.st_dev_run.run_flag = 0;
                     AdcCollectorContrl(0);
+                    
+                    g_IdaSystemStatus.st_dev_offline.offline_mode = 0;
                 }
             }
         }

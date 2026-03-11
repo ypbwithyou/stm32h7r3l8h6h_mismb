@@ -52,6 +52,7 @@ typedef struct SystemStatus_t
     }st_dev_record;
     struct dev_offline_status
     {
+        uint8_t     offline_mode;       // 离线模式：0--待机，1--离线运行
         uint8_t     run_status;         // 离线运行状态
         uint8_t     start_flag;         // START运行状态
         uint8_t     event_flag;         // EVENT运行状态

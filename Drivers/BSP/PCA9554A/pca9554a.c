@@ -122,14 +122,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     {
     case START_GPIO_PIN: /* WKUP按键对应引脚发生中断 */
     {
-        g_IdaSystemStatus.st_dev_offline.start_flag = 1;
+        g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
 
         usb_printf("---------------------------> HAL_GPIO_EXTI_Callback START_GPIO_PIN \r\n");
     }
     break;
     case EVENT_GPIO_PIN: /* KEY0按键对应引脚发生中断 */
     {
-        g_IdaSystemStatus.st_dev_offline.event_flag = 1;
+        // g_IdaSystemStatus.st_dev_offline.event_flag = 1;
 
         usb_printf("---------------------------> HAL_GPIO_EXTI_Callback EVENT_GPIO_PIN \r\n");
     }
