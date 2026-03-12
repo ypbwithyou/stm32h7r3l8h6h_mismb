@@ -128,7 +128,7 @@ static const USB_ProtocoItems protocol_getdata[] =
 /*********************************************************************************/
 
 USBD_HandleTypeDef g_usbd_handle = {0};
- 
+
 // 主卡设备信息
 DeviceInfo g_dev_info;
 // 子卡设备信息
@@ -272,10 +272,10 @@ static uint32_t USB_DetectPeriod(void)
 // 处理PC->ARM的DVS_INIT_CONNECT事件
 static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *fHead, UserDataHeadInfo *userHead)
 {
-    (void)data_in;    // 未使用用户数据
-    (void)data_len;   // 未使用用户数据长度
-    (void)fHead; // 未使用帧头
-    (void)userHead;  // 未使用用户头
+    (void)data_in;  // 未使用用户数据
+    (void)data_len; // 未使用用户数据长度
+    (void)fHead;    // 未使用帧头
+    (void)userHead; // 未使用用户头
 
     g_IdaSystemStatus.st_dev_link.link_status = USB_CONNECTED;
 
@@ -298,7 +298,7 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     strcpy((char *)&subden_info[0].Version[0], "1.0.0.0_20260114");
     subden_info[0].DeviceType = Mini_SliceAccel;
     subden_info[0].SlotId = 1;
-    subden_info[0].Sensitivity = 3;  
+    subden_info[0].Sensitivity = 3;
     memcpy(send_frame + sizeof(DeviceInfo), subden_info[0].SerialNumber, sizeof(SubDevicelnfo));
 
     strcpy((char *)&g_dev_info.Version[0], "1.0.0.0_20260114");
@@ -377,20 +377,94 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
     (void)frame_head;
     (void)user_head;
 
-    ChannelTableHeader *channel_header;
-    DSAGlobalParams *global_params;
-    channel_header = (ChannelTableHeader *)data_in;
-    global_params = (DSAGlobalParams *)(data_in + channel_header->nTotalChannelNum * sizeof(DSAGlobalParams));
+    int userDataLoc = 0;
+
+    // ---------------- 解析ChannelTableHeader ----------------
+    if (data_len < userDataLoc + sizeof(ChannelTableHeader))
+    {
+        usb_printf("parseData_DVS_RUN userData too short for ChannelTableHeader \n");
+        return false;
+    }
+
+    const ChannelTableHeader *channelTableHeader = (const ChannelTableHeader *)(data_in + userDataLoc);
+
+    usb_printf("nTotalChannelNum:%d\n", channelTableHeader->nTotalChannelNum);
+    usb_printf("fHardwareSampleRate:%d\n", channelTableHeader->fHardwareSampleRate);
+    usb_printf("nFlagIntDiff:%d\n", channelTableHeader->nFlagIntDiff);
+
+    userDataLoc += sizeof(ChannelTableHeader);
+
+    // ---------------------通道信息----------------------------
+    if (data_len < userDataLoc + (sizeof(ChannelTableElem) * channelTableHeader->nTotalChannelNum))
+    {
+        usb_printf("parseData_DVS_RUN userData too short for ChannelTableElem \n");
+        return false;
+    }
+
+    const ChannelTableElem *channelTableElem = (const ChannelTableElem *)(data_in + userDataLoc);
+
+    for (size_t i = 0; i < channelTableHeader->nTotalChannelNum; i++)
+    {
+        usb_printf("ChannelTableElem nChannelID:%d\n", channelTableElem[i].nChannelID);
+
+        usb_printf("ChannelTableElem nInputRange:%d\n", channelTableElem[i].nInputRange);
+
+        usb_printf("ChannelTableElem nGroupID:%d\n", channelTableElem[i].nGroupID);
+    }
+
+    userDataLoc += (sizeof(ChannelTableElem) * channelTableHeader->nTotalChannelNum);
+
+    // 解析完 channelTableElem 之后加入：
+    g_ch_enable_mask = 0; // 先清零
+    for (size_t i = 0; i < channelTableHeader->nTotalChannelNum; i++)
+    {
+        int32_t ch_id = channelTableElem[i].nChannelID;
+        if (ch_id >= 0 && ch_id < ADC_CH_TOTAL)
+        {
+            g_ch_enable_mask |= (1u << ch_id);
+        }
+    }
+    usb_printf("g_ch_enable_mask: 0x%06X\n", g_ch_enable_mask);
+
+    // // ---------------------设备详细信息----------------------------
+    // if (data_len < userDataLoc + sizeof(DeviceDetailInfo))
+    // {
+    //     usb_printf("parseData_DVS_RUN userData too short for DeviceDetailInfo\n");
+    //     return false;
+    // }
+
+    // const DeviceDetailInfo *dviceDetailInfo = (DeviceDetailInfo *)(data_in + userDataLoc);
+
+    // usb_printf("dviceDetailInfo.SystemID:%d\n", dviceDetailInfo->SystemID);
+
+    // userDataLoc += sizeof(DeviceDetailInfo);
+
+    // // ---------------------全局信息-----------------------------
+
+    // if (data_len < userDataLoc + sizeof(DSAGlobalParams))
+    // {
+    //     usb_printf("parseData_DVS_RUN userData too short for DSAGlobalParams\n");
+    //     return false;
+    // }
+
+    // const DSAGlobalParams *dsaGlobalParams = (DSAGlobalParams *)(data_in + userDataLoc);
+
+    // usb_printf("nBlockSize: %d\n", dsaGlobalParams->nBlockSize);
+    // usb_printf("nOverlapRatio: %d\n", dsaGlobalParams->nOverlapRatio);
+
+    // userDataLoc += sizeof(DSAGlobalParams);
+    // //------------------------------------------------------
+ 
     uint32_t sample_rate = 0;
     for (uint8_t i = 0; i < (int)(sizeof(g_ida_ch_rate) / sizeof(g_ida_ch_rate[0])); i++)
     {
-        if (channel_header->fHardwareSampleRate == g_ida_ch_rate[i].ch_cfg_value)
+        if (channelTableHeader->fHardwareSampleRate == g_ida_ch_rate[i].ch_cfg_value)
         {
             sample_rate = g_ida_ch_rate[i].ch_cfg_value;
             break;
         }
     }
-    //    sample_rate = 1000;
+
     usb_printf("sample_rate:%d", sample_rate);
 
     if (sample_rate > 0)
@@ -403,6 +477,7 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
 
     return PackReplyWithoutDatas(DVSARM_CSP_START_OK);
 }
+
 // 处理PC->ARM的DVSARM_RUN事件
 static uint32_t USB_Run_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {

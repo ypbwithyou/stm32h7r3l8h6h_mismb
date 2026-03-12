@@ -72,42 +72,69 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 /**
  * @brief  HAL库TIM周期性回调函数（优化版）
  */
+// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+// {
+//     uint16_t adc_data[ADS8319_CHAIN_LENGTH][SPI_USED_MAX];
+//     if (htim->Instance == GTIM_TIMX)
+//     {
+//         g_gtim_it_counts++;
+
+//         ticks_timx_reset_counter();
+// //        timestamp_t ts = dwt_get_timestamp();
+//         uint32_t start_time = ticks_timx_get_counter();
+//         // 启动转换
+//         ads8319_start_convst();
+//         uint32_t middle_time = ticks_timx_get_counter();
+// //        timestamp_t te = dwt_get_timestamp();
+        
+//         // 读取菊花链中的所有ADC数据
+//         ads8319_read_daisy_chain_fast(SPI1_SPI, 1, &adc_data[0][0]);
+
+//         ads8319_read_daisy_chain_fast(SPI2_SPI, 1, &adc_data[0][1]);
+
+//         ads8319_read_daisy_chain_fast(SPI3_SPI, 1, &adc_data[0][2]);
+//         if ((adc_data[0][0]>50000) || (adc_data[0][0]<20000)) {
+//             adc_data[0][0]++;
+//         }
+//         if ((adc_data[0][1]>50000) || (adc_data[0][1]<20000)) {
+//             adc_data[0][1]++;
+//         }
+//         if ((adc_data[0][2]>50000) || (adc_data[0][2]<20000)) {
+//             adc_data[0][2]++;
+//         }
+//         // 传输完成
+//         ads8319_stop_transfer();
+//         uint32_t stop_time = ticks_timx_get_counter();
+//         // int8_t ret = cb_write(g_cb_adc, (const char*)&adc_data[0][0], SPI_USED_MAX*2);
+// //        timestamp_t tl = dwt_get_timestamp();
+//     }
+// }
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    uint16_t adc_data[ADS8319_CHAIN_LENGTH][SPI_USED_MAX];
-    if (htim->Instance == GTIM_TIMX)
-    {
-        g_gtim_it_counts++;
+    if (htim->Instance != GTIM_TIMX) return;
 
-        ticks_timx_reset_counter();
-//        timestamp_t ts = dwt_get_timestamp();
-        uint32_t start_time = ticks_timx_get_counter();
-        // 启动转换
-        ads8319_start_convst();
-        uint32_t middle_time = ticks_timx_get_counter();
-//        timestamp_t te = dwt_get_timestamp();
-        
-        // 读取菊花链中的所有ADC数据
-        ads8319_read_daisy_chain_fast(SPI1_SPI, 1, &adc_data[0][0]);
+    g_gtim_it_counts++;
 
-        ads8319_read_daisy_chain_fast(SPI2_SPI, 1, &adc_data[0][1]);
+    // 每路SPI独立的8通道数据缓冲（与 adc_write_spi_channels 接口匹配）
+    uint16_t adc_data_spi1[ADS8319_CHAIN_LENGTH];  // SPI1, 8通道
+    uint16_t adc_data_spi2[ADS8319_CHAIN_LENGTH];  // SPI2, 8通道
+    uint16_t adc_data_spi3[ADS8319_CHAIN_LENGTH];  // SPI3, 8通道
 
-        ads8319_read_daisy_chain_fast(SPI3_SPI, 1, &adc_data[0][2]);
-        if ((adc_data[0][0]>50000) || (adc_data[0][0]<20000)) {
-            adc_data[0][0]++;
-        }
-        if ((adc_data[0][1]>50000) || (adc_data[0][1]<20000)) {
-            adc_data[0][1]++;
-        }
-        if ((adc_data[0][2]>50000) || (adc_data[0][2]<20000)) {
-            adc_data[0][2]++;
-        }
-        // 传输完成
-        ads8319_stop_transfer();
-        uint32_t stop_time = ticks_timx_get_counter();
-        // int8_t ret = cb_write(g_cb_adc, (const char*)&adc_data[0][0], SPI_USED_MAX*2);
-//        timestamp_t tl = dwt_get_timestamp();
-    }
+    ads8319_start_convst();
+
+    // 读取菊花链全部8个ADC
+    ads8319_read_daisy_chain_fast(SPI1_SPI, ADS8319_CHAIN_LENGTH, adc_data_spi1);
+    ads8319_read_daisy_chain_fast(SPI2_SPI, ADS8319_CHAIN_LENGTH, adc_data_spi2);
+    ads8319_read_daisy_chain_fast(SPI3_SPI, ADS8319_CHAIN_LENGTH, adc_data_spi3);
+
+    ads8319_stop_transfer();
+
+    // 写入按通道分离的环形缓冲区
+    // spi_idx=0对应ch0~7, spi_idx=1对应ch8~15, spi_idx=2对应ch16~23
+    adc_write_spi_channels(0, adc_data_spi1, g_gtim_it_counts);
+    adc_write_spi_channels(1, adc_data_spi2, g_gtim_it_counts);
+    adc_write_spi_channels(2, adc_data_spi3, g_gtim_it_counts);
 }
 
 /**
