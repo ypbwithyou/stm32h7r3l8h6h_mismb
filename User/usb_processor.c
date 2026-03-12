@@ -39,7 +39,7 @@ const Dev_ch_cfg_index g_LowPassFreq[] =
         {1000, LOW_PASS_FREQ_1kHz},
         {10000, LOW_PASS_FREQ_10kHz},
         {20000, LOW_PASS_FREQ_20kHz},
-}; // 浣庨€氭护娉�
+};  
 const Dev_ch_cfg_index g_ida_ch_rate[] =
     {
         {512.0, SAMPLE_RATE_INDEX_512HZ},
@@ -65,7 +65,7 @@ const Dev_ch_cfg_index g_ida_ch_rate[] =
         {102400.0, SAMPLE_RATE_INDEX_102400HZ},
         {204800.0, SAMPLE_RATE_INDEX_204800HZ},
         {256000.0, SAMPLE_RATE_INDEX_256000HZ},
-}; // 鏈増鏈敮鎸佺殑閲囨牱鐜�
+};  
 
 /*********************************************************************************/
 FRESULT clear_file_content(const char *path);

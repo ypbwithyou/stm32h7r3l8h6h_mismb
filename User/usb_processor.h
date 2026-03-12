@@ -116,4 +116,9 @@ int update_device_info_from_detail(DeviceDetailInfo dev_detail);
 void GetDeviceInfo(DeviceInfo *dev_info_data);
 void on_frame(uint8_t *frame, uint32_t frame_len);
 
+
+extern const Dev_ch_cfg_index g_ida_ch_rate[];
+extern const Dev_ch_cfg_index g_LowPassFreq[];
+extern const Dev_ch_cfg_index g_HighPassFreq[];
+
 #endif /* __USB_PROCESSOR_H */

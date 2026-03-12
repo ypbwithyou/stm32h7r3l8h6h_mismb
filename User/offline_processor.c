@@ -259,11 +259,57 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
         return;
     }
 
+    // ----------------------------------
+    g_ch_enable_mask = 0;
+    g_enabled_ch_cnt = 0;
+    memset(g_spi_adc_cnt, 0, sizeof(g_spi_adc_cnt));
+
+    for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
+    {
+        int32_t ch_id = g_offline_chCfgParam[i].nChannelID;
+        if (g_offline_chCfgParam[i].nChannelID == 1)
+            ch_id -= 1;
+
+        if (ch_id >= 0 && ch_id < ADC_CH_TOTAL)
+        {
+            g_ch_enable_mask |= (1u << ch_id);
+            g_enabled_chs[g_enabled_ch_cnt++] = (uint8_t)ch_id; // 按上位机顺序记录
+
+            uint8_t spi_idx = ch_id % SPI_NUM;
+            uint8_t adc_pos = ch_id / SPI_NUM;
+            if ((adc_pos + 1) > g_spi_adc_cnt[spi_idx])
+                g_spi_adc_cnt[spi_idx] = adc_pos + 1;
+        }
+    }
+
+    usb_printf("spi_adc_cnt: [%d, %d, %d]  mask=0x%06lX\n",
+               g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2],
+               g_ch_enable_mask);
+
+    uint32_t sample_rate = 0;
+    for (uint8_t i = 0; i < (int)(sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0])); i++)
+    {
+        if (g_offline_chCfgHeader.fHardwareSampleRate == g_off_ida_ch_rate[i].ch_cfg_value)
+        {
+            sample_rate = g_ida_ch_rate[i].ch_cfg_value;
+            break;
+        }
+    }
+
+    usb_printf("sample_rate:%d", sample_rate);
+
+    if (sample_rate > 0)
+    {
+        CfgAdcSampleRate(sample_rate);
+
+        g_IdaSystemStatus.st_dev_run.run_flag = 1;
+        AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+    }
+    // ----------------------------------
+
     usb_printf("ACQ_Start: starting acquisition\n");
 
     g_schedule_run_status[idx] = STATUS_ING;
-    g_IdaSystemStatus.st_dev_run.run_flag = 1;
-    AdcCollectorContrl(1); // 强烈建议打开采集控制
 
     // 有持续时间限制且已超时，则立即结束
     if (g_offline_ScheduleParam[idx].param1 > 0)
@@ -477,16 +523,9 @@ void offline_processor(uint8_t mode)
             sample_rate = 25600;
         }
 
-        CfgAdcSampleRate(sample_rate);
-
         /* 在配置成功时才重置时间基准，避免调度时序偏移 */
         base_tick_ms = HAL_GetTick();
         config_done = 1;
-
-        usb_printf("[Offline] Config OK: %u ch, %u schedules, %lu Hz\n",
-                   g_offline_chCfgHeader.nTotalChannelNum,
-                   g_offline_GlobalParam.nScheduleCount,
-                   sample_rate);
 
         // 离线计划启动时
         g_IdaSystemStatus.st_dev_offline.start_flag = 1;
@@ -884,17 +923,17 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
     }
 
 // 4. 定义写入段落的统一处理宏（大幅减少重复代码）
-#define WRITE_STRUCT(ptr, size, desc)                                                             \
-    do                                                                                            \
-    {                                                                                             \
+#define WRITE_STRUCT(ptr, size, desc)                                                       \
+    do                                                                                      \
+    {                                                                                       \
         res = f_write_dma_safe(&g_offline_record_fil, (const uint8_t *)(ptr), (size), &bw); \
-        if (res != FR_OK || bw != (size))                                                         \
-        {                                                                                         \
-            usb_printf("Failed to write %s to file '%s': res=%d, wrote=%u/%u\n",                  \
-                       (desc), file_name, res, bw, (UINT)(size));                                 \
-            f_close(&g_offline_record_fil);                                                       \
-            return res ? res : FR_DENIED;                                                         \
-        }                                                                                         \
+        if (res != FR_OK || bw != (size))                                                   \
+        {                                                                                   \
+            usb_printf("Failed to write %s to file '%s': res=%d, wrote=%u/%u\n",            \
+                       (desc), file_name, res, bw, (UINT)(size));                           \
+            f_close(&g_offline_record_fil);                                                 \
+            return res ? res : FR_DENIED;                                                   \
+        }                                                                                   \
     } while (0)
 
     // 5. 按顺序写入各个部分
@@ -920,7 +959,7 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     return FR_OK;
 }
- 
+
 /**
  * @brief 将 ADC 环形缓冲区数据追加写入离线记录文件
  *        数据格式：按使能通道顺序，每通道独立写入：
@@ -995,6 +1034,18 @@ static void OfflineDatasRecord(void)
             f_close(&g_offline_record_fil);
             return;
         }
+    }
+
+    static uint32_t last_tell = 0;
+    static uint32_t last_time = 0;
+    // 每秒打印一次
+    if (HAL_GetTick() - last_time >= 1000)
+    {
+        uint32_t now_tell = f_tell(&g_offline_record_fil);
+        uint32_t bytes_per_sec = now_tell - last_tell;
+        usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
+        last_tell = now_tell;
+        last_time = HAL_GetTick();
     }
 
     /* ── 3. 记录停止时的最终处理 ── */

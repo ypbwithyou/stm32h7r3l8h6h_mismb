@@ -92,78 +92,78 @@ void cb_clear(CircularBuffer *cb)
 // 向缓冲区写入数据（支持覆盖旧数据）
 int cb_write(CircularBuffer *cb, const char *data, int len)
 {
-    if (!cb || !data || len <= 0) return 0;
+    // if (!cb || !data || len <= 0) return 0;
 
-    // ★ 满了就丢弃新数据，绝不移动 read_pos
-    if (len > (cb->capacity - cb->size))
-    {
-        g_cb_overflow_cnt++;
-        return 0;
-    }
-
-    int first_part = cb->capacity - cb->write_pos;
-    if (len <= first_part)
-    {
-        memcpy(cb->buffer + cb->write_pos, data, len);
-        cb->write_pos = (cb->write_pos + len) % cb->capacity;
-    }
-    else
-    {
-        memcpy(cb->buffer + cb->write_pos, data, first_part);
-        memcpy(cb->buffer, data + first_part, len - first_part);
-        cb->write_pos = len - first_part;
-    }
-
-    cb->size += len;
-    return len;
-
-    // if (!cb || !data || len <= 0)
-    //     return 0;
-
-    // // 如果数据长度超过缓冲区容量，只保留最后capacity字节
-    // if (len > cb->capacity)
-    // {
-    //     data = data + (len - cb->capacity);
-    //     len = cb->capacity;
-    // }
-
-    // // 如果需要覆盖旧数据
+    // // ★ 满了就丢弃新数据，绝不移动 read_pos
     // if (len > (cb->capacity - cb->size))
     // {
-    //     // 计算需要丢弃的旧数据长度
-    //     int overflow = len - (cb->capacity - cb->size);
-
-    //     // 移动读指针，丢弃最旧的overflow字节
-    //     cb->read_pos = (cb->read_pos + overflow) % cb->capacity;
-    //     cb->size -= overflow;
-    //     if (cb->size < 0)
-    //         cb->size = 0;
+    //     g_cb_overflow_cnt++;
+    //     return 0;
     // }
 
-    // // 写入数据
-    // int write_len = len;
-
-    // // 分两段写入（如果需要）
     // int first_part = cb->capacity - cb->write_pos;
-    // if (write_len <= first_part)
+    // if (len <= first_part)
     // {
-    //     // 不需要分段
-    //     memcpy(cb->buffer + cb->write_pos, data, write_len);
-    //     cb->write_pos = (cb->write_pos + write_len) % cb->capacity;
+    //     memcpy(cb->buffer + cb->write_pos, data, len);
+    //     cb->write_pos = (cb->write_pos + len) % cb->capacity;
     // }
     // else
     // {
-    //     // 需要分段写入
     //     memcpy(cb->buffer + cb->write_pos, data, first_part);
-    //     memcpy(cb->buffer, data + first_part, write_len - first_part);
-    //     cb->write_pos = write_len - first_part;
+    //     memcpy(cb->buffer, data + first_part, len - first_part);
+    //     cb->write_pos = len - first_part;
     // }
 
-    // cb->size += write_len;
-    // if (cb->size > cb->capacity)
-    //     cb->size = cb->capacity;
+    // cb->size += len;
+    // return len;
 
-    // return write_len;
+    if (!cb || !data || len <= 0)
+        return 0;
+
+    // 如果数据长度超过缓冲区容量，只保留最后capacity字节
+    if (len > cb->capacity)
+    {
+        data = data + (len - cb->capacity);
+        len = cb->capacity;
+    }
+
+    // 如果需要覆盖旧数据
+    if (len > (cb->capacity - cb->size))
+    {
+        // 计算需要丢弃的旧数据长度
+        int overflow = len - (cb->capacity - cb->size);
+
+        // 移动读指针，丢弃最旧的overflow字节
+        cb->read_pos = (cb->read_pos + overflow) % cb->capacity;
+        cb->size -= overflow;
+        if (cb->size < 0)
+            cb->size = 0;
+    }
+
+    // 写入数据
+    int write_len = len;
+
+    // 分两段写入（如果需要）
+    int first_part = cb->capacity - cb->write_pos;
+    if (write_len <= first_part)
+    {
+        // 不需要分段
+        memcpy(cb->buffer + cb->write_pos, data, write_len);
+        cb->write_pos = (cb->write_pos + write_len) % cb->capacity;
+    }
+    else
+    {
+        // 需要分段写入
+        memcpy(cb->buffer + cb->write_pos, data, first_part);
+        memcpy(cb->buffer, data + first_part, write_len - first_part);
+        cb->write_pos = write_len - first_part;
+    }
+
+    cb->size += write_len;
+    if (cb->size > cb->capacity)
+        cb->size = cb->capacity;
+
+    return write_len;
 }
 
 // 从缓冲区读取数据
