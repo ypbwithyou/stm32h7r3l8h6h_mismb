@@ -757,12 +757,32 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     user_data.data_head.nTotalFrameNum = frame_num;
     user_data.data_head.nCurNs = dwt_get_ns();
 
+    // cb_read 之前加
+    // usb_printf("frame=%lu cb0_size=%d overflow=%lu\n",
+    //            frame_num,
+    //            cb_size(g_cb_ch[g_enabled_chs[0]]),
+    //            g_cb_overflow_cnt);
+
     /* 按配置顺序读取，与上位机通道顺序一致 */
     for (uint8_t n = 0; n < g_enabled_ch_cnt; n++)
     {
         uint8_t ch = g_enabled_chs[n];
         cb_read(g_cb_ch[ch], (char *)user_data.send_frame[n], cb_needed);
     }
+
+    // USB_Display_Reply 里，cb_read 之后加：
+    // usb_printf("ch0 pt0=%d pt1=%d pt2=%d pt3=%d pt4=%d\n",
+    //            ((int16_t *)user_data.send_frame[0])[0],
+    //            ((int16_t *)user_data.send_frame[0])[1],
+    //            ((int16_t *)user_data.send_frame[0])[2],
+    //            ((int16_t *)user_data.send_frame[0])[3],
+    //            ((int16_t *)user_data.send_frame[0])[4]);
+
+    // usb_printf("ch0 pt252=%d pt253=%d pt254=%d pt255=%d\n",
+    //            ((int16_t *)user_data.send_frame[0])[252],
+    //            ((int16_t *)user_data.send_frame[0])[253],
+    //            ((int16_t *)user_data.send_frame[0])[254],
+    //            ((int16_t *)user_data.send_frame[0])[255]);
 
     uint32_t send_len = sizeof(ArmBackFrameHeader) +
                         (uint32_t)g_enabled_ch_cnt * BLOCK_LEN * sizeof(short);

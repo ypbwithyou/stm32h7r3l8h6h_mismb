@@ -8,6 +8,8 @@ uint32_t g_ch_enable_mask = 0xFFFFFF;  // 默认全部24通道使能
 uint8_t g_enabled_chs[ADC_CH_TOTAL] = {0};
 uint8_t g_enabled_ch_cnt = 0;
 uint8_t g_spi_adc_cnt[SPI_NUM];
+volatile uint8_t g_adc_conv_ready = 0;
+volatile uint32_t g_cb_overflow_cnt = 0;
 
 int8_t collect_cb_init_all(uint32_t cb_len_per_ch)
 {

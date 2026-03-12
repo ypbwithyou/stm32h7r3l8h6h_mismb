@@ -1054,6 +1054,8 @@ int8_t app_processor(void)
 
     while (1)
     {
+
+        // ----------------------------------------------------------------------
         t_now = HAL_GetTick();
 
         t_off = t_now - t_last;
@@ -1065,7 +1067,6 @@ int8_t app_processor(void)
             CheckMcuRunStatus();
             LED0_TOGGLE();
 
- 
             // extern volatile uint32_t g_gtim_it_counts;
             // usb_printf("TIM_IT cnt=%lu  run_flag=%d\n",
             //            g_gtim_it_counts,

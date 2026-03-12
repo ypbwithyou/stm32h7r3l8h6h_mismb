@@ -94,37 +94,52 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+
     if (htim->Instance != GTIM_TIMX)
         return;
     g_gtim_it_counts++;
 
+    static uint8_t first_frame = 1;
     uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
 
-    ads8319_start_convst();
-
-    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    // 第1步：先读上一次转换结果（第1帧跳过）
+    if (!first_frame)
     {
-        if (g_spi_adc_cnt[spi] == 0)
-            continue;
-        ads8319_read_daisy_chain_fast(spi + 1, // SPI编号1-based
-                                      g_spi_adc_cnt[spi],
-                                      adc_buf[spi]);
+        for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+        {
+            if (g_spi_adc_cnt[spi] == 0)
+                continue;
+            ads8319_read_daisy_chain_fast(spi + 1, g_spi_adc_cnt[spi], adc_buf[spi]);
+        }
+        ADS8319_CONVST_LOW(); // 结束上次转换周期
+    }
+    else
+    {
+        first_frame = 0;
+        ADS8319_CONVST_LOW();
     }
 
-    ads8319_stop_transfer();
-
-    // 交错映射写回 g_cb_ch
-    // ch_id = spi * 1 + adc_pos * SPI_NUM  即 ch_id = adc_pos*3 + spi_idx
-    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    // 第2步：启动本次转换
+    ADS8319_CONVST_HIGH();
+    for (volatile uint16_t i = 0; i < 750; i++)
     {
-        for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
+        __NOP();
+    } // 等待1.2μs转换完成
+
+    // 第3步：写入缓冲区（使用刚读到的上帧数据）
+    if (g_gtim_it_counts > 1)
+    {
+        for (uint8_t spi = 0; spi < SPI_NUM; spi++)
         {
-            uint8_t ch = pos * SPI_NUM + spi; // 交错映射还原通道号
-            if (ch >= ADC_CH_TOTAL)
-                continue;
-            if (!(g_ch_enable_mask & (1u << ch)))
-                continue;
-            cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
+            for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
+            {
+                uint8_t ch = pos * SPI_NUM + spi;
+                if (ch >= ADC_CH_TOTAL)
+                    continue;
+                if (!(g_ch_enable_mask & (1u << ch)))
+                    continue;
+                cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
+            }
         }
     }
 }
