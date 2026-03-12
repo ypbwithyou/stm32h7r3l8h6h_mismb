@@ -1,22 +1,3 @@
-/**
- ****************************************************************************************************
- * @file        gtim.c
- * @author      ����ԭ���Ŷ�(ALIENTEK)
- * @version     V1.0
- * @date        2024-05-21
- * @brief       ͨ�ö�ʱ����������
- * @license     Copyright (c) 2020-2032, �������������ӿƼ����޹�˾
- ****************************************************************************************************
- * @attention
- * 
- * ʵ��ƽ̨:����ԭ�� H7R3������
- * ������Ƶ:www.yuanzige.com
- * ������̳:www.openedv.com
- * ��˾��ַ:www.alientek.com
- * �����ַ:openedv.taobao.com
- * 
- ****************************************************************************************************
- */
 
 #include "./BSP/TIMER/gtim.h"
 #include "./BSP/LED/led.h"
@@ -24,6 +5,7 @@
 #include "./BSP/SPI/spi.h"
 #include "collector_processor.h"
 
+#include "usbd_cdc_if.h"
 
 /* TIM句柄 */
 TIM_HandleTypeDef g_gtimx_handle = {0};
@@ -44,10 +26,10 @@ void gtim_timx_int_init(unsigned short arr, unsigned short psc)
     g_gtimx_handle.Init.Period = arr;
     g_gtimx_handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
     g_gtimx_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-    
+
     HAL_TIM_Base_Init(&g_gtimx_handle);
-//    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
-    
+    //    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
+
     g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
 }
@@ -60,14 +42,13 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
     if (htim->Instance == GTIM_TIMX)
     {
         GTIM_TIMX_CLK_ENABLE();
-        
+
         // 降低中断优先级，避免影响任务调度
         // 优先级10（数字越大优先级越低）
         HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 10, 0);
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
-
 
 /**
  * @brief  HAL库TIM周期性回调函数（优化版）
@@ -86,7 +67,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 //         ads8319_start_convst();
 //         uint32_t middle_time = ticks_timx_get_counter();
 // //        timestamp_t te = dwt_get_timestamp();
-        
+
 //         // 读取菊花链中的所有ADC数据
 //         ads8319_read_daisy_chain_fast(SPI1_SPI, 1, &adc_data[0][0]);
 
@@ -109,32 +90,42 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 // //        timestamp_t tl = dwt_get_timestamp();
 //     }
 // }
-
+#include "collector_processor.h"
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Instance != GTIM_TIMX) return;
-
+    if (htim->Instance != GTIM_TIMX)
+        return;
     g_gtim_it_counts++;
 
-    // 每路SPI独立的8通道数据缓冲（与 adc_write_spi_channels 接口匹配）
-    uint16_t adc_data_spi1[ADS8319_CHAIN_LENGTH];  // SPI1, 8通道
-    uint16_t adc_data_spi2[ADS8319_CHAIN_LENGTH];  // SPI2, 8通道
-    uint16_t adc_data_spi3[ADS8319_CHAIN_LENGTH];  // SPI3, 8通道
+    uint16_t adc_buf[SPI_NUM][SPI_CH_NUM] = {0};
 
     ads8319_start_convst();
 
-    // 读取菊花链全部8个ADC
-    ads8319_read_daisy_chain_fast(SPI1_SPI, ADS8319_CHAIN_LENGTH, adc_data_spi1);
-    ads8319_read_daisy_chain_fast(SPI2_SPI, ADS8319_CHAIN_LENGTH, adc_data_spi2);
-    ads8319_read_daisy_chain_fast(SPI3_SPI, ADS8319_CHAIN_LENGTH, adc_data_spi3);
+    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    {
+        if (g_spi_adc_cnt[spi] == 0)
+            continue;
+        ads8319_read_daisy_chain_fast(spi + 1, // SPI编号1-based
+                                      g_spi_adc_cnt[spi],
+                                      adc_buf[spi]);
+    }
 
     ads8319_stop_transfer();
 
-    // 写入按通道分离的环形缓冲区
-    // spi_idx=0对应ch0~7, spi_idx=1对应ch8~15, spi_idx=2对应ch16~23
-    adc_write_spi_channels(0, adc_data_spi1, g_gtim_it_counts);
-    adc_write_spi_channels(1, adc_data_spi2, g_gtim_it_counts);
-    adc_write_spi_channels(2, adc_data_spi3, g_gtim_it_counts);
+    // 交错映射写回 g_cb_ch
+    // ch_id = spi * 1 + adc_pos * SPI_NUM  即 ch_id = adc_pos*3 + spi_idx
+    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    {
+        for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
+        {
+            uint8_t ch = pos * SPI_NUM + spi; // 交错映射还原通道号
+            if (ch >= ADC_CH_TOTAL)
+                continue;
+            if (!(g_ch_enable_mask & (1u << ch)))
+                continue;
+            cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
+        }
+    }
 }
 
 /**
@@ -185,16 +176,16 @@ uint32_t get_gtim_interrupt_count(void)
 static void ticks_timx_int_init(void)
 {
     TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-    
+
     TICKS_TIMX_CLK_ENABLE();
-    
+
     g_timx_ticks_handle.Instance = TICKS_TIMX;
-    g_timx_ticks_handle.Init.Prescaler = TICKS_TIMX_PRESCALER-1;
+    g_timx_ticks_handle.Init.Prescaler = TICKS_TIMX_PRESCALER - 1;
     g_timx_ticks_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
     g_timx_ticks_handle.Init.Period = TICKS_TIMX_PERIOD;
     g_timx_ticks_handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
     g_timx_ticks_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-    
+
     HAL_TIM_Base_Init(&g_timx_ticks_handle);
     sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
     HAL_TIM_ConfigClockSource(&g_timx_ticks_handle, &sClockSourceConfig);

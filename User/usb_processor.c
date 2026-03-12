@@ -414,17 +414,32 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
 
     userDataLoc += (sizeof(ChannelTableElem) * channelTableHeader->nTotalChannelNum);
 
-    // 解析完 channelTableElem 之后加入：
-    g_ch_enable_mask = 0; // 先清零
+    g_ch_enable_mask = 0;
+    memset(g_spi_adc_cnt, 0, sizeof(g_spi_adc_cnt));
+
     for (size_t i = 0; i < channelTableHeader->nTotalChannelNum; i++)
     {
         int32_t ch_id = channelTableElem[i].nChannelID;
+        if (channelTableElem[0].nChannelID == 1)
+            ch_id -= 1; // 1-based → 0-based
+
         if (ch_id >= 0 && ch_id < ADC_CH_TOTAL)
         {
             g_ch_enable_mask |= (1u << ch_id);
+
+            // 交错映射
+            uint8_t spi_idx = ch_id % SPI_NUM; // 0,1,2,0,1,2...
+            uint8_t adc_pos = ch_id / SPI_NUM; // 0,0,0,1,1,1...
+
+            // 记录该SPI需要读到第几个ADC（取最大值，菊花链必须连续读）
+            if ((adc_pos + 1) > g_spi_adc_cnt[spi_idx])
+                g_spi_adc_cnt[spi_idx] = adc_pos + 1;
         }
     }
-    usb_printf("g_ch_enable_mask: 0x%06X\n", g_ch_enable_mask);
+
+    usb_printf("spi_adc_cnt: [%d, %d, %d]  mask=0x%06lX\n",
+               g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2],
+               g_ch_enable_mask);
 
     // // ---------------------设备详细信息----------------------------
     // if (data_len < userDataLoc + sizeof(DeviceDetailInfo))
@@ -454,7 +469,7 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
 
     // userDataLoc += sizeof(DSAGlobalParams);
     // //------------------------------------------------------
- 
+
     uint32_t sample_rate = 0;
     for (uint8_t i = 0; i < (int)(sizeof(g_ida_ch_rate) / sizeof(g_ida_ch_rate[0])); i++)
     {
@@ -732,6 +747,13 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
             ready_chs[ready_cnt++] = i;
         }
     }
+
+    // // ★ 调试：每次被调用都打印
+    // usb_printf("Display: mask=0x%lX ready=%d cb0=%d needed=%lu\n",
+    //            g_ch_enable_mask, ready_cnt,
+    //            g_cb_ch[0] ? cb_size(g_cb_ch[0]) : -1,
+    //            cb_needed);
+
     if (ready_cnt == 0)
         return 0;
 
@@ -771,6 +793,11 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
 // 处理PC->ARM的DVSARM_DISPNEXT_OK事件，循环发送数据
 void USB_Display_All(uint32_t run_flag)
 {
+    // usb_printf("DisplayAll: run=%lu offline=%d record=%d\n",
+    //            run_flag,
+    //            g_IdaSystemStatus.st_dev_offline.start_flag,
+    //            g_IdaSystemStatus.st_dev_record.record_status);
+
     // 离线计划运行中，禁止发送
     if (g_IdaSystemStatus.st_dev_offline.start_flag == 1)
         return;

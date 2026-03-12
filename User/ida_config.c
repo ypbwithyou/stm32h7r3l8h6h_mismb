@@ -1064,6 +1064,19 @@ int8_t app_processor(void)
             CheckMcuPwrStatus();
             CheckMcuRunStatus();
             LED0_TOGGLE();
+
+ 
+            extern volatile uint32_t g_gtim_it_counts;
+            usb_printf("TIM_IT cnt=%lu  run_flag=%d\n",
+                       g_gtim_it_counts,
+                       g_IdaSystemStatus.st_dev_run.run_flag);
+
+            // // 打印前3通道的缓冲区大小
+            // usb_printf("cb[0]=%d cb[1]=%d cb[2]=%d  mask=0x%06lX\n",
+            //            g_cb_ch[0] ? cb_size(g_cb_ch[0]) : -1,
+            //            g_cb_ch[1] ? cb_size(g_cb_ch[1]) : -1,
+            //            g_cb_ch[2] ? cb_size(g_cb_ch[2]) : -1,
+            //            g_ch_enable_mask);
         }
 
         //       // START事件处理（事件发生时执行一次离线计划表offline_processor，计划表执行期间的重复事件视为同一次）

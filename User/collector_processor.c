@@ -5,6 +5,7 @@
 
 CircularBuffer* g_cb_ch[ADC_CH_TOTAL];   // 24通道环形缓冲区
 uint32_t        g_ch_enable_mask = 0xFFFFFF;  // 默认全部24通道使能
+uint8_t         g_spi_adc_cnt[SPI_NUM];  
 
 int8_t collect_cb_init_all(uint32_t cb_len_per_ch)
 {
