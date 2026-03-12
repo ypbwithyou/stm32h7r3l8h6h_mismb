@@ -1005,44 +1005,6 @@ static void OfflineDatasRecord(void)
     //     avail = cb_size(g_cb_adc);
     // }
 
-    // // ── 记录停止时的最终处理 ───────────────────────────────────────
-    // if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
-    // {
-
-    //     // 更新文件总帧数
-    //     g_recorde_file_head.nFrameNum = frame_num;
-
-    //     // 回写文件头部
-    //     res = f_lseek(&g_offline_record_fil, 0);
-    //     if (res == FR_OK)
-    //     {
-    //         res = f_write(&g_offline_record_fil,
-    //                       &g_recorde_file_head,
-    //                       sizeof(g_recorde_file_head),
-    //                       &bw);
-    //     }
-
-    //     if (res != FR_OK || bw != sizeof(g_recorde_file_head))
-    //     {
-    //         usb_printf("Failed to update file header during stop, res=%d\n", res);
-    //     }
-
-    //     // 确保所有数据落盘
-    //     f_sync(&g_offline_record_fil);
-
-    //     // 关闭文件
-    //     f_close(&g_offline_record_fil);
-
-    //     // 重置帧计数，为下一次记录准备
-    //     frame_num = 0;
-
-    //     // 可选：清空标志
-    //     memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
-    //     g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE; // 建议增加空闲状态
-
-    //     usb_printf("g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP, res=%d\n", res);
-    // }
-
     static uint32_t frame_num = 0;
     FRESULT res;
     UINT bw;
@@ -1086,6 +1048,44 @@ static void OfflineDatasRecord(void)
         { /* 错误处理 */
             return;
         }
+    }
+
+    // ── 记录停止时的最终处理 ───────────────────────────────────────
+    if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
+    {
+
+        // 更新文件总帧数
+        g_recorde_file_head.nFrameNum = frame_num;
+
+        // 回写文件头部
+        res = f_lseek(&g_offline_record_fil, 0);
+        if (res == FR_OK)
+        {
+            res = f_write(&g_offline_record_fil,
+                          &g_recorde_file_head,
+                          sizeof(g_recorde_file_head),
+                          &bw);
+        }
+
+        if (res != FR_OK || bw != sizeof(g_recorde_file_head))
+        {
+            usb_printf("Failed to update file header during stop, res=%d\n", res);
+        }
+
+        // 确保所有数据落盘
+        f_sync(&g_offline_record_fil);
+
+        // 关闭文件
+        f_close(&g_offline_record_fil);
+
+        // 重置帧计数，为下一次记录准备
+        frame_num = 0;
+
+        // 可选：清空标志
+        memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
+        g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE; // 建议增加空闲状态
+
+        usb_printf("g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP, res=%d\n", res);
     }
 }
 
