@@ -230,149 +230,149 @@ unsigned char spi_read_write_byte(unsigned int spi_periph, unsigned char *txdata
     return size; /* �����յ������� */
 }
  
- unsigned char spi_read_write_byte_fast(unsigned int spi_periph,
-                                        unsigned char *txdata,
-                                        unsigned char *rxdata,
-                                        unsigned char size)
-{
-    SPI_TypeDef *SPIx = NULL;
-    uint8_t idx = 0;
-
-    switch (spi_periph) {
-        case SPI1_SPI: SPIx = SPI1_SPIx; idx = 0; break;
-        case SPI2_SPI: SPIx = SPI2_SPIx; idx = 1; break;
-        case SPI3_SPI: SPIx = SPI3_SPIx; idx = 2; break;
-        default: return 0;
-    }
-
-    SPI_HandleTypeDef *hspi = &g_spi_handle[idx];
-
-    /* 设置传输字节数 */
-    MODIFY_REG(SPIx->CR2, SPI_CR2_TSIZE, size);
-    __HAL_SPI_ENABLE(hspi);
-    SET_BIT(SPIx->CR1, SPI_CR1_CSTART);
-
-    uint8_t tx_sent = 0;
-    uint8_t rx_recv = 0;
-
-    /* 流水线：TX和RX同时推进，不等单字节完成 */
-    while (rx_recv < size)
-    {
-        /* 有FIFO空间且还有数据要发 */
-        if (tx_sent < size && (SPIx->SR & SPI_SR_TXP))
-        {
-            *(__IO uint8_t *)&SPIx->TXDR = txdata ? txdata[tx_sent] : 0xFF;
-            tx_sent++;
-        }
-        /* 有数据可读 */
-        if (SPIx->SR & SPI_SR_RXP)
-        {
-            uint8_t rx_byte = *(__IO uint8_t *)&SPIx->RXDR;
-            if (rxdata) rxdata[rx_recv] = rx_byte;
-            rx_recv++;
-        }
-    }
-
-    /* 等待传输彻底完成 */
-    uint32_t timeout = 10000;
-    while (!(SPIx->SR & SPI_SR_EOT) && --timeout);
-    SPIx->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC;
-    hspi->State = HAL_SPI_STATE_READY;
-
-    return size;
-}
-
-// unsigned char spi_read_write_byte_fast(unsigned int spi_periph, unsigned char *txdata, unsigned char *rxdata, unsigned char size)
+//  unsigned char spi_read_write_byte_fast(unsigned int spi_periph,
+//                                         unsigned char *txdata,
+//                                         unsigned char *rxdata,
+//                                         unsigned char size)
 // {
 //     SPI_TypeDef *SPIx = NULL;
-//     uint8_t i = 0;
-//     SPI_HandleTypeDef *hspi;
+//     uint8_t idx = 0;
 
-//     // 获取SPI实例
-//     switch (spi_periph)
-//     {
-//     case SPI1_SPI:
-//         SPIx = SPI1_SPIx;
-//         i = 0;
-//         break;
-//     case SPI2_SPI:
-//         SPIx = SPI2_SPIx;
-//         i = 1;
-//         break;
-//     case SPI3_SPI:
-//         SPIx = SPI3_SPIx;
-//         i = 2;
-//         break;
-//     default:
-//         return 0;
+//     switch (spi_periph) {
+//         case SPI1_SPI: SPIx = SPI1_SPIx; idx = 0; break;
+//         case SPI2_SPI: SPIx = SPI2_SPIx; idx = 1; break;
+//         case SPI3_SPI: SPIx = SPI3_SPIx; idx = 2; break;
+//         default: return 0;
 //     }
 
-//     hspi = &g_spi_handle[i];
+//     SPI_HandleTypeDef *hspi = &g_spi_handle[idx];
 
-//     /* Set the transaction information */
-//     hspi->State = HAL_SPI_STATE_BUSY_TX_RX;
-//     hspi->ErrorCode = HAL_SPI_ERROR_NONE;
-//     hspi->pRxBuffPtr = (uint8_t *)rxdata;
-//     hspi->RxXferCount = size;
-//     hspi->RxXferSize = size;
-//     hspi->pTxBuffPtr = (const uint8_t *)txdata;
-//     hspi->TxXferCount = size;
-//     hspi->TxXferSize = size;
-
-//     /*Init field not used in handle to zero */
-//     hspi->RxISR = NULL;
-//     hspi->TxISR = NULL;
-
-//     /* Set Full-Duplex mode */
-//     SPI_2LINES(hspi);
-
-//     /* Set the number of data at current transfer */
-//     MODIFY_REG(hspi->Instance->CR2, SPI_CR2_TSIZE, size);
-
+//     /* 设置传输字节数 */
+//     MODIFY_REG(SPIx->CR2, SPI_CR2_TSIZE, size);
 //     __HAL_SPI_ENABLE(hspi);
+//     SET_BIT(SPIx->CR1, SPI_CR1_CSTART);
 
-//     if (hspi->Init.Mode == SPI_MODE_MASTER)
+//     uint8_t tx_sent = 0;
+//     uint8_t rx_recv = 0;
+
+//     /* 流水线：TX和RX同时推进，不等单字节完成 */
+//     while (rx_recv < size)
 //     {
-//         /* Master transfer start */
-//         SET_BIT(hspi->Instance->CR1, SPI_CR1_CSTART);
-//     }
-
-//     // 直接使用HAL库的寄存器配置，但用轮询方式读取
-//     for (uint8_t byte_count = 0; byte_count < size; byte_count++)
-//     {
-//         uint8_t tx_byte = txdata ? txdata[byte_count] : 0xFF;
-
-//         // 等待TXE标志（发送缓冲区空）
-//         while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_TXP)))
-//             ;
-
-//         // 写入数据
-//         *(__IO uint8_t *)&SPIx->TXDR = tx_byte;
-
-//         // 等待RXNE标志（接收缓冲区非空）
-//         while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_RXP)))
-//             ;
-
-//         // 读取数据
-//         if (rxdata)
+//         /* 有FIFO空间且还有数据要发 */
+//         if (tx_sent < size && (SPIx->SR & SPI_SR_TXP))
 //         {
-//             rxdata[byte_count] = *(__IO uint8_t *)&SPIx->RXDR;
+//             *(__IO uint8_t *)&SPIx->TXDR = txdata ? txdata[tx_sent] : 0xFF;
+//             tx_sent++;
 //         }
-//         else
+//         /* 有数据可读 */
+//         if (SPIx->SR & SPI_SR_RXP)
 //         {
-//             (void)*(__IO uint8_t *)&SPIx->RXDR;
+//             uint8_t rx_byte = *(__IO uint8_t *)&SPIx->RXDR;
+//             if (rxdata) rxdata[rx_recv] = rx_byte;
+//             rx_recv++;
 //         }
 //     }
 
-//     // 等待传输完成
-//     while (!__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_EOT))
-//         ;
-
-//     // 清除状态标志
+//     /* 等待传输彻底完成 */
+//     uint32_t timeout = 10000;
+//     while (!(SPIx->SR & SPI_SR_EOT) && --timeout);
 //     SPIx->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC;
+//     hspi->State = HAL_SPI_STATE_READY;
 
 //     return size;
 // }
+
+unsigned char spi_read_write_byte_fast(unsigned int spi_periph, unsigned char *txdata, unsigned char *rxdata, unsigned char size)
+{
+    SPI_TypeDef *SPIx = NULL;
+    uint8_t i = 0;
+    SPI_HandleTypeDef *hspi;
+
+    // 获取SPI实例
+    switch (spi_periph)
+    {
+    case SPI1_SPI:
+        SPIx = SPI1_SPIx;
+        i = 0;
+        break;
+    case SPI2_SPI:
+        SPIx = SPI2_SPIx;
+        i = 1;
+        break;
+    case SPI3_SPI:
+        SPIx = SPI3_SPIx;
+        i = 2;
+        break;
+    default:
+        return 0;
+    }
+
+    hspi = &g_spi_handle[i];
+
+    /* Set the transaction information */
+    hspi->State = HAL_SPI_STATE_BUSY_TX_RX;
+    hspi->ErrorCode = HAL_SPI_ERROR_NONE;
+    hspi->pRxBuffPtr = (uint8_t *)rxdata;
+    hspi->RxXferCount = size;
+    hspi->RxXferSize = size;
+    hspi->pTxBuffPtr = (const uint8_t *)txdata;
+    hspi->TxXferCount = size;
+    hspi->TxXferSize = size;
+
+    /*Init field not used in handle to zero */
+    hspi->RxISR = NULL;
+    hspi->TxISR = NULL;
+
+    /* Set Full-Duplex mode */
+    SPI_2LINES(hspi);
+
+    /* Set the number of data at current transfer */
+    MODIFY_REG(hspi->Instance->CR2, SPI_CR2_TSIZE, size);
+
+    __HAL_SPI_ENABLE(hspi);
+
+    if (hspi->Init.Mode == SPI_MODE_MASTER)
+    {
+        /* Master transfer start */
+        SET_BIT(hspi->Instance->CR1, SPI_CR1_CSTART);
+    }
+
+    // 直接使用HAL库的寄存器配置，但用轮询方式读取
+    for (uint8_t byte_count = 0; byte_count < size; byte_count++)
+    {
+        uint8_t tx_byte = txdata ? txdata[byte_count] : 0xFF;
+
+        // 等待TXE标志（发送缓冲区空）
+        while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_TXP)))
+            ;
+
+        // 写入数据
+        *(__IO uint8_t *)&SPIx->TXDR = tx_byte;
+
+        // 等待RXNE标志（接收缓冲区非空）
+        while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_RXP)))
+            ;
+
+        // 读取数据
+        if (rxdata)
+        {
+            rxdata[byte_count] = *(__IO uint8_t *)&SPIx->RXDR;
+        }
+        else
+        {
+            (void)*(__IO uint8_t *)&SPIx->RXDR;
+        }
+    }
+
+    // 等待传输完成
+    while (!__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_EOT))
+        ;
+
+    // 清除状态标志
+    SPIx->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC;
+
+    return size;
+}
 
 /**
  * @brief       SPI超快速批量传输函数（寄存器版本，用于连续读取多个字节）
