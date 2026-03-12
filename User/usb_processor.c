@@ -415,23 +415,22 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
     userDataLoc += (sizeof(ChannelTableElem) * channelTableHeader->nTotalChannelNum);
 
     g_ch_enable_mask = 0;
+    g_enabled_ch_cnt = 0;
     memset(g_spi_adc_cnt, 0, sizeof(g_spi_adc_cnt));
 
     for (size_t i = 0; i < channelTableHeader->nTotalChannelNum; i++)
     {
         int32_t ch_id = channelTableElem[i].nChannelID;
         if (channelTableElem[0].nChannelID == 1)
-            ch_id -= 1; // 1-based → 0-based
+            ch_id -= 1;
 
         if (ch_id >= 0 && ch_id < ADC_CH_TOTAL)
         {
             g_ch_enable_mask |= (1u << ch_id);
+            g_enabled_chs[g_enabled_ch_cnt++] = (uint8_t)ch_id; // 按上位机顺序记录
 
-            // 交错映射
-            uint8_t spi_idx = ch_id % SPI_NUM; // 0,1,2,0,1,2...
-            uint8_t adc_pos = ch_id / SPI_NUM; // 0,0,0,1,1,1...
-
-            // 记录该SPI需要读到第几个ADC（取最大值，菊花链必须连续读）
+            uint8_t spi_idx = ch_id % SPI_NUM;
+            uint8_t adc_pos = ch_id / SPI_NUM;
             if ((adc_pos + 1) > g_spi_adc_cnt[spi_idx])
                 g_spi_adc_cnt[spi_idx] = adc_pos + 1;
         }
@@ -733,29 +732,19 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     (void)user_head;
 
     static uint32_t frame_num = 0;
-    const uint32_t cb_needed = BLOCK_LEN * ADC_DATA_LEN; // 单通道需要字节数
+    const uint32_t cb_needed = BLOCK_LEN * ADC_DATA_LEN;
 
-    /* 统计使能且数据就绪的通道 */
-    uint8_t ready_chs[ADC_CH_TOTAL];
-    uint8_t ready_cnt = 0;
-    for (uint8_t i = 0; i < ADC_CH_TOTAL; i++)
-    {
-        if ((g_ch_enable_mask & (1u << i)) &&
-            g_cb_ch[i] &&
-            cb_size(g_cb_ch[i]) >= (int)cb_needed)
-        {
-            ready_chs[ready_cnt++] = i;
-        }
-    }
-
-    // // ★ 调试：每次被调用都打印
-    // usb_printf("Display: mask=0x%lX ready=%d cb0=%d needed=%lu\n",
-    //            g_ch_enable_mask, ready_cnt,
-    //            g_cb_ch[0] ? cb_size(g_cb_ch[0]) : -1,
-    //            cb_needed);
-
-    if (ready_cnt == 0)
+    // 没有配置通道则直接返回
+    if (g_enabled_ch_cnt == 0)
         return 0;
+
+    // 所有配置通道必须全部就绪，否则等下一次
+    for (uint8_t i = 0; i < g_enabled_ch_cnt; i++)
+    {
+        uint8_t ch = g_enabled_chs[i];
+        if (!g_cb_ch[ch] || cb_size(g_cb_ch[ch]) < (int)cb_needed)
+            return 0; // 有通道未就绪，本次不发
+    }
 
     /* 填充帧头 */
     struct UserData user_data;
@@ -763,27 +752,25 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     frame_num++;
     user_data.data_head.nVersion = 0x12345678;
     user_data.data_head.nDataSource = 0;
-    user_data.data_head.nFrameChCount = ready_cnt; // 实际发送通道数
+    user_data.data_head.nFrameChCount = g_enabled_ch_cnt; // 固定值
     user_data.data_head.nFrameLen = BLOCK_LEN;
     user_data.data_head.nTotalFrameNum = frame_num;
     user_data.data_head.nCurNs = dwt_get_ns();
 
-    /* 按通道顺序读取数据，写入连续发送区 */
-    for (uint8_t n = 0; n < ready_cnt; n++)
+    /* 按配置顺序读取，与上位机通道顺序一致 */
+    for (uint8_t n = 0; n < g_enabled_ch_cnt; n++)
     {
-        uint8_t ch = ready_chs[n];
+        uint8_t ch = g_enabled_chs[n];
         cb_read(g_cb_ch[ch], (char *)user_data.send_frame[n], cb_needed);
     }
 
-    /* 实际发送大小：帧头 + ready_cnt×BLOCK_LEN×2字节 */
-    uint32_t send_len = sizeof(ArmBackFrameHeader) + (uint32_t)ready_cnt * BLOCK_LEN * sizeof(short);
+    uint32_t send_len = sizeof(ArmBackFrameHeader) +
+                        (uint32_t)g_enabled_ch_cnt * BLOCK_LEN * sizeof(short);
 
     FrameHeadInfo reply_frame_head = create_default_frame_head(frame_num);
-    UserDataHeadInfo reply_user_head =
-        create_user_data_head(DVSARM_DISPNEXT_OK,
-                              SOURCE_TYPE_WITH_DATAS,
-                              DESTINATION_ARM_TO_PC,
-                              send_len);
+    UserDataHeadInfo reply_user_head = create_user_data_head(
+        DVSARM_DISPNEXT_OK, SOURCE_TYPE_WITH_DATAS, DESTINATION_ARM_TO_PC, send_len);
+
     uint32_t packet_len = 0;
     pack_data((uint8_t *)&user_data, send_len,
               &reply_user_head, &reply_frame_head, &packet_len);
