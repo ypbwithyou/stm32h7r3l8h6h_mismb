@@ -267,8 +267,8 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
         int32_t ch_id = g_offline_chCfgParam[i].nChannelID;
-        if (g_offline_chCfgParam[i].nChannelID == 1)
-            ch_id -= 1;
+        // if (g_offline_chCfgParam[i].nChannelID == 1)
+        //     ch_id -= 1;
 
         if (ch_id >= 0 && ch_id < ADC_CH_TOTAL)
         {
