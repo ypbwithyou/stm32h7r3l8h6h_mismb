@@ -75,7 +75,7 @@ RECORD_FILE_HEADER g_recorde_file_head;
 uint8_t g_schedule_run_status[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表项目执行情况:
                                                           // 0--未执行，1--执行中，2--执行完成
 
-double NANOSECONDS_PER_SECOND = 1e9;
+#define NANOSECONDS_PER_SECOND 1e9
 
 static uint32_t record_frame_num = 0;
 
