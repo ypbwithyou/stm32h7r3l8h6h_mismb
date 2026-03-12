@@ -268,17 +268,69 @@ static uint32_t USB_DetectPeriod(void)
     pack_data(send_frame, send_len, &user_head, &frame_head, &packet_len);
     return packet_len;
 }
+
 // 处理PC->ARM的DVS_INIT_CONNECT事件
-static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *fHead, UserDataHeadInfo *userHead)
 {
     (void)data_in;    // 未使用用户数据
     (void)data_len;   // 未使用用户数据长度
-    (void)frame_head; // 未使用帧头
-    (void)user_head;  // 未使用用户头
+    (void)fHead; // 未使用帧头
+    (void)userHead;  // 未使用用户头
 
     g_IdaSystemStatus.st_dev_link.link_status = USB_CONNECTED;
 
-    return PackReplyWithoutDatas(DVS_INIT_CONNECT_OK);
+    uint8_t serial_num = 0;
+    uint8_t send_frame[sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * SUBDEV_NUM_MAX];
+    uint32_t send_len = 0;
+
+    // 获取子卡设备信息
+    uint8_t subden_num = 0; // 子卡设备数量
+    // for(uint8_t i=0; i<SUBDEV_NUM_MAX; i++) {
+    //     if (g_SubDevicelnfo[i].SlotId != 0) {
+    //         subden_num++;
+    //         memcpy(&send_frame[sizeof(DeviceInfo)+sizeof(SubDevicelnfo)*(subden_num-1)], &g_SubDevicelnfo[i], sizeof(SubDevicelnfo));
+    //     }
+    // }
+    SubDevicelnfo subden_info[SUBDEN_NUM];
+    subden_num = 1;
+    strcpy((char *)&subden_info[0].SerialNumber[0], "MIRA3102501002");
+    strcpy((char *)&subden_info[0].DeviceName[0], Name_Mini_SliceAccel);
+    strcpy((char *)&subden_info[0].Version[0], "1.0.0.0_20260114");
+    subden_info[0].DeviceType = Mini_SliceAccel;
+    subden_info[0].SlotId = 1;
+    subden_info[0].Sensitivity = 3;  
+    memcpy(send_frame + sizeof(DeviceInfo), subden_info[0].SerialNumber, sizeof(SubDevicelnfo));
+
+    strcpy((char *)&g_dev_info.Version[0], "1.0.0.0_20260114");
+    strcpy((char *)&g_dev_info.DeviceName[0], Name_Mini_SliceMicro);
+    strcpy((char *)&g_dev_info.AccessCode[0], "NTS2026");
+    strcpy((char *)&g_dev_info.SerialNumber[0], "MISMB102501002");
+    g_dev_info.DeviceType = Mini_SliceMicro;
+
+    // 获取base板设备信息
+    if (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED)
+    {
+        g_dev_info.IsConnected = 1;
+    }
+    else
+    {
+        g_dev_info.IsConnected = 0;
+    }
+    g_dev_info.SubDeviceNum = subden_num;
+    memcpy(send_frame, &g_dev_info, sizeof(DeviceInfo));
+
+    // 计算数据长度
+    send_len = sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * subden_num;
+
+    // 发送数据
+    FrameHeadInfo frame_head = create_default_frame_head(serial_num);
+    UserDataHeadInfo user_head = create_user_data_head(DVS_INIT_CONNECT_OK,
+                                                       SOURCE_TYPE_WITH_DATAS,
+                                                       DESTINATION_ARM_TO_PC,
+                                                       send_len);
+    uint32_t packet_len = 0;
+    pack_data(send_frame, send_len, &user_head, &frame_head, &packet_len);
+    return packet_len;
 }
 
 // 处理PC->ARM的DVS_INIT_DISCONNECT事件
