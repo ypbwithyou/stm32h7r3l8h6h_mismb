@@ -68,18 +68,6 @@ void ads8319_start_convst(void)
 void ads8319_stop_transfer(void)
 {
     ADS8319_CONVST_LOW();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
 }
 
 void ads8319_read_daisy_chain(unsigned int spi_periph, uint16_t *adc_data)

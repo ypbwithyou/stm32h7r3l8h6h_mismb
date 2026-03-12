@@ -46,7 +46,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 
         // 降低中断优先级，避免影响任务调度
         // 优先级10（数字越大优先级越低）
-        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 10, 0);
+        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 3, 0);
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
