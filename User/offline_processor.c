@@ -7,11 +7,10 @@
 #include "usb_processor.h"
 #include "collector_processor.h"
 #include "./BSP/PCA9554A/pca9554a.h"
-
+#include "./MALLOC/malloc.h"
 #include "usb_processor.h"
 #include "usbd_cdc_if.h"
-
-extern void AdcCollectorContrl(uint8_t run_status);
+#include "./LIBS/lib_file_utils/file_utils.h"
 
 const Dev_ch_cfg_index g_off_HighPassFreq[] =
     {
@@ -68,13 +67,17 @@ typedef enum ScheduleItemRunStatus
 ChannelTableHeader g_offline_chCfgHeader;
 ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
 DSAGlobalParams g_offline_GlobalParam;
-SignalDataSource g_offline_signal_source[24];                      // 离线信号数据来源配置缓存（最多24组）
+SignalDataSource *g_offline_signal_source;                         // 离线信号数据来源配置缓存（最多24组）
 TriggerParamHeaderDSP g_offline_TriggerParamHeader;                // 离线触发参数表头配置缓存
 ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存（最多16组）
 RECORD_FILE_HEADER g_recorde_file_head;
 
 uint8_t g_schedule_run_status[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表项目执行情况:
                                                           // 0--未执行，1--执行中，2--执行完成
+
+double NANOSECONDS_PER_SECOND = 1e9;
+
+static uint32_t record_frame_num = 0;
 
 void SysRunStatusInit(void);
 static int8_t GetOfflineCfgParam(const char *f_name);
@@ -137,6 +140,13 @@ static uint32_t ScanMaxFileNum(const char *dir_path)
 // 初始化时调用一次
 void OfflineRecordInit(void)
 {
+    g_offline_signal_source = (SignalDataSource *)mymalloc(SRAMEX, sizeof(SignalDataSource) * 24);
+    if (!g_offline_signal_source)
+    {
+        usb_printf("[Record] Failed to allocate memory for signal source\r\n");
+        return;
+    }
+
     g_IdaSystemStatus.st_dev_offline.offline_mode = 0; // 默认离线模式为待机
 
     file_num = ScanMaxFileNum("0:/RecordDataFiles");
@@ -181,8 +191,10 @@ static void HandleRecordStart(uint8_t idx)
 
     memset(&g_recorde_file_head, 0, sizeof(g_recorde_file_head));
 
+    record_frame_num = 0;
+
     g_recorde_file_head.nVersion = RECORD_FILE_VERSION;
-    g_recorde_file_head.nCreateTime = dwt_get_ns();
+    g_recorde_file_head.nCreateTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
     g_recorde_file_head.nDeviceChNum = DEFAULT_CHANNEL_COUNT;
     g_recorde_file_head.nRecordNum = DEFAULT_CHANNEL_COUNT;
     g_recorde_file_head.nFrameNum = 0;
@@ -872,17 +884,17 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
     }
 
 // 4. 定义写入段落的统一处理宏（大幅减少重复代码）
-#define WRITE_STRUCT(ptr, size, desc)                                            \
-    do                                                                           \
-    {                                                                            \
-        res = f_write(&g_offline_record_fil, (ptr), (size), &bw);                \
-        if (res != FR_OK || bw != (size))                                        \
-        {                                                                        \
-            usb_printf("Failed to write %s to file '%s': res=%d, wrote=%u/%u\n", \
-                       (desc), file_name, res, bw, (UINT)(size));                \
-            f_close(&g_offline_record_fil);                                      \
-            return res ? res : FR_DENIED;                                        \
-        }                                                                        \
+#define WRITE_STRUCT(ptr, size, desc)                                                             \
+    do                                                                                            \
+    {                                                                                             \
+        res = f_write_dma_safe(&g_offline_record_fil, (const uint8_t *)(ptr), (size), &bw); \
+        if (res != FR_OK || bw != (size))                                                         \
+        {                                                                                         \
+            usb_printf("Failed to write %s to file '%s': res=%d, wrote=%u/%u\n",                  \
+                       (desc), file_name, res, bw, (UINT)(size));                                 \
+            f_close(&g_offline_record_fil);                                                       \
+            return res ? res : FR_DENIED;                                                         \
+        }                                                                                         \
     } while (0)
 
     // 5. 按顺序写入各个部分
@@ -897,9 +909,9 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     WRITE_STRUCT(&g_offline_GlobalParam, sizeof(g_offline_GlobalParam), "global parameters");
 
-    // WRITE_STRUCT(&g_offline_signal_source, sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount, "global parameters");
+    WRITE_STRUCT(&g_offline_signal_source, sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount, "global parameters");
 
-    // WRITE_STRUCT(&g_offline_TriggerParamHeader, sizeof(TriggerParamHeaderDSP), "trigger header");
+    WRITE_STRUCT(&g_offline_TriggerParamHeader, sizeof(TriggerParamHeaderDSP), "trigger header");
 
     // 6. 全部写入成功
     usb_printf("Offline record file created successfully: %s\n", file_name);
@@ -909,155 +921,269 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
     return FR_OK;
 }
 
+// /**
+//  * @brief 将 ADC 环形缓冲区数据追加写入离线记录文件
+//  *        数据格式：每帧 = [AoLocalColumn头] + [通道0所有采样点] + [通道1所有采样点] + ...
+//  */
+// static void OfflineDatasRecord(void)
+// {
+//     // static uint32_t frame_num = 0;
+//     // FRESULT res;
+//     // UINT bw;
+
+//     // // 计算一次“完整帧组”所需的字节数（所有通道 × BLOCK_LEN 个采样点）
+//     // const uint32_t bytes_per_frame_group = SPI_NUM * BLOCK_LEN * sizeof(short);
+
+//     // // 环形缓冲区当前可用字节数
+//     // int avail = cb_size(g_cb_adc);
+
+//     // while (avail >= bytes_per_frame_group)
+//     // {
+//     //     AoLocalColumn data_head = {
+//     //         .nVersion = 0x12345678,
+//     //         .nDataSource = 0,
+//     //         .nFrameChCount = SPI_NUM,
+//     //         .nFrameLen = BLOCK_LEN,
+//     //         .nTotalFrameNum = ++frame_num, // 先自增再使用
+//     //         .nCurNs = dwt_get_ns()};
+
+//     //     // 读取原始数据（通道优先排列）
+//     //     short get_data[SPI_NUM][BLOCK_LEN];
+//     //     cb_read(g_cb_adc, (char *)get_data, bytes_per_frame_group);
+
+//     //     // 写入文件头（每帧只写一次）
+
+//     //     res = f_write(&g_offline_record_fil, &data_head, sizeof(data_head), &bw);
+//     //     // usb_printf("f_write, res=%d\n", res);
+//     //     if (res != FR_OK || bw != sizeof(data_head))
+//     //     {
+//     //         usb_printf("Offline record: failed to write frame header, res=%d\n", res);
+//     //         g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR; // 建议增加错误状态
+//     //         f_close(&g_offline_record_fil);
+//     //         return;
+//     //     }
+
+//     //     // 连续写入所有通道的数据（按通道顺序）
+//     //     for (uint8_t ch = 0; ch < SPI_NUM; ch++)
+//     //     {
+//     //         res = f_write(&g_offline_record_fil,
+//     //                       &get_data[ch][0],
+//     //                       BLOCK_LEN * sizeof(short),
+//     //                       &bw);
+
+//     //         if (res != FR_OK || bw != BLOCK_LEN * sizeof(short))
+//     //         {
+//     //             usb_printf("Offline record: failed to write channel %u data, res=%d\n", ch, res);
+//     //             g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+//     //             f_close(&g_offline_record_fil);
+//     //             return;
+//     //         }
+//     //     }
+
+//     //     // 可选：每写入 N 帧同步一次（权衡性能与掉电安全性）
+//     //     // static uint32_t sync_counter = 0;
+//     //     // if (++sync_counter >= 50) {
+//     //     //     f_sync(&g_offline_record_fil);
+//     //     //     sync_counter = 0;
+//     //     // }
+
+//     //     // 在每个帧组写入后
+//     //     // static uint32_t last_sync_pos = 0;
+//     //     // uint32_t current_pos = f_tell(&g_offline_record_fil);
+
+//     //     // if (current_pos - last_sync_pos >= 65536U)
+//     //     // { // 每 64 KB 同步一次
+//     //     //     FRESULT sync_res = f_sync(&g_offline_record_fil);
+//     //     //     if (sync_res != FR_OK)
+//     //     //     {
+//     //     //         usb_printf("f_sync failed during record, res=%d\n", sync_res);
+//     //     //     }
+//     //     //     last_sync_pos = current_pos;
+//     //     // }
+
+//     //     static uint32_t last_tell = 0;
+//     //     static uint32_t last_time = 0;
+//     //     // 每秒打印一次
+//     //     if (HAL_GetTick() - last_time >= 1000)
+//     //     {
+//     //         uint32_t now_tell = f_tell(&g_offline_record_fil);
+//     //         uint32_t bytes_per_sec = now_tell - last_tell;
+//     //         usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
+//     //         last_tell = now_tell;
+//     //         last_time = HAL_GetTick();
+//     //     }
+
+//     //     // 更新可用字节数
+//     //     avail = cb_size(g_cb_adc);
+//     // }
+
+//     static uint32_t frame_num = 0;
+//     FRESULT res;
+//     UINT bw;
+//     const uint32_t cb_needed = BLOCK_LEN * sizeof(short);
+
+//     /* 收集已就绪的使能通道 */
+//     uint8_t ready[ADC_CH_TOTAL];
+//     uint8_t ready_cnt = 0;
+//     for (uint8_t i = 0; i < ADC_CH_TOTAL; i++)
+//     {
+//         if ((g_ch_enable_mask & (1u << i)) &&
+//             g_cb_ch[i] &&
+//             cb_size(g_cb_ch[i]) >= (int)cb_needed)
+//             ready[ready_cnt++] = i;
+//     }
+//     if (ready_cnt == 0)
+//         return;
+
+//     /* 写帧头 */
+//     AoLocalColumn data_head = {
+//         .nVersion = 0x12345678,
+//         .nDataSource = 0,
+//         .nFrameChCount = ready_cnt,
+//         .nFrameLen = BLOCK_LEN,
+//         .nTotalFrameNum = ++frame_num,
+//         .nCurNs = dwt_get_ns()};
+//     res = f_write(&g_offline_record_fil, &data_head, sizeof(data_head), &bw);
+//     if (res != FR_OK || bw != sizeof(data_head))
+//     { /* 错误处理 */
+//         return;
+//     }
+
+//     /* 依次写入各使能通道数据 */
+//     short ch_buf[BLOCK_LEN];
+//     for (uint8_t n = 0; n < ready_cnt; n++)
+//     {
+//         uint8_t ch = ready[n];
+//         cb_read(g_cb_ch[ch], (char *)ch_buf, cb_needed);
+//         res = f_write(&g_offline_record_fil, ch_buf, cb_needed, &bw);
+//         if (res != FR_OK || bw != cb_needed)
+//         { /* 错误处理 */
+//             return;
+//         }
+//     }
+
+//     // ── 记录停止时的最终处理 ───────────────────────────────────────
+//     if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
+//     {
+
+//         // 更新文件总帧数
+//         g_recorde_file_head.nFrameNum = frame_num;
+
+//         // 回写文件头部
+//         res = f_lseek(&g_offline_record_fil, 0);
+//         if (res == FR_OK)
+//         {
+//             res = f_write(&g_offline_record_fil,
+//                           &g_recorde_file_head,
+//                           sizeof(g_recorde_file_head),
+//                           &bw);
+//         }
+
+//         if (res != FR_OK || bw != sizeof(g_recorde_file_head))
+//         {
+//             usb_printf("Failed to update file header during stop, res=%d\n", res);
+//         }
+
+//         // 确保所有数据落盘
+//         f_sync(&g_offline_record_fil);
+
+//         // 关闭文件
+//         f_close(&g_offline_record_fil);
+
+//         // 重置帧计数，为下一次记录准备
+//         frame_num = 0;
+
+//         // 可选：清空标志
+//         memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
+//         g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE; // 建议增加空闲状态
+
+//         usb_printf("g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP, res=%d\n", res);
+//     }
+// }
+
 /**
  * @brief 将 ADC 环形缓冲区数据追加写入离线记录文件
- *        数据格式：每帧 = [AoLocalColumn头] + [通道0所有采样点] + [通道1所有采样点] + ...
+ *        数据格式：按使能通道顺序，每通道独立写入：
+ *                  [RECORD_FRAMEHEADER] + [nBlockSize * sizeof(short) 字节原始数据]
  */
 static void OfflineDatasRecord(void)
 {
-    // static uint32_t frame_num = 0;
-    // FRESULT res;
-    // UINT bw;
 
-    // // 计算一次“完整帧组”所需的字节数（所有通道 × BLOCK_LEN 个采样点）
-    // const uint32_t bytes_per_frame_group = SPI_NUM * BLOCK_LEN * sizeof(short);
-
-    // // 环形缓冲区当前可用字节数
-    // int avail = cb_size(g_cb_adc);
-
-    // while (avail >= bytes_per_frame_group)
-    // {
-    //     AoLocalColumn data_head = {
-    //         .nVersion = 0x12345678,
-    //         .nDataSource = 0,
-    //         .nFrameChCount = SPI_NUM,
-    //         .nFrameLen = BLOCK_LEN,
-    //         .nTotalFrameNum = ++frame_num, // 先自增再使用
-    //         .nCurNs = dwt_get_ns()};
-
-    //     // 读取原始数据（通道优先排列）
-    //     short get_data[SPI_NUM][BLOCK_LEN];
-    //     cb_read(g_cb_adc, (char *)get_data, bytes_per_frame_group);
-
-    //     // 写入文件头（每帧只写一次）
-
-    //     res = f_write(&g_offline_record_fil, &data_head, sizeof(data_head), &bw);
-    //     // usb_printf("f_write, res=%d\n", res);
-    //     if (res != FR_OK || bw != sizeof(data_head))
-    //     {
-    //         usb_printf("Offline record: failed to write frame header, res=%d\n", res);
-    //         g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR; // 建议增加错误状态
-    //         f_close(&g_offline_record_fil);
-    //         return;
-    //     }
-
-    //     // 连续写入所有通道的数据（按通道顺序）
-    //     for (uint8_t ch = 0; ch < SPI_NUM; ch++)
-    //     {
-    //         res = f_write(&g_offline_record_fil,
-    //                       &get_data[ch][0],
-    //                       BLOCK_LEN * sizeof(short),
-    //                       &bw);
-
-    //         if (res != FR_OK || bw != BLOCK_LEN * sizeof(short))
-    //         {
-    //             usb_printf("Offline record: failed to write channel %u data, res=%d\n", ch, res);
-    //             g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
-    //             f_close(&g_offline_record_fil);
-    //             return;
-    //         }
-    //     }
-
-    //     // 可选：每写入 N 帧同步一次（权衡性能与掉电安全性）
-    //     // static uint32_t sync_counter = 0;
-    //     // if (++sync_counter >= 50) {
-    //     //     f_sync(&g_offline_record_fil);
-    //     //     sync_counter = 0;
-    //     // }
-
-    //     // 在每个帧组写入后
-    //     // static uint32_t last_sync_pos = 0;
-    //     // uint32_t current_pos = f_tell(&g_offline_record_fil);
-
-    //     // if (current_pos - last_sync_pos >= 65536U)
-    //     // { // 每 64 KB 同步一次
-    //     //     FRESULT sync_res = f_sync(&g_offline_record_fil);
-    //     //     if (sync_res != FR_OK)
-    //     //     {
-    //     //         usb_printf("f_sync failed during record, res=%d\n", sync_res);
-    //     //     }
-    //     //     last_sync_pos = current_pos;
-    //     // }
-
-    //     static uint32_t last_tell = 0;
-    //     static uint32_t last_time = 0;
-    //     // 每秒打印一次
-    //     if (HAL_GetTick() - last_time >= 1000)
-    //     {
-    //         uint32_t now_tell = f_tell(&g_offline_record_fil);
-    //         uint32_t bytes_per_sec = now_tell - last_tell;
-    //         usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
-    //         last_tell = now_tell;
-    //         last_time = HAL_GetTick();
-    //     }
-
-    //     // 更新可用字节数
-    //     avail = cb_size(g_cb_adc);
-    // }
-
-    static uint32_t frame_num = 0;
     FRESULT res;
     UINT bw;
-    const uint32_t cb_needed = BLOCK_LEN * sizeof(short);
 
-    /* 收集已就绪的使能通道 */
-    uint8_t ready[ADC_CH_TOTAL];
-    uint8_t ready_cnt = 0;
+    g_offline_GlobalParam.nBlockSize = BLOCK_LEN;
+
+    const uint32_t block_bytes = (uint32_t)g_offline_GlobalParam.nBlockSize * sizeof(short);
+
+    /* ── 1. 检查是否有足够数据（所有使能通道都需满足 nBlockSize 个采样点）── */
     for (uint8_t i = 0; i < ADC_CH_TOTAL; i++)
     {
-        if ((g_ch_enable_mask & (1u << i)) &&
-            g_cb_ch[i] &&
-            cb_size(g_cb_ch[i]) >= (int)cb_needed)
-            ready[ready_cnt++] = i;
-    }
-    if (ready_cnt == 0)
-        return;
-
-    /* 写帧头 */
-    AoLocalColumn data_head = {
-        .nVersion = 0x12345678,
-        .nDataSource = 0,
-        .nFrameChCount = ready_cnt,
-        .nFrameLen = BLOCK_LEN,
-        .nTotalFrameNum = ++frame_num,
-        .nCurNs = dwt_get_ns()};
-    res = f_write(&g_offline_record_fil, &data_head, sizeof(data_head), &bw);
-    if (res != FR_OK || bw != sizeof(data_head))
-    { /* 错误处理 */
-        return;
+        if (!(g_ch_enable_mask & (1u << i)))
+            continue;
+        if (!g_cb_ch[i] || cb_size(g_cb_ch[i]) < (int)block_bytes)
+            return; /* 任一使能通道不足，等待下次 */
     }
 
-    /* 依次写入各使能通道数据 */
-    short ch_buf[BLOCK_LEN];
-    for (uint8_t n = 0; n < ready_cnt; n++)
+    /* ── 2. 按通道逐个写入 [RECORD_FRAMEHEADER + 数据] ── */
+    short ch_buf[/* nBlockSize max */ 4096]; /* 按实际最大 nBlockSize 调整 */
+    record_frame_num++;
+
+    for (uint8_t ch = 0; ch < ADC_CH_TOTAL; ch++)
     {
-        uint8_t ch = ready[n];
-        cb_read(g_cb_ch[ch], (char *)ch_buf, cb_needed);
-        res = f_write(&g_offline_record_fil, ch_buf, cb_needed, &bw);
-        if (res != FR_OK || bw != cb_needed)
-        { /* 错误处理 */
+        if (!(g_ch_enable_mask & (1u << ch)))
+            continue;
+
+        /* 填写通道帧头 */
+        RECORD_FRAMEHEADER rec_hdr;
+        memset(&rec_hdr, 0, sizeof(rec_hdr));
+
+        /* AoLocalColumn 部分 */
+        rec_hdr.RecLocalColumn.nVersion = 0x12345678;
+        rec_hdr.RecLocalColumn.nDataSource = 0;
+        rec_hdr.RecLocalColumn.nFrameChCount = 1; /* 每个头只描述本通道 */
+        rec_hdr.RecLocalColumn.nFrameLen = g_offline_GlobalParam.nBlockSize;
+        rec_hdr.RecLocalColumn.nTotalFrameNum = record_frame_num;
+        rec_hdr.RecLocalColumn.nCurNs = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        rec_hdr.RecLocalColumn.gp11 = ch; /* 通道ID存入gp11，便于合并时区分 */
+
+        rec_hdr.nValidNum = (unsigned int)g_offline_GlobalParam.nBlockSize;
+        rec_hdr.nChID = (int)ch;
+
+        if (record_frame_num == 1)
+        {
+            g_recorde_file_head.dRecValidStartTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        }
+
+        /* 写帧头 */
+        res = f_write(&g_offline_record_fil, &rec_hdr, sizeof(rec_hdr), &bw);
+        if (res != FR_OK || bw != sizeof(rec_hdr))
+        {
+            usb_printf("[Record] ch%u: write header failed, res=%d\n", ch, res);
+            g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+            f_close(&g_offline_record_fil);
+            return;
+        }
+
+        /* 从环形缓冲区读取数据并写入文件 */
+        cb_read(g_cb_ch[ch], (char *)ch_buf, block_bytes);
+        res = f_write(&g_offline_record_fil, ch_buf, block_bytes, &bw);
+        if (res != FR_OK || bw != block_bytes)
+        {
+            usb_printf("[Record] ch%u: write data failed, res=%d\n", ch, res);
+            g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+            f_close(&g_offline_record_fil);
             return;
         }
     }
 
-    // ── 记录停止时的最终处理 ───────────────────────────────────────
+    /* ── 3. 记录停止时的最终处理 ── */
     if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
     {
+        g_recorde_file_head.nFrameNum = record_frame_num;
+        g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
 
-        // 更新文件总帧数
-        g_recorde_file_head.nFrameNum = frame_num;
-
-        // 回写文件头部
+        /* 回写文件头部（更新帧数） */
         res = f_lseek(&g_offline_record_fil, 0);
         if (res == FR_OK)
         {
@@ -1066,26 +1192,20 @@ static void OfflineDatasRecord(void)
                           sizeof(g_recorde_file_head),
                           &bw);
         }
-
         if (res != FR_OK || bw != sizeof(g_recorde_file_head))
         {
-            usb_printf("Failed to update file header during stop, res=%d\n", res);
+            usb_printf("[Record] Failed to update file header, res=%d\n", res);
         }
 
-        // 确保所有数据落盘
         f_sync(&g_offline_record_fil);
-
-        // 关闭文件
         f_close(&g_offline_record_fil);
 
-        // 重置帧计数，为下一次记录准备
-        frame_num = 0;
-
-        // 可选：清空标志
+        record_frame_num = 0;
         memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
-        g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE; // 建议增加空闲状态
+        g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE;
 
-        usb_printf("g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP, res=%d\n", res);
+        usb_printf("[Record] Record stopped, total frames=%lu\n",
+                   (unsigned long)g_recorde_file_head.nFrameNum);
     }
 }
 

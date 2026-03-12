@@ -8,13 +8,13 @@
  * @license     Copyright (c) 2020-2032, ALIENTEK
  ****************************************************************************************************
  * @attention
- * 
+ *
  * Platform: ALIENTEK H7R3 Development Board
  * Website: www.yuanzige.com
  * Forum: www.openedv.com
  * Company: www.alientek.com
  * Store: openedv.taobao.com
- * 
+ *
  ****************************************************************************************************
  */
 
@@ -28,20 +28,22 @@
 /**
  * @brief  File information structure
  */
-typedef struct {
-    char    path[256];     // 文件路径
-    uint32_t size;         // 文件大小（字节）
-    DWORD   create_date;    // 创建日期
-    DWORD   create_time;    // 创建时间
+typedef struct
+{
+    char path[256];    // 文件路径
+    uint32_t size;     // 文件大小（字节）
+    DWORD create_date; // 创建日期
+    DWORD create_time; // 创建时间
 } FileInfo_t;
 
 /**
  * @brief  File list structure
  */
-typedef struct {
-    FileInfo_t *files;     // 文件信息数组
-    uint32_t    count;     // 文件数量
-    uint32_t    capacity;  // 数组容量
+typedef struct
+{
+    FileInfo_t *files; // 文件信息数组
+    uint32_t count;    // 文件数量
+    uint32_t capacity; // 数组容量
 } FileList_t;
 
 /**
@@ -69,6 +71,8 @@ void free_file_list(FileList_t *file_list);
  * @param  buf_size: Buffer size
  * @return char*: Formatted date and time string
  */
-char* format_date_time(DWORD date, DWORD time, char *buf, uint32_t buf_size);
+char *format_date_time(DWORD date, DWORD time, char *buf, uint32_t buf_size);
+
+int32_t f_write_dma_safe(FIL *fil, const uint8_t *src, uint32_t len, UINT *bw_total);
 
 #endif /* __FILE_UTILS_H__ */

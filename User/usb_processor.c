@@ -4,9 +4,7 @@
 #include "usbd_core.h"
 #include "usbd_desc.h"
 #include "usbd_cdc.h"
-
-#include "./MALLOC/malloc.h"
-
+ 
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
 #include "./LIBS/lib_usb_protocol/usb_protocol.h"
 #include "./LIBS/lib_circular_buffer/CircularBuffer.h"
@@ -19,6 +17,7 @@
 #include "collector_processor.h"
 #include "./FATFS/exfuns/fattester.h"
 #include "offline_processor.h"
+#include "./BSP/MMC/mmc_sdcard.h"
 
 /*********************************************************************************/
 // typedef struct
@@ -519,46 +518,6 @@ static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInf
     return PackReplyWithoutDatas(DVSARM_STOP_OK);
 }
 
-static int32_t f_write_dma_safe(FIL *fil, const uint8_t *src, uint32_t len, UINT *bw_total)
-{
-#define WRITE_CHUNK_SIZE 512
-
-    int32_t ret = FR_OK;
-    uint32_t offset = 0;
-    UINT bw = 0;
-    *bw_total = 0;
-
-    uint8_t dma_buf[WRITE_CHUNK_SIZE] __attribute__((aligned(4))); // 32字节对齐，确保DMA访问安全
-
-    while (offset < len)
-    {
-        uint32_t chunk = ((len - offset) > WRITE_CHUNK_SIZE) ? WRITE_CHUNK_SIZE : (len - offset);
-
-        /* 从 HyperRAM 拷贝到 AHB-SRAM */
-        memcpy(dma_buf, src + offset, chunk);
-
-        /* 刷新 D-Cache，确保 DMA 读到最新数据 */
-        SCB_CleanDCache_by_Addr((uint32_t *)dma_buf, WRITE_CHUNK_SIZE);
-
-        ret = f_write(fil, dma_buf, chunk, &bw);
-        if (ret != FR_OK)
-        {
-            usb_printf("f_write error at offset %lu: %d", offset, ret);
-            break;
-        }
-
-        *bw_total += bw;
-        offset += chunk;
-
-        if (bw < chunk)
-        {
-            ret = FR_DENIED;
-            break;
-        }
-    }
-
-    return ret;
-}
 
 // 处理PC->ARM的DVS_CSP_OFFLINE_SETCONFIG_OK事件
 static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
