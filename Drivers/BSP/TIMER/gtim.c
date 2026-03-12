@@ -6,6 +6,7 @@
 #include "collector_processor.h"
 
 #include "usbd_cdc_if.h"
+#include "collector_processor.h"
 
 /* TIM句柄 */
 TIM_HandleTypeDef g_gtimx_handle = {0};
@@ -90,14 +91,14 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 // //        timestamp_t tl = dwt_get_timestamp();
 //     }
 // }
-#include "collector_processor.h"
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance != GTIM_TIMX)
         return;
     g_gtim_it_counts++;
 
-    uint16_t adc_buf[SPI_NUM][SPI_CH_NUM] = {0};
+    uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
 
     ads8319_start_convst();
 

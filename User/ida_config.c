@@ -1066,10 +1066,10 @@ int8_t app_processor(void)
             LED0_TOGGLE();
 
  
-            extern volatile uint32_t g_gtim_it_counts;
-            usb_printf("TIM_IT cnt=%lu  run_flag=%d\n",
-                       g_gtim_it_counts,
-                       g_IdaSystemStatus.st_dev_run.run_flag);
+            // extern volatile uint32_t g_gtim_it_counts;
+            // usb_printf("TIM_IT cnt=%lu  run_flag=%d\n",
+            //            g_gtim_it_counts,
+            //            g_IdaSystemStatus.st_dev_run.run_flag);
 
             // // 打印前3通道的缓冲区大小
             // usb_printf("cb[0]=%d cb[1]=%d cb[2]=%d  mask=0x%06lX\n",
