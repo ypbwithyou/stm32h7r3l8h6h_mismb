@@ -519,83 +519,72 @@ static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInf
 }
 
 // 处理PC->ARM的DVS_CSP_OFFLINE_SETCONFIG_OK事件
-static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len,
+                                      FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
     (void)frame_head;
     (void)user_head;
 
     int32_t ret = RET_OK;
+
     if (data_len == 0)
     {
         ret = clear_file_content(OFFLINE_SCHEDULE_FILE);
+        if (ret != RET_OK)
+            usb_printf("Failed to clear offline config file: %d\n", ret);
     }
     else
     {
-        ChannelTableHeader *ChCfg_header = (ChannelTableHeader *)data_in;
-        ChannelTableElem *ChCfg[SPI_NUM];
-        DSAGlobalParams *Global_Param = (DSAGlobalParams *)(data_in + sizeof(ChannelTableHeader) + ChCfg_header->nTotalChannelNum * sizeof(ChannelTableElem));
+        FIL fil;
+        UINT bw;
+        FRESULT fres;
 
-        if (ChCfg_header->nTotalChannelNum == SPI_NUM)
+        fres = f_open(&fil, OFFLINE_SCHEDULE_FILE, FA_CREATE_ALWAYS | FA_WRITE);
+        if (fres != FR_OK)
         {
-            for (uint8_t i = 0; i < ChCfg_header->nTotalChannelNum; i++)
-            {
-                ChCfg[i] = (ChannelTableElem *)(data_in + sizeof(ChannelTableHeader) + i * sizeof(ChannelTableElem));
-            }
-            if ((ChCfg[0]->nChannelID == 0) && (ChCfg[1]->nChannelID == 1) && (ChCfg[2]->nChannelID == 2))
-            {
-                DSAGlobalParams *Global_Param = (DSAGlobalParams *)(data_in + sizeof(ChannelTableHeader) + ChCfg_header->nTotalChannelNum * sizeof(ChannelTableElem));
-                if (Global_Param->nScheduleCount <= 0)
-                {
-                    ret = -1;
-                }
-            }
-            else
-            {
-                ret = -1;
-            }
+            usb_printf("f_open '%s' failed: %d\n", OFFLINE_SCHEDULE_FILE, fres);
+            ret = -1;
         }
         else
         {
-            ret = -1;
-        }
-
-        if (ret == RET_OK)
-        {
-
-            FIL fil;
-            UINT bw, br;
-            ret = f_open(&fil, OFFLINE_SCHEDULE_FILE, FA_CREATE_ALWAYS | FA_WRITE);
-            if (ret == FR_OK)
+            fres = f_write_dma_safe(&fil, data_in, data_len, &bw);
+            if (fres != FR_OK || bw != data_len)  // 原代码未校验 bw
             {
-                ret = f_write_dma_safe(&fil, data_in, data_len, &bw);
-
-                usb_printf("0:/OfflineCfgSchedule.txt f_write :%d", ret);
-
-                f_close(&fil);
+                usb_printf("f_write failed: res=%d written=%u expected=%u\n",
+                           fres, bw, data_len);
+                ret = -1;
             }
             else
             {
-                usb_printf("0:/OfflineCfgSchedule.txt f_open error :%d", ret);
+                usb_printf("f_write '%s' ok, %u bytes written\n",
+                           OFFLINE_SCHEDULE_FILE, bw);
+            }
+
+            fres = f_close(&fil);  // 原代码未检查返回值
+            if (fres != FR_OK)
+            {
+                usb_printf("f_close failed: %d\n", fres);
+                ret = -1;
             }
         }
     }
 
-    ret = (ret != RET_OK) ? -1 : RET_OK;
-    // 返回应答数据
+    // 构造应答帧
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
     UserDataHeadInfo reply_user_head = {0};
-    reply_user_head.nIsValidFlag = 0x12345678;
-    reply_user_head.nEventID = DVS_CSP_OFFLINE_SETCONFIG_OK;
-    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
-    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
-    reply_user_head.nDataLength = 0;
-    reply_user_head.nNanoSecond = dwt_get_ns();
-    reply_user_head.nParameters0 = ret;
+    reply_user_head.nIsValidFlag    = 0x12345678;
+    reply_user_head.nEventID        = DVS_CSP_OFFLINE_SETCONFIG_OK;
+    reply_user_head.nSourceType     = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID  = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength     = 0;
+    reply_user_head.nNanoSecond     = dwt_get_ns();
+    reply_user_head.nParameters0    = (ret != RET_OK) ? -1 : RET_OK;
 
     uint32_t packet_len = 0;
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     return packet_len;
 }
+
 // 处理PC->ARM的DVS_INIT_ARM_UPGRADE_REQ_OK事件
 static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {

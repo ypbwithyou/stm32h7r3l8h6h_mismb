@@ -69,7 +69,7 @@ ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多2
 DSAGlobalParams g_offline_GlobalParam;
 SignalDataSource *g_offline_signal_source;                         // 离线信号数据来源配置缓存（最多24组）
 TriggerParamHeaderDSP g_offline_TriggerParamHeader;                // 离线触发参数表头配置缓存
-ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存（最多16组）
+ScheduleParams g_offline_ScheduleParam[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表配置缓存
 RECORD_FILE_HEADER g_recorde_file_head;
 
 uint8_t g_schedule_run_status[OFFLINE_SCHEDULE_ITEM_MAX]; // 离线计划表项目执行情况:
@@ -267,8 +267,8 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
         int32_t ch_id = g_offline_chCfgParam[i].nChannelID;
-        // if (g_offline_chCfgParam[i].nChannelID == 1)
-        //     ch_id -= 1;
+        if (g_offline_chCfgParam[0].nChannelID == 1)
+            ch_id -= 1;
 
         if (ch_id >= 0 && ch_id < ADC_CH_TOTAL)
         {
@@ -664,177 +664,99 @@ FRESULT f_read_timeout(FIL *fp, void *buff, UINT btr, UINT *br, uint32_t timeout
 
     return res;
 }
-
-/**
- * @brief  Retrieve offline plan configuration from offline config file
- * @param  f_name   File name of the configuration file
- * @return int8_t   Result code (0 = success, negative = error)
- */
 static int8_t GetOfflineCfgParam(const char *f_name)
 {
-    FIL fil;     // File object
-    UINT bw, br; // Bytes written/read
+    FIL fil;
+    UINT br;
     FRESULT res;
-    uint32_t offset = 0;                   // File pointer offset
-    const uint32_t FILE_OP_TIMEOUT = 5000; // File operation timeout (ms)
+    const uint32_t FILE_OP_TIMEOUT = 5000;
 
-    // Open the configuration file in read mode
     res = f_open(&fil, f_name, FA_READ);
     if (res != FR_OK)
     {
-        usb_printf("Failed to open configuration file '%s': %d\n", f_name, res);
+        usb_printf("Failed to open config file '%s': %d\n", f_name, res);
         return -13;
     }
 
-    // Read ChannelTableHeader
-    res = f_read_timeout(&fil, &g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), &br, FILE_OP_TIMEOUT);
-    if ((res != FR_OK) || (br <= 0) || (g_offline_chCfgHeader.nTotalChannelNum > 24))
+// 统一错误处理宏，避免重复的 f_close + return
+#define READ_CHECK(buf, size, errcode)                                     \
+    do                                                                     \
+    {                                                                      \
+        UINT _expect = (UINT)(size);                                       \
+        res = f_read_timeout(&fil, (buf), _expect, &br, FILE_OP_TIMEOUT);  \
+        if (res != FR_OK || br != _expect)                                 \
+        {                                                                  \
+            usb_printf("Read failed at step %d: res=%d br=%u expect=%u\n", \
+                       (errcode), res, br, _expect);                       \
+            f_close(&fil);                                                 \
+            return (errcode);                                              \
+        }                                                                  \
+    } while (0)
+
+    // ── ChannelTableHeader ────────────────────────────────────────────────
+    READ_CHECK(&g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), -1);
+
+    if (g_offline_chCfgHeader.nTotalChannelNum > 24)
     {
-        usb_printf("Failed to read channel table header: %d (read %u bytes)\n", res, br);
+        usb_printf("Invalid nTotalChannelNum: %u\n", g_offline_chCfgHeader.nTotalChannelNum);
         f_close(&fil);
         return -1;
     }
 
-    // Read ChannelTableElem
-    offset += sizeof(g_offline_chCfgHeader);
-    res = f_lseek(&fil, offset);
-    if (res != FR_OK)
-    {
-        usb_printf("Failed to seek to channel table elements offset: %d\n", res);
-        f_close(&fil);
-        return -2;
-    }
+    // ── ChannelTableElem ──────────────────────────────────────────────────
+    READ_CHECK(&g_offline_chCfgParam[0],
+               g_offline_chCfgHeader.nTotalChannelNum * sizeof(ChannelTableElem), -3);
 
-    res = f_read_timeout(&fil, &g_offline_chCfgParam[0],
-                         g_offline_chCfgHeader.nTotalChannelNum * sizeof(ChannelTableElem),
-                         &br, FILE_OP_TIMEOUT);
-    if (res != FR_OK)
-    {
-        usb_printf("Failed to read channel configuration parameters: %d\n", res);
-        f_close(&fil);
-        return -3;
-    }
+    // ── DSAGlobalParams ───────────────────────────────────────────────────
+    READ_CHECK(&g_offline_GlobalParam, sizeof(g_offline_GlobalParam), -5);
 
-    // Read DSAGlobalParams
-    offset += g_offline_chCfgHeader.nTotalChannelNum * sizeof(ChannelTableElem);
-    res = f_lseek(&fil, offset);
-    if (res != FR_OK)
+    if (g_offline_GlobalParam.nScheduleCount > 16)
     {
-        usb_printf("Failed to seek to global parameters offset: %d\n", res);
-        f_close(&fil);
-        return -4;
-    }
-
-    res = f_read_timeout(&fil, &g_offline_GlobalParam, sizeof(g_offline_GlobalParam), &br, FILE_OP_TIMEOUT);
-    if ((res != FR_OK) || (g_offline_GlobalParam.nScheduleCount > 16))
-    {
-        usb_printf("Failed to read global parameters: %d (schedule count = %u)\n",
-                   res, g_offline_GlobalParam.nScheduleCount);
+        usb_printf("Invalid nScheduleCount: %u\n", g_offline_GlobalParam.nScheduleCount);
         f_close(&fil);
         return -5;
     }
 
-    usb_printf("nBlockSize: %d nScheduleCount: %d nSignalCount: %d\n", g_offline_GlobalParam.nBlockSize, g_offline_GlobalParam.nScheduleCount, g_offline_GlobalParam.nSignalCount);
+    usb_printf("nTotalChannelNum:%u nBlockSize:%u nScheduleCount:%u nSignalCount:%u\n",
+               g_offline_chCfgHeader.nTotalChannelNum,
+               g_offline_GlobalParam.nBlockSize,
+               g_offline_GlobalParam.nScheduleCount,
+               g_offline_GlobalParam.nSignalCount);
 
-    // // Read SignalDataSource
-    // offset += sizeof(DSAGlobalParams);
-    // res = f_lseek(&fil, offset);
-    // if (res != FR_OK)
-    // {
-    //     usb_printf("Failed to seek to signal data source offset: %d\n", res);
-    //     f_close(&fil);
-    //     return -6;
-    // }
+    // ── SignalDataSource ──────────────────────────────────────────────────
+    READ_CHECK(&g_offline_signal_source[0],
+               g_offline_GlobalParam.nSignalCount * sizeof(SignalDataSource), -7);
 
-    // res = f_read_timeout(&fil, &g_offline_signal_source[0],
-    //                      g_offline_GlobalParam.nSignalCount * sizeof(SignalDataSource),
-    //                      &br, FILE_OP_TIMEOUT);
-    // if (res != FR_OK)
-    // {
-    //     usb_printf("Failed to read signal data source parameters: %d\n", res);
-    //     f_close(&fil);
-    //     return -7;
-    // }
+    // ── TriggerParamHeaderDSP ─────────────────────────────────────────────
+    READ_CHECK(&g_offline_TriggerParamHeader, sizeof(TriggerParamHeaderDSP), -9);
 
-    // // Read TriggerParamHeaderDSP
-    // offset += g_offline_GlobalParam.nSignalCount * sizeof(SignalDataSource);
-    // res = f_lseek(&fil, offset);
-    // if (res != FR_OK)
-    // {
-    //     usb_printf("Failed to seek to TriggerParamHeaderDSP offset: %d\n", res);
-    //     f_close(&fil);
-    //     return -8;
-    // }
+    // ── ScheduleParams ────────────────────────────────────────────────────
+    READ_CHECK(&g_offline_ScheduleParam[0],
+               g_offline_GlobalParam.nScheduleCount * sizeof(ScheduleParams), -11);
 
-    // res = f_read_timeout(&fil, &g_offline_TriggerParamHeader,
-    //                      sizeof(TriggerParamHeaderDSP),
-    //                      &br, FILE_OP_TIMEOUT);
-    // if (res != FR_OK)
-    // {
-    //     usb_printf("Failed to read TriggerParamHeaderDSP parameters: %d\n", res);
-    //     f_close(&fil);
-    //     return -9;
-    // }
+#undef READ_CHECK
 
-    // Read ScheduleParams
-    // offset +=  sizeof(TriggerParamHeaderDSP);
-    offset += sizeof(DSAGlobalParams);
-    res = f_lseek(&fil, offset);
-    if (res != FR_OK)
-    {
-        usb_printf("Failed to seek to schedule parameters offset: %d\n", res);
-        f_close(&fil);
-        return -10;
-    }
-
-    res = f_read_timeout(&fil, &g_offline_ScheduleParam[0],
-                         g_offline_GlobalParam.nScheduleCount * sizeof(ScheduleParams),
-                         &br, FILE_OP_TIMEOUT);
-    if (res != FR_OK)
-    {
-        usb_printf("Failed to read schedule parameters: %d\n", res);
-        f_close(&fil);
-        return -11;
-    }
-
-    // Close the file
     res = f_close(&fil);
     if (res != FR_OK)
     {
-        usb_printf("Failed to close configuration file: %d\n", res);
+        usb_printf("Failed to close file: %d\n", res);
         return -12;
     }
 
-    usb_printf("Successfully loaded offline configuration from file '%s'\n", f_name);
-
-    /* GetOfflineCfgParam() 末尾补充：*/
-    g_ch_enable_mask = 0;
-    for (int i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
-    {
-        if (g_offline_chCfgParam[i].nChannelStatus & (1 << 7))
-        {                                                // bit7: 通道使能
-            int ch = g_offline_chCfgParam[i].nChannelID; // 0~23
-            if (ch >= 0 && ch < ADC_CH_TOTAL)
-                g_ch_enable_mask |= (1u << ch);
-        }
-    }
-    g_recorde_file_head.nRecordMask = g_ch_enable_mask;
-
-    return 0; // Success
+    usb_printf("Successfully loaded offline config from '%s'\n", f_name);
+    return 0;
 }
 
 /**
  * @brief 校验离线配置参数的有效性
- * @return int8_t  0 表示校验通过
- *                负值表示校验失败，具体含义见下表：
- *                  -1  : 总通道数超出允许范围 (0 < nTotalChannelNum <= MAX_OFFLINE_CHANNELS)
- *                -2～-25 : 通道ID不连续或与索引不匹配 (返回 - (实际索引+2))
- *                  -26 : 计划表数量超出允许范围 (0 < nScheduleCount <= MAX_OFFLINE_SCHEDULES)
- *                -27 : 其他未预期错误（预留）
+ * @return int8_t  0 表示校验通过，负值表示失败：
+ *                  -1      : 总通道数无效 (须满足 0 < n <= MAX_OFFLINE_CHANNELS)
+ *                  -2～-25 : 第 (|ret|-2) 个通道的 ID 与索引不匹配
+ *                  -26     : 计划表数量无效 (须满足 0 < n <= MAX_OFFLINE_SCHEDULES)
  */
 static int8_t CheckOfflineCfgParam(void)
 {
-// 定义最大限制（建议移到头文件宏定义，便于统一维护）
+
 #define MAX_OFFLINE_CHANNELS 24U
 #define MAX_OFFLINE_SCHEDULES 16U
 
@@ -842,18 +764,19 @@ static int8_t CheckOfflineCfgParam(void)
     if (g_offline_chCfgHeader.nTotalChannelNum == 0 ||
         g_offline_chCfgHeader.nTotalChannelNum > MAX_OFFLINE_CHANNELS)
     {
-        usb_printf("Offline config check failed: invalid total channel count (%u)\n",
-                   g_offline_chCfgHeader.nTotalChannelNum);
+        usb_printf("Check failed: invalid nTotalChannelNum (%u), must be 1..%u\n",
+                   g_offline_chCfgHeader.nTotalChannelNum, MAX_OFFLINE_CHANNELS);
         return -1;
     }
 
-    // 2. 逐个校验通道ID是否连续且等于索引
+    // 2. 校验每个通道 ID 是否从 1 开始连续递增
     for (uint8_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
-        if (g_offline_chCfgParam[i].nChannelID != i)
+        uint8_t expected = i + 1;
+        if (g_offline_chCfgParam[i].nChannelID != expected)
         {
-            usb_printf("Offline config check failed: channel index %u has mismatched ID (%u != %u)\n",
-                       i, g_offline_chCfgParam[i].nChannelID, i);
+            usb_printf("Check failed: channel[%u].nChannelID = %u, expected %u\n",
+                       i, g_offline_chCfgParam[i].nChannelID, expected); // 原来 expected 写成了 i
             return -(int8_t)(i + 2);
         }
     }
@@ -862,25 +785,28 @@ static int8_t CheckOfflineCfgParam(void)
     if (g_offline_GlobalParam.nScheduleCount == 0 ||
         g_offline_GlobalParam.nScheduleCount > MAX_OFFLINE_SCHEDULES)
     {
-        usb_printf("Offline config check failed: invalid schedule count (%u)\n",
-                   g_offline_GlobalParam.nScheduleCount);
+        usb_printf("Check failed: invalid nScheduleCount (%u), must be 1..%u\n",
+                   g_offline_GlobalParam.nScheduleCount, MAX_OFFLINE_SCHEDULES);
         return -26;
     }
 
-    for (int i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+    // 打印计划表内容（调试用，正式版本可用条件编译包裹）
+#ifdef DEBUG_OFFLINE_CFG
+    for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
     {
-        usb_printf("g_offline_ScheduleParam[%d]: %d - (%f, %d)\n", i, g_offline_ScheduleParam[i].nType, g_offline_ScheduleParam[i].param0, g_offline_ScheduleParam[i].param1);
+        usb_printf("ScheduleParam[%u]: type=%d param0=%f param1=%d\n",
+                   i,
+                   g_offline_ScheduleParam[i].nType,
+                   (double)g_offline_ScheduleParam[i].param0,
+                   g_offline_ScheduleParam[i].param1);
     }
+#endif
 
-    // 可选：增加其他关键字段校验（视实际需求）
-    // if (g_offline_chCfgHeader.fHardwareSampleRate == 0 ||
-    //     g_offline_chCfgHeader.fHardwareSampleRate > SOME_MAX_RATE)
-    // {
-    //     usb_printf("Invalid sample rate in offline config\n");
-    //     return -27;
-    // }
+    usb_printf("Offline config validation passed\n");
 
-    usb_printf("Offline configuration parameters validation passed\n");
+#undef MAX_OFFLINE_CHANNELS
+#undef MAX_OFFLINE_SCHEDULES
+
     return 0;
 }
 
