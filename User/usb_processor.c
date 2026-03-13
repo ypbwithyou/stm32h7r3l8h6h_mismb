@@ -4,7 +4,7 @@
 #include "usbd_core.h"
 #include "usbd_desc.h"
 #include "usbd_cdc.h"
- 
+
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
 #include "./LIBS/lib_usb_protocol/usb_protocol.h"
 #include "./LIBS/lib_circular_buffer/CircularBuffer.h"
@@ -39,7 +39,7 @@ const Dev_ch_cfg_index g_LowPassFreq[] =
         {1000, LOW_PASS_FREQ_1kHz},
         {10000, LOW_PASS_FREQ_10kHz},
         {20000, LOW_PASS_FREQ_20kHz},
-};  
+};
 const Dev_ch_cfg_index g_ida_ch_rate[] =
     {
         {512.0, SAMPLE_RATE_INDEX_512HZ},
@@ -65,7 +65,7 @@ const Dev_ch_cfg_index g_ida_ch_rate[] =
         {102400.0, SAMPLE_RATE_INDEX_102400HZ},
         {204800.0, SAMPLE_RATE_INDEX_204800HZ},
         {256000.0, SAMPLE_RATE_INDEX_256000HZ},
-};  
+};
 
 /*********************************************************************************/
 FRESULT clear_file_content(const char *path);
@@ -518,7 +518,6 @@ static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInf
     return PackReplyWithoutDatas(DVSARM_STOP_OK);
 }
 
-
 // 处理PC->ARM的DVS_CSP_OFFLINE_SETCONFIG_OK事件
 static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
@@ -790,7 +789,7 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
     (void)frame_head;
     (void)user_head;
 
-#define FILELIST_BUFFER_SIZE (4096)
+#define FILELIST_BUFFER_SIZE (128 * 1024) // 16KB缓冲区，实际使用中可根据需求调整
 
     // 使用动态内存分配
     uint8_t *user_data = (uint8_t *)mymalloc(SRAMEX, FILELIST_BUFFER_SIZE);
@@ -819,7 +818,7 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
     char date_time_buf[20];
 
     // 获取0:/data目录下的.txt文件列表，最多10个
-    ret = get_file_list_by_extension("0:/RecordDataFiles", ".rec", &file_list, 10);
+    ret = get_file_list_by_extension("0:/RecordDataFiles", ".rec", &file_list, 1000);
 
     if (ret == 0 && file_list.count > 0)
     {
