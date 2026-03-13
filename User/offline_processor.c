@@ -772,7 +772,7 @@ static int8_t CheckOfflineCfgParam(void)
     // 2. 校验每个通道 ID 是否从 1 开始连续递增
     for (uint8_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
-        uint8_t expected = i + 1;
+        uint8_t expected = i;
         if (g_offline_chCfgParam[i].nChannelID != expected)
         {
             usb_printf("Check failed: channel[%u].nChannelID = %u, expected %u\n",
