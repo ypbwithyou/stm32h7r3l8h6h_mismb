@@ -243,7 +243,7 @@ static void HandleRecordEnd(uint8_t idx)
     g_IdaSystemStatus.st_dev_record.record_status = RECORD_STOP;
 
     OfflineDatasRecord();
- 
+
     g_schedule_run_status[idx] = STATUS_END;
 }
 
@@ -706,7 +706,7 @@ static int8_t GetOfflineCfgParam(const char *f_name)
     // ── DSAGlobalParams ───────────────────────────────────────────────────
     READ_CHECK(&g_offline_GlobalParam, sizeof(g_offline_GlobalParam), -5);
 
-    if (g_offline_GlobalParam.nScheduleCount > 16)
+    if (g_offline_GlobalParam.nScheduleCount > OFFLINE_SCHEDULE_ITEM_MAX)
     {
         usb_printf("Invalid nScheduleCount: %u\n", g_offline_GlobalParam.nScheduleCount);
         f_close(&fil);
@@ -1038,11 +1038,7 @@ static int delete_files_by_extension(const char *dir_path,
     /* 遍历目录 */
     while (1)
     {
-        /* 超时检查 */
-        //        if (timeout_ms > 0 && (HAL_GetTick() - start_tick) > timeout_ms) {
-        //            printf("操作超时\n");
-        //            break;
-        //        }
+        char full_path[256];
 
         /* 读取目录项 */
         res = f_readdir(&dir, &fno);
@@ -1100,7 +1096,7 @@ static int delete_files_by_extension(const char *dir_path,
         /* 如果不在保留列表中，删除文件 */
         if (!should_keep)
         {
-            char full_path[256];
+
         delete_file:
             snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, fno.fname);
 
