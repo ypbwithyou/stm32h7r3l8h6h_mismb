@@ -791,7 +791,7 @@ static int8_t CheckOfflineCfgParam(void)
     }
 
     // 打印计划表内容（调试用，正式版本可用条件编译包裹）
-#ifdef DEBUG_OFFLINE_CFG
+    // #ifdef DEBUG_OFFLINE_CFG
     for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
     {
         usb_printf("ScheduleParam[%u]: type=%d param0=%f param1=%d\n",
@@ -800,7 +800,7 @@ static int8_t CheckOfflineCfgParam(void)
                    (double)g_offline_ScheduleParam[i].param0,
                    g_offline_ScheduleParam[i].param1);
     }
-#endif
+    // #endif
 
     usb_printf("Offline config validation passed\n");
 
