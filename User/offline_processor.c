@@ -243,11 +243,7 @@ static void HandleRecordEnd(uint8_t idx)
     g_IdaSystemStatus.st_dev_record.record_status = RECORD_STOP;
 
     OfflineDatasRecord();
-
-    f_close(&g_offline_record_fil);
-
-    memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
-
+ 
     g_schedule_run_status[idx] = STATUS_END;
 }
 
@@ -291,7 +287,7 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     {
         if (g_offline_chCfgHeader.fHardwareSampleRate == g_off_ida_ch_rate[i].ch_cfg_value)
         {
-            sample_rate = g_ida_ch_rate[i].ch_cfg_value;
+            sample_rate = (uint32_t)g_off_ida_ch_rate[i].ch_cfg_value;
             break;
         }
     }
@@ -758,7 +754,7 @@ static int8_t CheckOfflineCfgParam(void)
 {
 
 #define MAX_OFFLINE_CHANNELS 24U
-#define MAX_OFFLINE_SCHEDULES 16U
+#define MAX_OFFLINE_SCHEDULES OFFLINE_SCHEDULE_ITEM_MAX
 
     // 1. 校验总通道数
     if (g_offline_chCfgHeader.nTotalChannelNum == 0 ||
@@ -769,7 +765,7 @@ static int8_t CheckOfflineCfgParam(void)
         return -1;
     }
 
-    // 2. 校验每个通道 ID 是否从 1 开始连续递增
+    // 2. 校验每个通道 ID 是否从 0 开始连续递增
     for (uint8_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
         uint8_t expected = i;
@@ -874,7 +870,7 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     WRITE_STRUCT(&g_offline_GlobalParam, sizeof(g_offline_GlobalParam), "global parameters");
 
-    WRITE_STRUCT(&g_offline_signal_source, sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount, "global parameters");
+    WRITE_STRUCT(g_offline_signal_source, sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount, "global parameters");
 
     WRITE_STRUCT(&g_offline_TriggerParamHeader, sizeof(TriggerParamHeaderDSP), "trigger header");
 
