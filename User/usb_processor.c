@@ -365,7 +365,7 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHea
     g_dev_info.DeviceType = dev_detail->DeviceType;
 
     // 更新设备信息文件
-    write_device_info_file(dev_info);
+    write_device_info_file(g_dev_info);
 
     return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
 }
@@ -382,7 +382,7 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
     if (data_len < userDataLoc + sizeof(ChannelTableHeader))
     {
         usb_printf("parseData_DVS_RUN userData too short for ChannelTableHeader \n");
-        return false;
+        return 0;
     }
 
     const ChannelTableHeader *channelTableHeader = (const ChannelTableHeader *)(data_in + userDataLoc);
@@ -397,7 +397,7 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
     if (data_len < userDataLoc + (sizeof(ChannelTableElem) * channelTableHeader->nTotalChannelNum))
     {
         usb_printf("parseData_DVS_RUN userData too short for ChannelTableElem \n");
-        return false;
+        return 0;
     }
 
     const ChannelTableElem *channelTableElem = (const ChannelTableElem *)(data_in + userDataLoc);
@@ -524,7 +524,7 @@ static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInf
 
 // 处理PC->ARM的DVS_CSP_OFFLINE_SETCONFIG_OK事件
 static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len,
-                                      FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+                                     FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
     (void)frame_head;
     (void)user_head;
@@ -552,7 +552,7 @@ static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len,
         else
         {
             fres = f_write_dma_safe(&fil, data_in, data_len, &bw);
-            if (fres != FR_OK || bw != data_len)  // 原代码未校验 bw
+            if (fres != FR_OK || bw != data_len) // 原代码未校验 bw
             {
                 usb_printf("f_write failed: res=%d written=%u expected=%u\n",
                            fres, bw, data_len);
@@ -564,7 +564,7 @@ static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len,
                            OFFLINE_SCHEDULE_FILE, bw);
             }
 
-            fres = f_close(&fil);  // 原代码未检查返回值
+            fres = f_close(&fil); // 原代码未检查返回值
             if (fres != FR_OK)
             {
                 usb_printf("f_close failed: %d\n", fres);
@@ -576,13 +576,13 @@ static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len,
     // 构造应答帧
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
     UserDataHeadInfo reply_user_head = {0};
-    reply_user_head.nIsValidFlag    = 0x12345678;
-    reply_user_head.nEventID        = DVS_CSP_OFFLINE_SETCONFIG_OK;
-    reply_user_head.nSourceType     = SOURCE_TYPE_NO_DATA;
-    reply_user_head.nDestinationID  = DESTINATION_ARM_TO_PC;
-    reply_user_head.nDataLength     = 0;
-    reply_user_head.nNanoSecond     = dwt_get_ns();
-    reply_user_head.nParameters0    = (ret != RET_OK) ? -1 : RET_OK;
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_CSP_OFFLINE_SETCONFIG_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nParameters0 = (ret != RET_OK) ? -1 : RET_OK;
 
     uint32_t packet_len = 0;
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
@@ -823,6 +823,11 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
             uint32_t used_len = strlen((const char *)user_data);
             uint32_t remaining = FILELIST_BUFFER_SIZE - used_len - 1;
 
+            // 格式化日期时间
+            format_date_time(file_list.files[i].create_date,
+                             file_list.files[i].create_time,
+                             date_time_buf, sizeof(date_time_buf));
+
             // 估算需要空间（路径+分隔符+数字+日期+分隔符）
             uint32_t needed = strlen(file_list.files[i].path) + strlen(date_time_buf) + 50;
 
@@ -831,11 +836,6 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
                 usb_printf("Buffer exhausted at file %u\n", i);
                 break;
             }
-
-            // 格式化日期时间
-            format_date_time(file_list.files[i].create_date,
-                             file_list.files[i].create_time,
-                             date_time_buf, sizeof(date_time_buf));
 
             // 打印文件信息
             usb_printf("File %d:\n", i + 1);
@@ -1467,7 +1467,9 @@ SendRecordPack g_SendRecordFilesPackHead;
 int8_t SendRecordFiles(const char *file_name)
 {
     int8_t ret = RET_OK;
+    static FIL fil;
     static FIL *fp = NULL;
+    fp = &fil;
     UINT bw, br;
     uint32_t total_size = 0;
     uint32_t offset = 0;
