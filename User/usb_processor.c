@@ -435,6 +435,10 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
         }
     }
 
+    g_spi_adc_cnt[0] = 1;
+    g_spi_adc_cnt[1] = 1;
+    g_spi_adc_cnt[2] = 1;
+
     usb_printf("spi_adc_cnt: [%d, %d, %d]  mask=0x%06lX\n",
                g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2],
                g_ch_enable_mask);
