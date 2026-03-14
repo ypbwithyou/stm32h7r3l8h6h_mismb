@@ -29,10 +29,12 @@ extern uint8_t spi_rx_dma_buf[SPI_USED_MAX][DMA_SPI_RX_NODE_USED][RX_BUFFER_SIZE
  
 void dma_list_rtx_init(void);   
 void dma_start_transfer(void);
-void dma_start_transfer_all(void);                                         
+void dma_start_transfer_all(void);
+void dma_set_spi_xfer_size(uint8_t spi_idx, uint32_t size_bytes);                                         
 void dma_list_data_init(void);
 uint8_t dma_get_ready_data(uint32_t *node_index);
 uint8_t dma_get_ready_data_by_spi(uint8_t spi_idx, uint32_t *node_index);
 
 #endif
+
 

@@ -79,12 +79,15 @@ extern SPI_HandleTypeDef g_spi_handle[3];
 BufferManager_t g_buffer_mgr[SPI_USED_MAX] = {0};
 
 static volatile uint8_t g_dma_rx_done_mask = 0;
+static uint32_t g_dma_spi_xfer_size[SPI_USED_MAX] = {0};
 
 /* Forward declarations */
 static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma);
 static int dma_get_spi_index_from_instance(DMA_Channel_TypeDef *instance, uint8_t *is_rx);
-static void tx_list_config(uint8_t spi_idx);
-static void rx_list_config(uint8_t spi_idx);
+static uint32_t dma_get_xfer_size(uint8_t spi_idx);
+static void tx_list_config(uint8_t spi_idx, uint32_t size_bytes);
+static void rx_list_config(uint8_t spi_idx, uint32_t size_bytes);
+static void dma_rebuild_lists(uint8_t spi_idx, uint32_t size_bytes);
 
 static int dma_get_spi_index_from_instance(DMA_Channel_TypeDef *instance, uint8_t *is_rx)
 {
@@ -107,7 +110,17 @@ static int dma_get_spi_index_from_instance(DMA_Channel_TypeDef *instance, uint8_
     return -1;
 }
 
-static void tx_list_config(uint8_t spi_idx)
+static uint32_t dma_get_xfer_size(uint8_t spi_idx)
+{
+    uint32_t size = g_dma_spi_xfer_size[spi_idx];
+    if (size == 0 || size > RX_BUFFER_SIZE)
+    {
+        size = RX_BUFFER_SIZE;
+    }
+    return size;
+}
+
+static void tx_list_config(uint8_t spi_idx, uint32_t size_bytes)
 {
     DMA_NodeConfTypeDef dma_node_conf_struct = {0};
     uint32_t node_index;
@@ -142,7 +155,7 @@ static void tx_list_config(uint8_t spi_idx)
     for (node_index = 0; node_index < DMA_SPI_TX_NODE_USED; node_index++)
     {
         dma_node_conf_struct.SrcAddress = (uint32_t)&spi_tx_buffer[node_index];
-        dma_node_conf_struct.DataSize = RX_BUFFER_SIZE;
+        dma_node_conf_struct.DataSize = size_bytes;
 
         HAL_DMAEx_List_BuildNode(&dma_node_conf_struct, &tx_nodes[node_index]);
         SCB_CleanDCache_by_Addr((uint32_t *)&tx_nodes[node_index], sizeof(tx_nodes[node_index]));
@@ -150,7 +163,7 @@ static void tx_list_config(uint8_t spi_idx)
     }
 }
 
-static void rx_list_config(uint8_t spi_idx)
+static void rx_list_config(uint8_t spi_idx, uint32_t size_bytes)
 {
     DMA_NodeConfTypeDef dma_node_conf_struct = {0};
     uint32_t node_index;
@@ -185,7 +198,7 @@ static void rx_list_config(uint8_t spi_idx)
     for (node_index = 0; node_index < DMA_SPI_RX_NODE_USED; node_index++)
     {
         dma_node_conf_struct.DstAddress = (uint32_t)&spi_rx_dma_buf[spi_idx][node_index][0];
-        dma_node_conf_struct.DataSize = RX_BUFFER_SIZE;
+        dma_node_conf_struct.DataSize = size_bytes;
 
         HAL_DMAEx_List_BuildNode(&dma_node_conf_struct, &rx_nodes[node_index]);
         SCB_CleanDCache_by_Addr((uint32_t *)&rx_nodes[node_index], sizeof(rx_nodes[node_index]));
@@ -193,12 +206,21 @@ static void rx_list_config(uint8_t spi_idx)
     }
 }
 
+static void dma_rebuild_lists(uint8_t spi_idx, uint32_t size_bytes)
+{
+    tx_list_config(spi_idx, size_bytes);
+    rx_list_config(spi_idx, size_bytes);
+    HAL_DMAEx_List_LinkQ(g_dma_tx_handles[spi_idx], &g_dma_list_tx_struct[spi_idx]);
+    HAL_DMAEx_List_LinkQ(g_dma_rx_handles[spi_idx], &g_dma_list_rx_struct[spi_idx]);
+}
+
 void dma_list_rtx_init(void)
 {
     for (uint8_t spi_idx = 0; spi_idx < SPI_USED_MAX; spi_idx++)
     {
-        tx_list_config(spi_idx);
-        rx_list_config(spi_idx);
+        g_dma_spi_xfer_size[spi_idx] = RX_BUFFER_SIZE;
+        tx_list_config(spi_idx, RX_BUFFER_SIZE);
+        rx_list_config(spi_idx, RX_BUFFER_SIZE);
 
         DMA_HandleTypeDef *hdma_tx = g_dma_tx_handles[spi_idx];
         hdma_tx->Instance = g_dma_tx_instances[spi_idx];
@@ -246,6 +268,10 @@ void dma_start_transfer_all(void)
 
     for (uint8_t spi_idx = 0; spi_idx < SPI_USED_MAX; spi_idx++)
     {
+        uint32_t size_bytes = dma_get_xfer_size(spi_idx);
+        dma_rebuild_lists(spi_idx, size_bytes);
+
+        MODIFY_REG(g_spi_handle[spi_idx].Instance->CR2, SPI_CR2_TSIZE, size_bytes);
         __HAL_SPI_CLEAR_EOTFLAG(&g_spi_handle[spi_idx]);
         __HAL_SPI_CLEAR_TXTFFLAG(&g_spi_handle[spi_idx]);
         ATOMIC_SET_BIT(g_spi_handle[spi_idx].Instance->CFG1, SPI_CFG1_RXDMAEN | SPI_CFG1_TXDMAEN);
@@ -271,6 +297,13 @@ void dma_list_data_init(void)
 {
     memset(&g_buffer_mgr[0], 0, sizeof(g_buffer_mgr));
     g_dma_rx_done_mask = 0;
+}
+
+void dma_set_spi_xfer_size(uint8_t spi_idx, uint32_t size_bytes)
+{
+    if (spi_idx >= SPI_USED_MAX)
+        return;
+    g_dma_spi_xfer_size[spi_idx] = size_bytes;
 }
 
 static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma)
@@ -303,8 +336,9 @@ static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma)
     }
 
     uint32_t current_node = g_buffer_mgr[spi_idx].current_rx_node;
+    uint32_t size_bytes = dma_get_xfer_size(spi_idx);
 
-    SCB_InvalidateDCache_by_Addr((uint32_t *)&spi_rx_dma_buf[spi_idx][current_node][0], RX_BUFFER_SIZE);
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&spi_rx_dma_buf[spi_idx][current_node][0], size_bytes);
 
     g_buffer_mgr[spi_idx].current_rx_node = (g_buffer_mgr[spi_idx].current_rx_node + 1) % DMA_SPI_RX_NODE_USED;
 
@@ -376,4 +410,3 @@ void GPDMA1_Channel5_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel5);
 }
-
