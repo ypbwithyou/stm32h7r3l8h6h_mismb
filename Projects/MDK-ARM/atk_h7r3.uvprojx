@@ -708,6 +708,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\Drivers\BSP\RTC\rtc.c</FilePath>
             </File>
+            <File>
+              <FileName>dma_list.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Drivers\BSP\DMA_LIST\dma_list.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

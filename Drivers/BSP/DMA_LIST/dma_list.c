@@ -1,357 +1,352 @@
 /**
- ****************************************************************************************************
- * @file        dma.c
- * @author      正点原子团队(ALIENTEK)
- * @version     V1.0
- * @date        2024-05-21
- * @brief       DMA驱动代码
- * @license     Copyright (c) 2020-2032, 广州市星翼电子科技有限公司
- ****************************************************************************************************
- * @attention
- * 
- * 实验平台:正点原子 H7R3开发板
- * 在线视频:www.yuanzige.com
- * 技术论坛:www.openedv.com
- * 公司网址:www.alientek.com
- * 购买地址:openedv.taobao.com
- * 
- ****************************************************************************************************
+ * @file    dma_list.c
+ * @brief   DMA list support for multi-SPI
  */
 #include "./BSP/TIMER/gtim.h"
 #include "./BSP/DMA_LIST/dma_list.h"
 #include "string.h"
 
-/* DMA句柄 */
+/* DMA handles */
 DMA_HandleTypeDef g_handle_GPDMA1_Channel0 = {0};
 DMA_HandleTypeDef g_handle_GPDMA1_Channel1 = {0};
+DMA_HandleTypeDef g_handle_GPDMA1_Channel2 = {0};
+DMA_HandleTypeDef g_handle_GPDMA1_Channel3 = {0};
+DMA_HandleTypeDef g_handle_GPDMA1_Channel4 = {0};
+DMA_HandleTypeDef g_handle_GPDMA1_Channel5 = {0};
 
-/* DMA链表 */
-DMA_QListTypeDef g_dma_list_tx_struct = {0};
-DMA_QListTypeDef g_dma_list_rx_struct = {0};
+static DMA_HandleTypeDef *g_dma_tx_handles[SPI_USED_MAX] = {
+    &g_handle_GPDMA1_Channel0,
+    &g_handle_GPDMA1_Channel2,
+    &g_handle_GPDMA1_Channel4
+};
+static DMA_HandleTypeDef *g_dma_rx_handles[SPI_USED_MAX] = {
+    &g_handle_GPDMA1_Channel1,
+    &g_handle_GPDMA1_Channel3,
+    &g_handle_GPDMA1_Channel5
+};
 
-/* DMA链表节点 */
-__ALIGNED(32) DMA_NodeTypeDef g_dma_list_node_tx_struct[DMA_SPI_TX_NODE_USED] = {0};
-__ALIGNED(32) DMA_NodeTypeDef g_dma_list_node_rx_struct[DMA_SPI_RX_NODE_USED] = {0};
+static DMA_Channel_TypeDef *g_dma_tx_instances[SPI_USED_MAX] = {
+    GPDMA1_Channel0,
+    GPDMA1_Channel2,
+    GPDMA1_Channel4
+};
+static DMA_Channel_TypeDef *g_dma_rx_instances[SPI_USED_MAX] = {
+    GPDMA1_Channel1,
+    GPDMA1_Channel3,
+    GPDMA1_Channel5
+};
 
-/* DMA就绪状态 */
+static const IRQn_Type g_dma_tx_irqs[SPI_USED_MAX] = {
+    GPDMA1_Channel0_IRQn,
+    GPDMA1_Channel2_IRQn,
+    GPDMA1_Channel4_IRQn
+};
+static const IRQn_Type g_dma_rx_irqs[SPI_USED_MAX] = {
+    GPDMA1_Channel1_IRQn,
+    GPDMA1_Channel3_IRQn,
+    GPDMA1_Channel5_IRQn
+};
+
+static const uint32_t g_dma_tx_requests[SPI_USED_MAX] = {
+    GPDMA1_REQUEST_SPI1_TX,
+    GPDMA1_REQUEST_SPI2_TX,
+    GPDMA1_REQUEST_SPI4_TX
+};
+static const uint32_t g_dma_rx_requests[SPI_USED_MAX] = {
+    GPDMA1_REQUEST_SPI1_RX,
+    GPDMA1_REQUEST_SPI2_RX,
+    GPDMA1_REQUEST_SPI4_RX
+};
+
+/* DMA lists */
+DMA_QListTypeDef g_dma_list_tx_struct[SPI_USED_MAX] = {0};
+DMA_QListTypeDef g_dma_list_rx_struct[SPI_USED_MAX] = {0};
+
+/* DMA list nodes */
+__ALIGNED(32) DMA_NodeTypeDef g_dma_list_node_tx_struct[SPI_USED_MAX][DMA_SPI_TX_NODE_USED] = {0};
+__ALIGNED(32) DMA_NodeTypeDef g_dma_list_node_rx_struct[SPI_USED_MAX][DMA_SPI_RX_NODE_USED] = {0};
+
+/* DMA ready flag */
 uint8_t dma_ready = 1;
 
-/* 发送、接收数据缓冲区 */
-uint8_t spi_rx_buf0[DMA_SPI_RX_NODE_USED][RX_BUFFER_SIZE];
+/* RX buffers */
+uint8_t spi_rx_dma_buf[SPI_USED_MAX][DMA_SPI_RX_NODE_USED][RX_BUFFER_SIZE];
 
-/* SPI1句柄 */
-extern SPI_HandleTypeDef g_spi_handle[3];  /* SPI��� */
+/* SPI handles */
+extern SPI_HandleTypeDef g_spi_handle[3];
 
-/* DMA传输完成回调函数 */
+/* Buffer managers */
+BufferManager_t g_buffer_mgr[SPI_USED_MAX] = {0};
+
+static volatile uint8_t g_dma_rx_done_mask = 0;
+
+/* Forward declarations */
 static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma);
+static int dma_get_spi_index_from_instance(DMA_Channel_TypeDef *instance, uint8_t *is_rx);
+static void tx_list_config(uint8_t spi_idx);
+static void rx_list_config(uint8_t spi_idx);
 
-void tx_list_config(void)
+static int dma_get_spi_index_from_instance(DMA_Channel_TypeDef *instance, uint8_t *is_rx)
+{
+    for (uint8_t i = 0; i < SPI_USED_MAX; i++)
+    {
+        if (instance == g_dma_tx_instances[i])
+        {
+            *is_rx = 0;
+            return i;
+        }
+    }
+    for (uint8_t i = 0; i < SPI_USED_MAX; i++)
+    {
+        if (instance == g_dma_rx_instances[i])
+        {
+            *is_rx = 1;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void tx_list_config(uint8_t spi_idx)
 {
     DMA_NodeConfTypeDef dma_node_conf_struct = {0};
     uint32_t node_index;
-    
-    /* 使能时钟 */
+    DMA_QListTypeDef *tx_list = &g_dma_list_tx_struct[spi_idx];
+    DMA_NodeTypeDef *tx_nodes = g_dma_list_node_tx_struct[spi_idx];
+
     __HAL_RCC_GPDMA1_CLK_ENABLE();
-    
-    /* 复位链表 */
-    HAL_DMAEx_List_ResetQ(&g_dma_list_tx_struct);
-    
-    /* 配置DMA链表节点 */
-    dma_node_conf_struct.NodeType = DMA_GPDMA_LINEAR_NODE;                                                  /* 节点类型 */
-    dma_node_conf_struct.Init.Request = GPDMA1_REQUEST_SPI1_TX;                                             /* 通道请求 */
-    dma_node_conf_struct.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;                                         /* 块硬件请求模式 */
-    dma_node_conf_struct.Init.Direction = DMA_MEMORY_TO_PERIPH;                                             /* 传输方向 */
-    dma_node_conf_struct.Init.SrcInc = DMA_SINC_INCREMENTED;                                                /* 传输源地址增量模式 */
-    dma_node_conf_struct.Init.DestInc = DMA_DINC_FIXED;                                                     /* 传输目标地址固定模式 */
-    dma_node_conf_struct.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;                                        /* 传输源数据宽度 */
-    dma_node_conf_struct.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;                                      /* 传输目标数据宽度 */
-    dma_node_conf_struct.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                       /* 优先级 */
-    dma_node_conf_struct.Init.SrcBurstLength = 1;                                                           /* 传输源突发长度 */ 
-    dma_node_conf_struct.Init.DestBurstLength = 1;                                                          /* 传输目标突发长度 */
-    dma_node_conf_struct.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;   /* 传输端口分配 */
-    dma_node_conf_struct.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;                                  /* 传输事件模式 */
-    dma_node_conf_struct.Init.Mode = DMA_NORMAL;                                                            /* 传输模式 */
-//    dma_node_conf_struct.Init.Mode = DMA_PFCTRL;                                                          /* 传输模式 */
-    dma_node_conf_struct.DataHandlingConfig.DataExchange = DMA_EXCHANGE_NONE;                               /* 数据交换模式 */
-    dma_node_conf_struct.DataHandlingConfig.DataAlignment = DMA_DATA_RIGHTALIGN_ZEROPADDED;                 /* 数据填充和对齐模式 */
-    dma_node_conf_struct.TriggerConfig.TriggerPolarity = DMA_TRIG_POLARITY_MASKED;                          /* 触发事件优先级 */
-    dma_node_conf_struct.DstAddress = (uint32_t)&g_spi_handle[0].Instance->TXDR;                            /* 目的地址 */
-    
-    /* 清空链表 */
-    memset(&g_dma_list_tx_struct, 0x0, sizeof(g_dma_list_tx_struct));
+
+    HAL_DMAEx_List_ResetQ(tx_list);
+
+    dma_node_conf_struct.NodeType = DMA_GPDMA_LINEAR_NODE;
+    dma_node_conf_struct.Init.Request = g_dma_tx_requests[spi_idx];
+    dma_node_conf_struct.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
+    dma_node_conf_struct.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    dma_node_conf_struct.Init.SrcInc = DMA_SINC_INCREMENTED;
+    dma_node_conf_struct.Init.DestInc = DMA_DINC_FIXED;
+    dma_node_conf_struct.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
+    dma_node_conf_struct.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
+    dma_node_conf_struct.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
+    dma_node_conf_struct.Init.SrcBurstLength = 1;
+    dma_node_conf_struct.Init.DestBurstLength = 1;
+    dma_node_conf_struct.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+    dma_node_conf_struct.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+    dma_node_conf_struct.Init.Mode = DMA_NORMAL;
+    dma_node_conf_struct.DataHandlingConfig.DataExchange = DMA_EXCHANGE_NONE;
+    dma_node_conf_struct.DataHandlingConfig.DataAlignment = DMA_DATA_RIGHTALIGN_ZEROPADDED;
+    dma_node_conf_struct.TriggerConfig.TriggerPolarity = DMA_TRIG_POLARITY_MASKED;
+    dma_node_conf_struct.DstAddress = (uint32_t)&g_spi_handle[spi_idx].Instance->TXDR;
+
+    memset(tx_list, 0x0, sizeof(*tx_list));
 
     for (node_index = 0; node_index < DMA_SPI_TX_NODE_USED; node_index++)
     {
-        dma_node_conf_struct.SrcAddress = (uint32_t)&spi_tx_buffer[node_index];                                              /* 源地址 */ 
-        dma_node_conf_struct.DataSize = RX_BUFFER_SIZE;                                                /* 数据大小 */
-        
-        /* 构建DMA链表节点 */
-        HAL_DMAEx_List_BuildNode(&dma_node_conf_struct, &g_dma_list_node_tx_struct[node_index]);
-        
-        /* 添加Cache清理 - 确保DMA能读到正确的节点描述符 */
-        SCB_CleanDCache_by_Addr((uint32_t*)&g_dma_list_node_tx_struct[node_index], sizeof(g_dma_list_node_tx_struct[node_index]));
-        
-        /* DMA链表节点插入链表 */
-        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_tx_struct, &g_dma_list_node_tx_struct[node_index]);    
+        dma_node_conf_struct.SrcAddress = (uint32_t)&spi_tx_buffer[node_index];
+        dma_node_conf_struct.DataSize = RX_BUFFER_SIZE;
+
+        HAL_DMAEx_List_BuildNode(&dma_node_conf_struct, &tx_nodes[node_index]);
+        SCB_CleanDCache_by_Addr((uint32_t *)&tx_nodes[node_index], sizeof(tx_nodes[node_index]));
+        HAL_DMAEx_List_InsertNode_Tail(tx_list, &tx_nodes[node_index]);
     }
 }
 
-void rx_list_config(void)
+static void rx_list_config(uint8_t spi_idx)
 {
     DMA_NodeConfTypeDef dma_node_conf_struct = {0};
     uint32_t node_index;
-    
-    /* 使能时钟 */
-    __HAL_RCC_GPDMA1_CLK_ENABLE();
-    
-    /* 复位链表 */
-    HAL_DMAEx_List_ResetQ(&g_dma_list_rx_struct);
-    
-    /* 配置DMA链表节点 */
-    dma_node_conf_struct.NodeType = DMA_GPDMA_LINEAR_NODE;                                                  /* 节点类型 */
-    dma_node_conf_struct.Init.Request = GPDMA1_REQUEST_SPI1_RX;                                             /* 通道请求 */
-    dma_node_conf_struct.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;                                         /* 块硬件请求模式 */
-    dma_node_conf_struct.Init.Direction = DMA_PERIPH_TO_MEMORY;                                             /* 传输方向 */
-    dma_node_conf_struct.Init.SrcInc = DMA_SINC_FIXED;                                                      /* 传输源地址固定模式 */
-    dma_node_conf_struct.Init.DestInc = DMA_DINC_INCREMENTED;                                               /* 传输目标地址增量模式 */
-    dma_node_conf_struct.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;                                        /* 传输源数据宽度 */
-    dma_node_conf_struct.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;                                      /* 传输目标数据宽度 */
-    dma_node_conf_struct.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                       /* 优先级 */
-    dma_node_conf_struct.Init.SrcBurstLength = 1;                                                           /* 传输源突发长度 */ 
-    dma_node_conf_struct.Init.DestBurstLength = 1;                                                          /* 传输目标突发长度 */
-    dma_node_conf_struct.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;   /* 传输端口分配 */
-    dma_node_conf_struct.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;                                  /* 传输事件模式 */
-    dma_node_conf_struct.Init.Mode = DMA_NORMAL;                                                            /* 传输模式 */
-//    dma_node_conf_struct.Init.Mode = DMA_PFCTRL;                                                            /* 传输模式 */
-    dma_node_conf_struct.DataHandlingConfig.DataExchange = DMA_EXCHANGE_NONE;                               /* 数据交换模式 */
-    dma_node_conf_struct.DataHandlingConfig.DataAlignment = DMA_DATA_RIGHTALIGN_ZEROPADDED;                 /* 数据填充和对齐模式 */
-    dma_node_conf_struct.TriggerConfig.TriggerPolarity = DMA_TRIG_POLARITY_MASKED;                          /* 触发事件优先级 */
-    dma_node_conf_struct.SrcAddress = (uint32_t)&g_spi_handle[0].Instance->RXDR;                            /* 源地址 */
+    DMA_QListTypeDef *rx_list = &g_dma_list_rx_struct[spi_idx];
+    DMA_NodeTypeDef *rx_nodes = g_dma_list_node_rx_struct[spi_idx];
 
-    /* 清空链表 */
-    memset(&g_dma_list_rx_struct, 0x0, sizeof(g_dma_list_rx_struct));
-    
+    __HAL_RCC_GPDMA1_CLK_ENABLE();
+
+    HAL_DMAEx_List_ResetQ(rx_list);
+
+    dma_node_conf_struct.NodeType = DMA_GPDMA_LINEAR_NODE;
+    dma_node_conf_struct.Init.Request = g_dma_rx_requests[spi_idx];
+    dma_node_conf_struct.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
+    dma_node_conf_struct.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    dma_node_conf_struct.Init.SrcInc = DMA_SINC_FIXED;
+    dma_node_conf_struct.Init.DestInc = DMA_DINC_INCREMENTED;
+    dma_node_conf_struct.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
+    dma_node_conf_struct.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
+    dma_node_conf_struct.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
+    dma_node_conf_struct.Init.SrcBurstLength = 1;
+    dma_node_conf_struct.Init.DestBurstLength = 1;
+    dma_node_conf_struct.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+    dma_node_conf_struct.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+    dma_node_conf_struct.Init.Mode = DMA_NORMAL;
+    dma_node_conf_struct.DataHandlingConfig.DataExchange = DMA_EXCHANGE_NONE;
+    dma_node_conf_struct.DataHandlingConfig.DataAlignment = DMA_DATA_RIGHTALIGN_ZEROPADDED;
+    dma_node_conf_struct.TriggerConfig.TriggerPolarity = DMA_TRIG_POLARITY_MASKED;
+    dma_node_conf_struct.SrcAddress = (uint32_t)&g_spi_handle[spi_idx].Instance->RXDR;
+
+    memset(rx_list, 0x0, sizeof(*rx_list));
+
     for (node_index = 0; node_index < DMA_SPI_RX_NODE_USED; node_index++)
     {
-        dma_node_conf_struct.DstAddress = (uint32_t)&spi_rx_buf0[node_index][0];                        /* 目的地址 */
-        dma_node_conf_struct.DataSize = RX_BUFFER_SIZE;                                                /* 数据大小 */
-        
-        /* 构建DMA链表节点 */
-        HAL_DMAEx_List_BuildNode(&dma_node_conf_struct, &g_dma_list_node_rx_struct[node_index]);
-        
-        /* 添加Cache清理 */
-        SCB_CleanDCache_by_Addr((uint32_t*)&g_dma_list_node_rx_struct[node_index], sizeof(g_dma_list_node_rx_struct[node_index]));
-        
-        /* DMA链表节点插入链表 */
-        HAL_DMAEx_List_InsertNode_Tail(&g_dma_list_rx_struct, &g_dma_list_node_rx_struct[node_index]);    
+        dma_node_conf_struct.DstAddress = (uint32_t)&spi_rx_dma_buf[spi_idx][node_index][0];
+        dma_node_conf_struct.DataSize = RX_BUFFER_SIZE;
+
+        HAL_DMAEx_List_BuildNode(&dma_node_conf_struct, &rx_nodes[node_index]);
+        SCB_CleanDCache_by_Addr((uint32_t *)&rx_nodes[node_index], sizeof(rx_nodes[node_index]));
+        HAL_DMAEx_List_InsertNode_Tail(rx_list, &rx_nodes[node_index]);
     }
 }
 
-/**
- * @brief   初始化DMA
- * @param   bufaddr: 缓冲区地址缓冲区的指针
- * @param   bufsize: 缓冲区大小缓冲区的指针
- * @param   bufnum: 缓冲区数量
- * @retval  无
- */
 void dma_list_rtx_init(void)
 {
-    tx_list_config();
-    
-    /* 初始化链表模式DMA */
-    g_handle_GPDMA1_Channel0.Instance = GPDMA1_Channel0;
-    g_handle_GPDMA1_Channel0.InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                     /* 优先级 */
-    g_handle_GPDMA1_Channel0.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;                                      /* 步进模式 */
-    g_handle_GPDMA1_Channel0.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;                               /* 端口分配 */
-//    g_handle_GPDMA1_Channel0.InitLinkedList.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;                         /* 触发事件模式 */
-    g_handle_GPDMA1_Channel0.InitLinkedList.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;                         /* 触发事件模式 */
-    g_handle_GPDMA1_Channel0.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_NORMAL;                                     /* 链表传输模式 */
-//    g_handle_GPDMA1_Channel0.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_CIRCULAR;                                     /* 链表传输模式 */
-    
-    HAL_DMAEx_List_Init(&g_handle_GPDMA1_Channel0);
-    
-    /* 关联DMA与DMA链表 */
-    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel0, &g_dma_list_tx_struct);
-    
-    /* 关联外设与DMA */
-    __HAL_LINKDMA(&g_spi_handle[0], hdmatx, g_handle_GPDMA1_Channel0);
-    
-    /* 配置通道属性 */
-    HAL_DMA_ConfigChannelAttributes(&g_handle_GPDMA1_Channel0, DMA_CHANNEL_NPRIV);
-    
-    /* 注册DMA传输完成回调函数 */
-    HAL_DMA_RegisterCallback(&g_handle_GPDMA1_Channel0, HAL_DMA_XFER_CPLT_CB_ID, dma_transfer_complete_cb);
-    
-    /* 配置中断优先级并使能中断 */
-    HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+    for (uint8_t spi_idx = 0; spi_idx < SPI_USED_MAX; spi_idx++)
+    {
+        tx_list_config(spi_idx);
+        rx_list_config(spi_idx);
 
-    
+        DMA_HandleTypeDef *hdma_tx = g_dma_tx_handles[spi_idx];
+        hdma_tx->Instance = g_dma_tx_instances[spi_idx];
+        hdma_tx->InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
+        hdma_tx->InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
+        hdma_tx->InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
+        hdma_tx->InitLinkedList.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;
+        hdma_tx->InitLinkedList.LinkedListMode = DMA_LINKEDLIST_NORMAL;
+        HAL_DMAEx_List_Init(hdma_tx);
+        HAL_DMAEx_List_LinkQ(hdma_tx, &g_dma_list_tx_struct[spi_idx]);
+        __HAL_LINKDMA(&g_spi_handle[spi_idx], hdmatx, *hdma_tx);
+        HAL_DMA_ConfigChannelAttributes(hdma_tx, DMA_CHANNEL_NPRIV);
+        HAL_DMA_RegisterCallback(hdma_tx, HAL_DMA_XFER_CPLT_CB_ID, dma_transfer_complete_cb);
+        HAL_NVIC_SetPriority(g_dma_tx_irqs[spi_idx], 0, 0);
+        HAL_NVIC_EnableIRQ(g_dma_tx_irqs[spi_idx]);
 
-    rx_list_config();
-    
-    /* 初始化链表模式DMA */
-    g_handle_GPDMA1_Channel1.Instance = GPDMA1_Channel1;
-    g_handle_GPDMA1_Channel1.InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                     /* 优先级 */
-    g_handle_GPDMA1_Channel1.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;                                      /* 步进模式 */
-    g_handle_GPDMA1_Channel1.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;                               /* 端口分配 */
-//    g_handle_GPDMA1_Channel1.InitLinkedList.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;                              /* 触发事件模式 */
-    g_handle_GPDMA1_Channel1.InitLinkedList.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;                         /* 触发事件模式 */
-    g_handle_GPDMA1_Channel1.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_NORMAL;                                     /* 链表传输模式 */
-//    g_handle_GPDMA1_Channel1.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_CIRCULAR;                                 /* 链表循环传输模式 */
-    
-    HAL_DMAEx_List_Init(&g_handle_GPDMA1_Channel1);
-    
-    /* 关联DMA与DMA链表 */
-    HAL_DMAEx_List_LinkQ(&g_handle_GPDMA1_Channel1, &g_dma_list_rx_struct);
-    
-    /* 关联外设与DMA */
-    __HAL_LINKDMA(&g_spi_handle[0], hdmarx, g_handle_GPDMA1_Channel1);
-    
-    /* 配置通道属性 */
-    HAL_DMA_ConfigChannelAttributes(&g_handle_GPDMA1_Channel1, DMA_CHANNEL_NPRIV);
-    
-    /* 注册DMA传输完成回调函数 */
-    HAL_DMA_RegisterCallback(&g_handle_GPDMA1_Channel1, HAL_DMA_XFER_CPLT_CB_ID, dma_transfer_complete_cb);
-    
-    /* 配置中断优先级并使能中断 */
-    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
-}
-
-/**
- * @brief   DMA传输完成回调函数
- * @param   无
- * @retval  无
- */
-void dma_start_transfer(void)
-{
-    /* 循环模式下只需要启动一次 */
-    if (dma_ready) {
-        /* 1. 先停止之前的传输（确保状态干净） */
-        
-        /* 2. 清理SPI状态标志 */
-        __HAL_SPI_CLEAR_EOTFLAG(&g_spi_handle[0]);
-        __HAL_SPI_CLEAR_TXTFFLAG(&g_spi_handle[0]);
-        
-        /* 3. 配置SPI的DMA请求使能 */
-        ATOMIC_SET_BIT(g_spi_handle[0].Instance->CFG1, SPI_CFG1_RXDMAEN | SPI_CFG1_TXDMAEN);
-        
-        /* 4. 使能SPI（但不开始传输） */
-        SET_BIT(g_spi_handle[0].Instance->CR1, SPI_CR1_SPE);
-        
-        /* 5. 启动DMA传输 - 循环模式会自动重复 */
-        HAL_DMAEx_List_Start_IT(&g_handle_GPDMA1_Channel1);  // 先启动RX
-        HAL_DMAEx_List_Start_IT(&g_handle_GPDMA1_Channel0);  // 再启动TX
-        
-        /* 6. 最后触发SPI传输开始 */
-        SET_BIT(g_spi_handle[0].Instance->CR1, SPI_CR1_CSTART);        
-        
-        // dma_ready = 0;  // 重置标志
+        DMA_HandleTypeDef *hdma_rx = g_dma_rx_handles[spi_idx];
+        hdma_rx->Instance = g_dma_rx_instances[spi_idx];
+        hdma_rx->InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
+        hdma_rx->InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
+        hdma_rx->InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
+        hdma_rx->InitLinkedList.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;
+        hdma_rx->InitLinkedList.LinkedListMode = DMA_LINKEDLIST_NORMAL;
+        HAL_DMAEx_List_Init(hdma_rx);
+        HAL_DMAEx_List_LinkQ(hdma_rx, &g_dma_list_rx_struct[spi_idx]);
+        __HAL_LINKDMA(&g_spi_handle[spi_idx], hdmarx, *hdma_rx);
+        HAL_DMA_ConfigChannelAttributes(hdma_rx, DMA_CHANNEL_NPRIV);
+        HAL_DMA_RegisterCallback(hdma_rx, HAL_DMA_XFER_CPLT_CB_ID, dma_transfer_complete_cb);
+        HAL_NVIC_SetPriority(g_dma_rx_irqs[spi_idx], 0, 0);
+        HAL_NVIC_EnableIRQ(g_dma_rx_irqs[spi_idx]);
     }
 }
-/* 缓冲区管理结构 */
-//typedef struct {
-//    volatile uint32_t current_rx_node;    // 当前接收节点
-//    volatile uint32_t current_tx_node;    // 当前发送节点  
-//    volatile uint32_t processed_node;     // 已处理的节点
-//    volatile uint8_t data_ready;          // 数据就绪标志
-//} BufferManager_t;
 
-BufferManager_t g_buffer_mgr = {0};
+void dma_start_transfer(void)
+{
+    dma_start_transfer_all();
+}
+
+void dma_start_transfer_all(void)
+{
+    if (!dma_ready)
+        return;
+
+    g_dma_rx_done_mask = 0;
+
+    for (uint8_t spi_idx = 0; spi_idx < SPI_USED_MAX; spi_idx++)
+    {
+        __HAL_SPI_CLEAR_EOTFLAG(&g_spi_handle[spi_idx]);
+        __HAL_SPI_CLEAR_TXTFFLAG(&g_spi_handle[spi_idx]);
+        ATOMIC_SET_BIT(g_spi_handle[spi_idx].Instance->CFG1, SPI_CFG1_RXDMAEN | SPI_CFG1_TXDMAEN);
+        SET_BIT(g_spi_handle[spi_idx].Instance->CR1, SPI_CR1_SPE);
+    }
+
+    for (uint8_t spi_idx = 0; spi_idx < SPI_USED_MAX; spi_idx++)
+    {
+        HAL_DMAEx_List_Start_IT(g_dma_rx_handles[spi_idx]);
+    }
+    for (uint8_t spi_idx = 0; spi_idx < SPI_USED_MAX; spi_idx++)
+    {
+        HAL_DMAEx_List_Start_IT(g_dma_tx_handles[spi_idx]);
+    }
+
+    for (uint8_t spi_idx = 0; spi_idx < SPI_USED_MAX; spi_idx++)
+    {
+        SET_BIT(g_spi_handle[spi_idx].Instance->CR1, SPI_CR1_CSTART);
+    }
+}
 
 void dma_list_data_init(void)
 {
-    memset(&g_buffer_mgr, 0, sizeof(g_buffer_mgr));
+    memset(&g_buffer_mgr[0], 0, sizeof(g_buffer_mgr));
+    g_dma_rx_done_mask = 0;
 }
-/**
- * @brief   DMA传输完成回调函数
- * @param   hdma: DMA句柄指针
- * @retval  无
- */
+
 static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma)
 {
-    /* 在循环模式下，每次传输完成都会进入这个回调 */
-    static uint32_t transfer_tx_count = 0;
-    static uint32_t transfer_rx_count = 0;
-    static uint32_t error_count = 0;
-    static uint32_t rx_count_last = 0;
-    uint32_t current_node = 0;
-    uint16_t adc_data_1[8];
-    
-    /* 检查DMA错误标志 */
-    if (__HAL_DMA_GET_FLAG(hdma, DMA_FLAG_DTE)) {
-        // 传输错误
-        // 可以在这里添加错误处理
-        error_count++;
+    static uint32_t transfer_tx_count[SPI_USED_MAX] = {0};
+    static uint32_t transfer_rx_count[SPI_USED_MAX] = {0};
+    static uint32_t error_count[SPI_USED_MAX] = {0};
+    static uint32_t rx_count_last[SPI_USED_MAX] = {0};
+
+    if (__HAL_DMA_GET_FLAG(hdma, DMA_FLAG_DTE))
+    {
+        uint8_t is_rx = 0;
+        int idx = dma_get_spi_index_from_instance(hdma->Instance, &is_rx);
+        if (idx >= 0)
+        {
+            error_count[idx]++;
+        }
         return;
     }
-    
-    // 传输完成
-    if (hdma->Instance == GPDMA1_Channel0) 
+
+    uint8_t is_rx = 0;
+    int spi_idx = dma_get_spi_index_from_instance(hdma->Instance, &is_rx);
+    if (spi_idx < 0)
+        return;
+
+    if (!is_rx)
     {
-        transfer_tx_count++;
-        // printf("TX DMA Complete\n");
-//        if (transfer_tx_count >= 1000) {  
-//            transfer_tx_count = 0;
-//        }
+        transfer_tx_count[spi_idx]++;
+        return;
     }
-    if (hdma->Instance == GPDMA1_Channel1) 
-    {   
-        // 处理接收到的数据
+
+    uint32_t current_node = g_buffer_mgr[spi_idx].current_rx_node;
+
+    SCB_InvalidateDCache_by_Addr((uint32_t *)&spi_rx_dma_buf[spi_idx][current_node][0], RX_BUFFER_SIZE);
+
+    g_buffer_mgr[spi_idx].current_rx_node = (g_buffer_mgr[spi_idx].current_rx_node + 1) % DMA_SPI_RX_NODE_USED;
+
+    if ((g_buffer_mgr[spi_idx].current_rx_node != rx_count_last[spi_idx]) &&
+        ((g_buffer_mgr[spi_idx].current_rx_node % 5) == 0))
+    {
+        g_buffer_mgr[spi_idx].data_ready = 1;
+    }
+
+    rx_count_last[spi_idx] = g_buffer_mgr[spi_idx].current_rx_node;
+    transfer_rx_count[spi_idx]++;
+
+    g_dma_rx_done_mask |= (1u << spi_idx);
+    if (g_dma_rx_done_mask == ((1u << SPI_USED_MAX) - 1u))
+    {
         ads8319_stop_transfer();
-        
-        current_node = g_buffer_mgr.current_rx_node;
-
-        /* Cache一致性处理 */
-        SCB_InvalidateDCache_by_Addr((uint32_t*)&spi_rx_buf0[current_node][0], RX_BUFFER_SIZE);
-
-        /* 切换到下一个接收缓冲区 */
-        g_buffer_mgr.current_rx_node = (g_buffer_mgr.current_rx_node + 1) % DMA_SPI_RX_NODE_USED;
-
-        /* 设置数据就绪标志 */
-        if ((g_buffer_mgr.current_rx_node != rx_count_last) && ((g_buffer_mgr.current_rx_node % 5) == 0)) {
-            g_buffer_mgr.data_ready = 1;
-        }
-
-        // /* 接收数据移位处理 */
-        // extract_adc_data_from_buffer(&spi_rx_buf0[current_node][0], adc_data_1);
-        // uint32_t stop_time = ticks_timx_get_counter();    
-        
-        // rx_count_last = g_buffer_mgr.current_rx_node;
-        
-        transfer_rx_count++;
-        // 可以根据transfer_count判断传输了多少次
-//        if (transfer_rx_count >= 1000) {  
-//            transfer_rx_count = 0;
-//        }
+        g_dma_rx_done_mask = 0;
     }
 }
 
-/**
- * @brief   获取当前可用的接收数据
- * @param   node_index: 返回数据所在的节点索引
- * @retval  1-有新数据, 0-无新数据
- */
 uint8_t dma_get_ready_data(uint32_t *node_index)
 {
-    if (g_buffer_mgr.data_ready) {
-        /* 计算刚刚完成的节点（current_rx_node的前一个） */
-        uint32_t ready_node = (g_buffer_mgr.current_rx_node == 0) ? 
-                             (DMA_SPI_RX_NODE_USED - 1) : (g_buffer_mgr.current_rx_node - 1);
+    return dma_get_ready_data_by_spi(0, node_index);
+}
+
+uint8_t dma_get_ready_data_by_spi(uint8_t spi_idx, uint32_t *node_index)
+{
+    if (spi_idx >= SPI_USED_MAX)
+        return 0;
+
+    if (g_buffer_mgr[spi_idx].data_ready)
+    {
+        uint32_t ready_node = (g_buffer_mgr[spi_idx].current_rx_node == 0) ?
+                              (DMA_SPI_RX_NODE_USED - 1) : (g_buffer_mgr[spi_idx].current_rx_node - 1);
         *node_index = ready_node;
-        g_buffer_mgr.processed_node = ready_node;
-        g_buffer_mgr.data_ready = 0;
+        g_buffer_mgr[spi_idx].processed_node = ready_node;
+        g_buffer_mgr[spi_idx].data_ready = 0;
         return 1;
     }
     return 0;
 }
 
-/**
- * @brief   GPDMA1 Channel0中断服务函数
- * @param   无
- * @retval  无
- */
 void GPDMA1_Channel0_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel0);
@@ -361,3 +356,24 @@ void GPDMA1_Channel1_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel1);
 }
+
+void GPDMA1_Channel2_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel2);
+}
+
+void GPDMA1_Channel3_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel3);
+}
+
+void GPDMA1_Channel4_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel4);
+}
+
+void GPDMA1_Channel5_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&g_handle_GPDMA1_Channel5);
+}
+
