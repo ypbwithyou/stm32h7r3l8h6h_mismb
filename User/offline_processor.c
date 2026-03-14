@@ -285,15 +285,7 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
 
     // ------------------------采样率配置----------------------------------
 
-    uint32_t sample_rate = 0;
-    for (uint8_t i = 0; i < (int)(sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0])); i++)
-    {
-        if (g_offline_chCfgHeader.fHardwareSampleRate == g_off_ida_ch_rate[i].ch_cfg_value)
-        {
-            sample_rate = (uint32_t)g_off_ida_ch_rate[i].ch_cfg_value;
-            break;
-        }
-    }
+    uint32_t sample_rate = GetOfflineSampleRate();
 
     usb_printf("sample_rate:%d", sample_rate);
 
@@ -505,17 +497,8 @@ void offline_processor(uint8_t mode)
         g_IdaSystemStatus.st_dev_run.collect_cfg_flag = COLLECT_CFG_OK;
 
         /* 从配置中查表确定采样率，找不到则保底 25600 Hz */
-        uint32_t sample_rate = 0;
-        for (uint8_t i = 0;
-             i < (uint8_t)(sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0]));
-             i++)
-        {
-            if (g_offline_chCfgHeader.fHardwareSampleRate == g_off_ida_ch_rate[i].ch_cfg_value)
-            {
-                sample_rate = (uint32_t)g_off_ida_ch_rate[i].ch_cfg_value;
-                break;
-            }
-        }
+        uint32_t sample_rate = GetOfflineSampleRate();
+
         if (sample_rate == 0)
         {
             usb_printf("[Offline] Sample rate %.1f Hz not in table,"
@@ -912,8 +895,7 @@ static void OfflineDatasRecord(void)
     }
 
     /* ── 2. 按通道逐个写入 [RECORD_FRAMEHEADER + 数据] ── */
-    short ch_buf[/* nBlockSize max */ 4096]; /* 按实际最大 nBlockSize 调整 */
-    record_frame_num++;
+    short ch_buf[BLOCK_LEN]; /* 按实际最大 nBlockSize 调整 */
 
     for (uint8_t ch = 0; ch < ADC_CH_TOTAL; ch++)
     {
@@ -935,6 +917,8 @@ static void OfflineDatasRecord(void)
 
         rec_hdr.nValidNum = (unsigned int)g_offline_GlobalParam.nBlockSize;
         rec_hdr.nChID = (int)ch;
+
+        record_frame_num++;
 
         if (record_frame_num == 1)
         {
