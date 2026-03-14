@@ -210,15 +210,6 @@ static void HandleRecordStart(uint8_t idx)
     g_recorde_file_head.nFrameDataSize = g_offline_GlobalParam.nBlockSize;
     g_recorde_file_head.nIsCalculate = 1;
 
-    g_recorde_file_head.nDeviceChNum = ADC_CH_TOTAL; // 24
-
-    /* 统计使能通道数 */
-    uint32_t enabled_cnt = 0;
-    for (uint8_t i = 0; i < ADC_CH_TOTAL; i++)
-        if (g_ch_enable_mask & (1u << i))
-            enabled_cnt++;
-    g_recorde_file_head.nRecordNum = enabled_cnt;
-
     file_num++;
 
     if (CreatOfflineRecordFile(file_num) != FR_OK)
@@ -255,7 +246,7 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
         return;
     }
 
-    // ----------------------------------
+    // -----------------通道配置-----------------
     g_ch_enable_mask = 0;
     g_enabled_ch_cnt = 0;
     memset(g_spi_adc_cnt, 0, sizeof(g_spi_adc_cnt));
@@ -282,6 +273,18 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
                g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2],
                g_ch_enable_mask);
 
+    // -----------------------统计使能通道数-----------------------------------
+
+    uint32_t enabled_cnt = 0;
+    for (uint8_t i = 0; i < ADC_CH_TOTAL; i++)
+        if (g_ch_enable_mask & (1u << i))
+            enabled_cnt++;
+    g_recorde_file_head.nRecordNum = enabled_cnt;
+
+    usb_printf("g_recorde_file_head.nRecordNum: %d \n", g_recorde_file_head.nRecordNum);
+
+    // ------------------------采样率配置----------------------------------
+
     uint32_t sample_rate = 0;
     for (uint8_t i = 0; i < (int)(sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0])); i++)
     {
@@ -293,6 +296,8 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     }
 
     usb_printf("sample_rate:%d", sample_rate);
+
+    // ------------------------启动采集----------------------------------
 
     if (sample_rate > 0)
     {
@@ -556,8 +561,8 @@ void offline_processor(uint8_t mode)
         {
             ExecuteScheduleAction(i, elapsed_seconds);
 
-            if (*status == STATUS_NO)
-                *status = STATUS_ING;
+            // if (*status == STATUS_NO)
+            //     *status = STATUS_ING;
 
             continue;
         }
