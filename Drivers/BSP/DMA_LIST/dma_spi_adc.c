@@ -74,7 +74,20 @@ void dma_adc_start_collect(void)
     /* 启动DMA传输（异步） */
     dma_start_transfer_all();
 }
- 
+
+/**
+ * @brief  检查是否有就绪数据
+ * @param  spi_idx: SPI索引
+ * @return 1: 有数据, 0: 无数据
+ */
+uint8_t dma_adc_has_data(uint8_t spi_idx)
+{
+    if (spi_idx >= SPI_USED_MAX)
+        return 0;
+    
+    return buffer_ready[spi_idx][processed_buffer[spi_idx]];
+}
+
 /**
  * @brief  获取最新就绪数据
  * @param  spi_idx: SPI索引
