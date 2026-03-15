@@ -339,7 +339,7 @@
               <MiscControls>-Wno-invalid-source-encoding </MiscControls>
               <Define>USE_HAL_DRIVER,STM32H7R3xx,USE_USB_HS</Define>
               <Undefine></Undefine>
-              <IncludePath>..\..\Drivers;..\..\Drivers\CMSIS\Include;..\..\Drivers\CMSIS\Device\ST\STM32H7RSxx\Include;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc\Legacy;..\..\Middlewares;..\..\User;..\..\Middlewares\USB\USB_APP;..\..\Middlewares\USB\STM32_USB_Device_Library\Class\CDC\Inc;..\..\Middlewares\USB\STM32_USB_Device_Library\Core\Inc;..\..\Drivers\LIBS\lib_usb_protocol</IncludePath>
+              <IncludePath>..\..\Drivers;..\..\Drivers\CMSIS\Include;..\..\Drivers\CMSIS\Device\ST\STM32H7RSxx\Include;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc;..\..\Drivers\STM32H7RSxx_HAL_Driver\Inc\Legacy;..\..\Middlewares;..\..\User;..\..\Middlewares\USB\USB_APP;..\..\Middlewares\USB\STM32_USB_Device_Library\Class\CDC\Inc;..\..\Middlewares\USB\STM32_USB_Device_Library\Core\Inc;..\..\Drivers\LIBS\lib_usb_protocol;..\..\Middlewares\USB\STM32_USB_Device_Library\Class\MSC\Inc;..\..\Middlewares\USB\STM32_USB_Device_Library\Class\CompositeBuilder\Inc</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -838,6 +838,31 @@
               <FileType>1</FileType>
               <FilePath>..\..\Middlewares\USB\STM32_USB_Device_Library\Class\CDC\Src\usbd_cdc.c</FilePath>
             </File>
+            <File>
+              <FileName>usbd_msc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Middlewares\USB\STM32_USB_Device_Library\Class\MSC\Src\usbd_msc.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd_msc_scsi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Middlewares\USB\STM32_USB_Device_Library\Class\MSC\Src\usbd_msc_scsi.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd_msc_data.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Middlewares\USB\STM32_USB_Device_Library\Class\MSC\Src\usbd_msc_data.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd_msc_bot.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Middlewares\USB\STM32_USB_Device_Library\Class\MSC\Src\usbd_msc_bot.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd_composite_builder.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Middlewares\USB\STM32_USB_Device_Library\Class\CompositeBuilder\Src\usbd_composite_builder.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -857,6 +882,11 @@
               <FileName>usbd_desc.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Middlewares\USB\USB_APP\usbd_desc.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd_msc_storage.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Middlewares\USB\USB_APP\usbd_msc_storage.c</FilePath>
             </File>
           </Files>
         </Group>

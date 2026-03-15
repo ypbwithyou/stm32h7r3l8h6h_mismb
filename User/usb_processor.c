@@ -4,6 +4,9 @@
 #include "usbd_core.h"
 #include "usbd_desc.h"
 #include "usbd_cdc.h"
+#include "usbd_msc.h"
+#include "usbd_composite_builder.h"
+#include "usbd_msc_storage.h"
 
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
 #include "./LIBS/lib_usb_protocol/usb_protocol.h"
@@ -191,8 +194,20 @@ void usb_init(void)
 
     /* 鍒濆鍖朥SB */
     USBD_Init(&g_usbd_handle, &CDC_Desc, DEVICE_HS);
+    
+#if defined(USE_USBD_COMPOSITE)
+    /* 复合设备模式: CDC + MSC */
+    USBD_RegisterClass(&g_usbd_handle, &USBD_CMPSIT);
+    USBD_CMPSIT_AddClass(&g_usbd_handle, USBD_CDC_CLASS, CLASS_TYPE_CDC, 1);
+    USBD_CDC_RegisterInterface(&g_usbd_handle, &USBD_CDC_fops);
+    USBD_CMPSIT_AddClass(&g_usbd_handle, USBD_MSC_CLASS, CLASS_TYPE_MSC, 1);
+    USBD_MSC_RegisterStorage(&g_usbd_handle, &USBD_MSC_Template_fops);
+#else
+    /* 单设备模式: 仅CDC */
     USBD_RegisterClass(&g_usbd_handle, USBD_CDC_CLASS);
     USBD_CDC_RegisterInterface(&g_usbd_handle, &USBD_CDC_fops);
+#endif
+
     USBD_Start(&g_usbd_handle);
 }
 
