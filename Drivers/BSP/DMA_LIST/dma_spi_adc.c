@@ -90,8 +90,9 @@ uint8_t dma_adc_get_data(uint8_t spi_idx, uint16_t *adc_data)
     if (!buffer_ready[spi_idx][processed_buffer[spi_idx]])
         return 0;
     
-    /* 从DMA缓冲区读取数据 */
-    for (uint8_t i = 0; i < ADS8319_CHAIN_LENGTH; i++)
+    /* 根据g_spi_adc_cnt复制实际采集的ADC数据 */
+    uint8_t adc_count = g_spi_adc_cnt[spi_idx];
+    for (uint8_t i = 0; i < adc_count; i++)
     {
         adc_data[i] = adc_dma_buffer[spi_idx][processed_buffer[spi_idx]][i];
     }

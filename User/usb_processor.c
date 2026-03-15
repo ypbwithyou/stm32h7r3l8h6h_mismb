@@ -643,53 +643,7 @@ void transpose(short src[BLOCK_LEN][SPI_NUM], short dst[SPI_NUM][BLOCK_LEN])
         dst[2][i] = src[i][2];
     }
 }
-// 处理PC->ARM的DVSARM_DISPNEXT_OK事件
-// static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
-// {
-//     (void)data_in;
-//     (void)data_len;
-//     (void)frame_head;
-//     (void)user_head;
-
-//     static uint32_t frame_num = 0;
-//     uint32_t cb_len = SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN;
-//     short send_data[BLOCK_LEN][SPI_NUM];
-//     struct UserData user_data;
-
-//     if (cb_size(g_cb_adc) < cb_len)
-//     {
-//         return NULL;
-//     }
-
-//     frame_num++;
-
-//     //    ArmBackFrameHeader data_head;
-//     user_data.data_head.nVersion = 0x12345678;
-//     user_data.data_head.nDataSource = 0;
-//     user_data.data_head.nFrameChCount = SPI_NUM;
-//     user_data.data_head.nFrameLen = BLOCK_LEN;
-//     user_data.data_head.nTotalFrameNum = frame_num;
-//     user_data.data_head.nCurNs = dwt_get_ns();
-
-//     //    memset(send_data, 0, sizeof(send_data));
-//     //    memcpy(send_data, &data_head, sizeof(data_head));
-//     cb_read(g_cb_adc, (char *)send_data, cb_len);
-//     transpose(send_data, user_data.send_frame);
-
-//     uint32_t send_len = sizeof(user_data);
-
-//     FrameHeadInfo reply_frame_head = create_default_frame_head(frame_num);
-
-//     UserDataHeadInfo reply_user_head = create_user_data_head(DVSARM_DISPNEXT_OK,
-//                                                              SOURCE_TYPE_WITH_DATAS,
-//                                                              DESTINATION_ARM_TO_PC,
-//                                                              send_len);
-//     uint32_t packet_len = 0;
-//     pack_data((uint8_t *)&user_data, send_len, &reply_user_head, &reply_frame_head, &packet_len);
-
-//     return packet_len;
-// }
-
+ 
 static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
                                   FrameHeadInfo *frame_head,
                                   UserDataHeadInfo *user_head)
