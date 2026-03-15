@@ -18,6 +18,7 @@
 #include "./FATFS/exfuns/fattester.h"
 #include "offline_processor.h"
 #include "./BSP/MMC/mmc_sdcard.h"
+#include "./BSP/DMA_LIST/dma_list.h"  // 用于 dma_set_spi_xfer_size
 
 /*********************************************************************************/
 // typedef struct
@@ -435,13 +436,29 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
         }
     }
 
-    g_spi_adc_cnt[0] = 1;
-    g_spi_adc_cnt[1] = 1;
-    g_spi_adc_cnt[2] = 1;
+    // 注意：移除了硬编码的 g_spi_adc_cnt 设置，使用动态计算的值
+    // g_spi_adc_cnt[0] = 1;
+    // g_spi_adc_cnt[1] = 1;
+    // g_spi_adc_cnt[2] = 1;
 
     usb_printf("spi_adc_cnt: [%d, %d, %d]  mask=0x%06lX\n",
                g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2],
                g_ch_enable_mask);
+
+    /* 根据新的 g_spi_adc_cnt 设置 DMA 传输大小 */
+    for (uint8_t spi_idx = 0; spi_idx < SPI_NUM; spi_idx++)
+    {
+        /* 每个ADC转换结果为2字节，计算总传输大小 */
+        /* 如果g_spi_adc_cnt为0，使用默认值ADS8319_CHAIN_LENGTH */
+        uint8_t adc_count = g_spi_adc_cnt[spi_idx];
+        if (adc_count == 0)
+        {
+            adc_count = 8;  // ADS8319_CHAIN_LENGTH 默认值
+        }
+        uint32_t xfer_size = adc_count * 2;  // 2字节/ADC
+        dma_set_spi_xfer_size(spi_idx, xfer_size);
+        usb_printf("SPI%d: adc_count=%d, xfer_size=%d bytes\n", spi_idx, adc_count, xfer_size);
+    }
 
     // // ---------------------设备详细信息----------------------------
     // if (data_len < userDataLoc + sizeof(DeviceDetailInfo))

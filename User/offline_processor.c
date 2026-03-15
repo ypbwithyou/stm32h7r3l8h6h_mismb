@@ -11,6 +11,7 @@
 #include "usb_processor.h"
 #include "usbd_cdc_if.h"
 #include "./LIBS/lib_file_utils/file_utils.h"
+#include "./BSP/DMA_LIST/dma_list.h"  // 用于 dma_set_spi_xfer_size
 
 const Dev_ch_cfg_index g_off_HighPassFreq[] =
     {
@@ -272,6 +273,21 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     usb_printf("spi_adc_cnt: [%d, %d, %d]  mask=0x%06lX\n",
                g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2],
                g_ch_enable_mask);
+
+    /* 根据新的 g_spi_adc_cnt 设置 DMA 传输大小 */
+    for (uint8_t spi_idx = 0; spi_idx < SPI_NUM; spi_idx++)
+    {
+        /* 每个ADC转换结果为2字节，计算总传输大小 */
+        /* 如果g_spi_adc_cnt为0，使用默认值ADS8319_CHAIN_LENGTH */
+        uint8_t adc_count = g_spi_adc_cnt[spi_idx];
+        if (adc_count == 0)
+        {
+            adc_count = 8;  // ADS8319_CHAIN_LENGTH 默认值
+        }
+        uint32_t xfer_size = adc_count * 2;  // 2字节/ADC
+        dma_set_spi_xfer_size(spi_idx, xfer_size);
+        usb_printf("SPI%d: adc_count=%d, xfer_size=%d bytes\n", spi_idx, adc_count, xfer_size);
+    }
 
     // -----------------------统计使能通道数-----------------------------------
 
