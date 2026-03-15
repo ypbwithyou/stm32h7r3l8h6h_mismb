@@ -433,6 +433,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\User\usb_processor.c</FilePath>
             </File>
+            <File>
+              <FileName>dma_spi_adc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Drivers\BSP\DMA_LIST\dma_spi_adc.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

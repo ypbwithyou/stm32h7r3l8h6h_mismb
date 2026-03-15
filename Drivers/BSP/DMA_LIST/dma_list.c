@@ -4,6 +4,7 @@
  */
 #include "./BSP/TIMER/gtim.h"
 #include "./BSP/DMA_LIST/dma_list.h"
+#include "./BSP/DMA_LIST/dma_spi_adc.h"
 #include "string.h"
 
 /* DMA handles */
@@ -113,10 +114,11 @@ static int dma_get_spi_index_from_instance(DMA_Channel_TypeDef *instance, uint8_
 static uint32_t dma_get_xfer_size(uint8_t spi_idx)
 {
     uint32_t size = g_dma_spi_xfer_size[spi_idx];
-    if (size == 0 || size > RX_BUFFER_SIZE)
+    if (size == 0)
     {
         size = RX_BUFFER_SIZE;
     }
+    // 不再限制最大值，允许根据g_spi_adc_cnt动态设置传输大小
     return size;
 }
 
@@ -350,6 +352,9 @@ static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma)
 
     rx_count_last[spi_idx] = g_buffer_mgr[spi_idx].current_rx_node;
     transfer_rx_count[spi_idx]++;
+
+    /* 调用DMA ADC完成回调处理数据 */
+    dma_adc_transfer_complete(spi_idx);
 
     g_dma_rx_done_mask |= (1u << spi_idx);
     if (g_dma_rx_done_mask == ((1u << SPI_USED_MAX) - 1u))

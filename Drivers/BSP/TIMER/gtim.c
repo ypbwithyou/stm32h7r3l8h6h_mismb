@@ -3,6 +3,7 @@
 #include "./BSP/LED/led.h"
 #include "./BSP/ADS8319/ads8319.h"
 #include "./BSP/SPI/spi.h"
+#include "./BSP/DMA_LIST/dma_spi_adc.h"
 #include "collector_processor.h"
 
 #include "usbd_cdc_if.h"
@@ -50,120 +51,42 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
-
-/**
- * @brief  HAL库TIM周期性回调函数（优化版）
- */
-// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-// {
-//     uint16_t adc_data[ADS8319_CHAIN_LENGTH][SPI_USED_MAX];
-//     if (htim->Instance == GTIM_TIMX)
-//     {
-//         g_gtim_it_counts++;
-
-//         ticks_timx_reset_counter();
-// //        timestamp_t ts = dwt_get_timestamp();
-//         uint32_t start_time = ticks_timx_get_counter();
-//         // 启动转换
-//         ads8319_start_convst();
-//         uint32_t middle_time = ticks_timx_get_counter();
-// //        timestamp_t te = dwt_get_timestamp();
-
-//         // 读取菊花链中的所有ADC数据
-//         ads8319_read_daisy_chain_fast(SPI1_SPI, 1, &adc_data[0][0]);
-
-//         ads8319_read_daisy_chain_fast(SPI2_SPI, 1, &adc_data[0][1]);
-
-//         ads8319_read_daisy_chain_fast(SPI3_SPI, 1, &adc_data[0][2]);
-//         if ((adc_data[0][0]>50000) || (adc_data[0][0]<20000)) {
-//             adc_data[0][0]++;
-//         }
-//         if ((adc_data[0][1]>50000) || (adc_data[0][1]<20000)) {
-//             adc_data[0][1]++;
-//         }
-//         if ((adc_data[0][2]>50000) || (adc_data[0][2]<20000)) {
-//             adc_data[0][2]++;
-//         }
-//         // 传输完成
-//         ads8319_stop_transfer();
-//         uint32_t stop_time = ticks_timx_get_counter();
-//         // int8_t ret = cb_write(g_cb_adc, (const char*)&adc_data[0][0], SPI_USED_MAX*2);
-// //        timestamp_t tl = dwt_get_timestamp();
-//     }
-// }
-
+ 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-
-    // if (htim->Instance != GTIM_TIMX)
-    //     return;
-    // g_gtim_it_counts++;
-
-    // static uint8_t first_frame = 1;
-    // uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
-
-    // // 第1步：先读上一次转换结果（第1帧跳过）
-    // if (!first_frame)
-    // {
-    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
-    //     {
-    //         if (g_spi_adc_cnt[spi] == 0)
-    //             continue;
-    //         ads8319_read_daisy_chain_fast(spi + 1, g_spi_adc_cnt[spi], adc_buf[spi]);
-    //     }
-    //     ADS8319_CONVST_LOW(); // 结束上次转换周期
-    // }
-    // else
-    // {
-    //     first_frame = 0;
-    //     ADS8319_CONVST_LOW();
-    // }
-
-    // // 第2步：启动本次转换
-    // ADS8319_CONVST_HIGH();
-    // for (volatile uint16_t i = 0; i < 750; i++)
-    // {
-    //     __NOP();
-    // } // 等待1.2μs转换完成
-
-    // // 第3步：写入缓冲区（使用刚读到的上帧数据）
-    // if (g_gtim_it_counts > 1)
-    // {
-    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
-    //     {
-    //         for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
-    //         {
-    //             uint8_t ch = pos * SPI_NUM + spi;
-    //             if (ch >= ADC_CH_TOTAL)
-    //                 continue;
-    //             if (!(g_ch_enable_mask & (1u << ch)))
-    //                 continue;
-    //             cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
-    //         }
-    //     }
-    // }
+    static uint8_t first_run = 1;
 
     if (htim->Instance != GTIM_TIMX)
         return;
+    
     g_gtim_it_counts++;
 
+    if (first_run)
+    {
+        // 第一次运行，仅启动转换和DMA，不读取数据
+        first_run = 0;
+        ads8319_start_convst();
+        dma_adc_start_collect();
+        return;
+    }
+
+    // 读取上一帧DMA数据
     uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
-
-    ads8319_start_convst();
-
+    
     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
     {
         if (g_spi_adc_cnt[spi] == 0)
             continue;
-        ads8319_read_daisy_chain_fast(spi + 1, // SPI编号1-based
-                                      g_spi_adc_cnt[spi],
-                                      adc_buf[spi]);
+        
+        // 从DMA缓冲区读取数据
+        if (!dma_adc_get_data(spi, adc_buf[spi]))
+        {
+            // 如果没有就绪数据，跳过此SPI
+            continue;
+        }
     }
 
-    ads8319_stop_transfer();
-
     // 交错映射写回 g_cb_ch
-    // ch_id = spi * 1 + adc_pos * SPI_NUM  即 ch_id = adc_pos*3 + spi_idx
     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
     {
         for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
@@ -176,6 +99,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
             cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
         }
     }
+
+    // 启动新一轮转换和DMA
+    ads8319_start_convst();
+    dma_adc_start_collect();
 }
 
 /**

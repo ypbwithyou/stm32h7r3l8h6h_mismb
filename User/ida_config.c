@@ -6,6 +6,7 @@
 #include "./BSP/ADS8319/ads8319.h"
 #include "./BSP/SPI/spi.h"
 #include "./BSP/DMA_LIST/dma_list.h"
+#include "./BSP/DMA_LIST/dma_spi_adc.h"
 #include "./BSP/LED/led.h"
 #include "./BSP/HYPERRAM/hyperram.h"
 #include "./BSP/MMC/mmc_sdcard.h"
@@ -196,9 +197,9 @@ int8_t IdaDeviceInit(void)
     ads8319_spi_gpio_init(SPI3_SPI);
     ads8319_common_gpio_init();
 
-    dma_list_data_init();
-    dma_list_rtx_init();
-    usb_printf("[DMA] Triple-SPI DMA initialized\r\n");
+    // 初始化DMA ADC模块（替代原有的dma_list初始化）
+    dma_adc_init();
+    usb_printf("[DMA] Triple-SPI DMA ADC initialized\r\n");
 
     usb_init();
 
