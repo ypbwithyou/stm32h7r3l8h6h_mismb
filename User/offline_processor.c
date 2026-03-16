@@ -193,22 +193,27 @@ static void HandleRecordStart(uint8_t idx)
 
     record_frame_num = 0;
 
-    g_recorde_file_head.nVersion = RECORD_FILE_VERSION;
+    g_recorde_file_head.nVersion = 15002;
     g_recorde_file_head.nCreateTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
-    g_recorde_file_head.nDeviceChNum = DEFAULT_CHANNEL_COUNT;
-    g_recorde_file_head.nRecordNum = DEFAULT_CHANNEL_COUNT;
+    g_recorde_file_head.nDeviceChNum = g_offline_chCfgHeader.nTotalChannelNum;
+    g_recorde_file_head.nRecordNum = g_enabled_ch_cnt;
     g_recorde_file_head.nFrameNum = 0;
     g_recorde_file_head.nRecordMask = 0;
     g_recorde_file_head.nHeaderLength = sizeof(RECORD_FILE_HEADER) +
                                         sizeof(ChannelTableHeader) +
-                                        sizeof(ChannelTableElem) * g_recorde_file_head.nDeviceChNum +
+                                        sizeof(ChannelTableElem) * g_enabled_ch_cnt +
                                         sizeof(DeviceDetailInfo) +
                                         sizeof(DSAGlobalParams) +
                                         sizeof(SignalDataSource) * g_offline_GlobalParam.nSignalCount +
                                         sizeof(TriggerParamHeaderDSP);
     g_recorde_file_head.nIndexPos = 0;
-    g_recorde_file_head.nFrameDataSize = g_offline_GlobalParam.nBlockSize;
-    g_recorde_file_head.nIsCalculate = 1;
+    g_recorde_file_head.nFrameDataSize = BLOCK_LEN;
+    g_recorde_file_head.nIsCalculate = 0;
+
+    g_recorde_file_head.nDataType = UInt16;  
+    g_recorde_file_head.nUseRangeFactor = 1;
+    g_recorde_file_head.nUseCalib = 1;
+    g_recorde_file_head.nUseSenserity = 1;
 
     file_num++;
 
@@ -860,6 +865,15 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     WRITE_STRUCT(&g_offline_chCfgHeader, sizeof(g_offline_chCfgHeader), "channel config header");
 
+    for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
+    {
+        if (g_offline_chCfgParam[0].fSampleRateIndex > 51200)
+        {
+            g_offline_chCfgParam[0].fSampleRateIndex = 51200;
+            g_offline_chCfgParam[0].fChRangeTransFactor = 1.0f;
+        }
+    }
+    
     WRITE_STRUCT(&g_offline_chCfgParam[0], g_offline_chCfgHeader.nTotalChannelNum * sizeof(g_offline_chCfgParam[0]), "channel config parameters");
 
     DeviceDetailInfo device_info = {0};
