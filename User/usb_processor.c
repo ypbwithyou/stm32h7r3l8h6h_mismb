@@ -482,6 +482,11 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
         }
     }
 
+    if (sample_rate > 51200)
+    {
+        sample_rate = 51200;
+    }
+
     usb_printf("sample_rate:%d", sample_rate);
 
     if (sample_rate > 0)
