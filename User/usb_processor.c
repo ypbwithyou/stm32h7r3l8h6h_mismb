@@ -5,6 +5,7 @@
 #include "usbd_desc.h"
 #include "usbd_cdc.h"
 
+#include "./SYSTEM/delay/delay.h"
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
 #include "./LIBS/lib_usb_protocol/usb_protocol.h"
 #include "./LIBS/lib_circular_buffer/CircularBuffer.h"
@@ -1032,6 +1033,8 @@ send_reply:
     reply_user_head.nDataLength = 0;
     reply_user_head.nNanoSecond = dwt_get_ns();
     reply_user_head.nParameters0 = ret; // 删除结果：0=成功, <0=错误码
+
+    delay_ms(1000);
 
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     return packet_len;
