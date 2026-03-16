@@ -216,14 +216,15 @@ USBD_CDC_ItfTypeDef USBD_CDC_fops =
 void usbd_cdc_transmit(uint8_t *data, uint32_t len)
 {
     uint8_t timeout = USBD_CDC_TX_TIMROUT;
-   
+
+    while ((g_usbd_cdc_tx_done != 1) && (--timeout != 0))
+    {
+        // delay_ms(1);
+    }
+
     g_usbd_cdc_tx_done = 0;
     USBD_CDC_SetTxBuffer(&g_usbd_handle, data, len);
     USBD_CDC_TransmitPacket(&g_usbd_handle);
-    while ((g_usbd_cdc_tx_done != 1) && (--timeout != 0))
-    {
-        delay_ms(1);
-    }
 }
 
 void usb_printf(char *fmt, ...)
