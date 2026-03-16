@@ -210,7 +210,7 @@ static void HandleRecordStart(uint8_t idx)
     g_recorde_file_head.nFrameDataSize = BLOCK_LEN;
     g_recorde_file_head.nIsCalculate = 0;
 
-    g_recorde_file_head.nDataType = UInt16;  
+    g_recorde_file_head.nDataType = UInt16;
     g_recorde_file_head.nUseRangeFactor = 1;
     g_recorde_file_head.nUseCalib = 1;
     g_recorde_file_head.nUseSenserity = 1;
@@ -873,7 +873,7 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
             g_offline_chCfgParam[0].fChRangeTransFactor = 1.0f;
         }
     }
-    
+
     WRITE_STRUCT(&g_offline_chCfgParam[0], g_offline_chCfgHeader.nTotalChannelNum * sizeof(g_offline_chCfgParam[0]), "channel config parameters");
 
     DeviceDetailInfo device_info = {0};
@@ -1092,6 +1092,28 @@ static void OfflineDatasRecord(void)
         usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
         last_tell = now_tell;
         last_time = HAL_GetTick();
+    }
+
+    /* ── 定期刷新文件头（防止异常断电丢失帧数信息）── */
+    static uint32_t last_header_sync_time = 0;
+    if (HAL_GetTick() - last_header_sync_time >= 5000)
+    {
+        last_header_sync_time = HAL_GetTick();
+
+        g_recorde_file_head.nFrameNum = record_frame_num;
+        g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+
+        uint32_t cur_pos = f_tell(&g_offline_record_fil);
+        res = f_lseek(&g_offline_record_fil, 0);
+        if (res == FR_OK)
+        {
+            f_write(&g_offline_record_fil,
+                    &g_recorde_file_head,
+                    sizeof(g_recorde_file_head),
+                    &bw);
+            f_lseek(&g_offline_record_fil, cur_pos);
+        }
+        f_sync(&g_offline_record_fil);
     }
 
     /* ── 3. 记录停止时的最终处理 ── */
