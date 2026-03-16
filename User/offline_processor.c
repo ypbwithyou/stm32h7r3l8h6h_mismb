@@ -567,6 +567,8 @@ void offline_processor(uint8_t mode)
                     HandleRecordEnd(i);
 
                     g_IdaSystemStatus.st_dev_offline.offline_mode = 0;
+
+                    usb_printf("Offline schedule Record_Start %d ended (Record_End)\n", i);
                 }
 
                 if (g_offline_ScheduleParam[i].nType == ACQ_Start)
@@ -578,6 +580,8 @@ void offline_processor(uint8_t mode)
                     AdcCollectorContrl(0);
 
                     g_IdaSystemStatus.st_dev_offline.offline_mode = 0;
+
+                    usb_printf("Offline schedule ACQ_Start %d ended (Record_End)\n", i);
                 }
             }
         }
@@ -875,14 +879,128 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
  *        数据格式：按使能通道顺序，每通道独立写入：
  *                  [RECORD_FRAMEHEADER] + [nBlockSize * sizeof(short) 字节原始数据]
  */
+// static void OfflineDatasRecord(void)
+// {
+
+//     FRESULT res;
+//     UINT bw;
+
+//     g_offline_GlobalParam.nBlockSize = BLOCK_LEN;
+
+//     const uint32_t block_bytes = (uint32_t)g_offline_GlobalParam.nBlockSize * sizeof(short);
+
+//     /* ── 1. 检查是否有足够数据（所有使能通道都需满足 nBlockSize 个采样点）── */
+//     for (uint8_t i = 0; i < ADC_CH_TOTAL; i++)
+//     {
+//         if (!(g_ch_enable_mask & (1u << i)))
+//             continue;
+//         if (!g_cb_ch[i] || cb_size(g_cb_ch[i]) < (int)block_bytes)
+//             return; /* 任一使能通道不足，等待下次 */
+//     }
+
+//     /* ── 2. 按通道逐个写入 [RECORD_FRAMEHEADER + 数据] ── */
+//     short ch_buf[BLOCK_LEN]; /* 按实际最大 nBlockSize 调整 */
+
+//     for (uint8_t ch = 0; ch < ADC_CH_TOTAL; ch++)
+//     {
+//         if (!(g_ch_enable_mask & (1u << ch)))
+//             continue;
+
+//         /* 填写通道帧头 */
+//         RECORD_FRAMEHEADER rec_hdr;
+//         memset(&rec_hdr, 0, sizeof(rec_hdr));
+
+//         /* AoLocalColumn 部分 */
+//         rec_hdr.RecLocalColumn.nVersion = 0x12345678;
+//         rec_hdr.RecLocalColumn.nDataSource = 0;
+//         rec_hdr.RecLocalColumn.nFrameChCount = 1; /* 每个头只描述本通道 */
+//         rec_hdr.RecLocalColumn.nFrameLen = g_offline_GlobalParam.nBlockSize;
+//         rec_hdr.RecLocalColumn.nTotalFrameNum = record_frame_num;
+//         rec_hdr.RecLocalColumn.nCurNs = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+//         rec_hdr.RecLocalColumn.gp11 = ch; /* 通道ID存入gp11，便于合并时区分 */
+
+//         rec_hdr.nValidNum = (unsigned int)g_offline_GlobalParam.nBlockSize;
+//         rec_hdr.nChID = (int)ch;
+
+//         record_frame_num++;
+
+//         if (record_frame_num == 1)
+//         {
+//             g_recorde_file_head.dRecValidStartTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+//         }
+
+//         /* 写帧头 */
+//         res = f_write(&g_offline_record_fil, &rec_hdr, sizeof(rec_hdr), &bw);
+//         if (res != FR_OK || bw != sizeof(rec_hdr))
+//         {
+//             usb_printf("[Record] ch%u: write header failed, res=%d\n", ch, res);
+//             g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+//             f_close(&g_offline_record_fil);
+//             return;
+//         }
+
+//         /* 从环形缓冲区读取数据并写入文件 */
+//         cb_read(g_cb_ch[ch], (char *)ch_buf, block_bytes);
+//         res = f_write(&g_offline_record_fil, ch_buf, block_bytes, &bw);
+//         if (res != FR_OK || bw != block_bytes)
+//         {
+//             usb_printf("[Record] ch%u: write data failed, res=%d\n", ch, res);
+//             g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+//             f_close(&g_offline_record_fil);
+//             return;
+//         }
+//     }
+
+//     static uint32_t last_tell = 0;
+//     static uint32_t last_time = 0;
+//     // 每秒打印一次
+//     if (HAL_GetTick() - last_time >= 1000)
+//     {
+//         uint32_t now_tell = f_tell(&g_offline_record_fil);
+//         uint32_t bytes_per_sec = now_tell - last_tell;
+//         usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
+//         last_tell = now_tell;
+//         last_time = HAL_GetTick();
+//     }
+
+//     /* ── 3. 记录停止时的最终处理 ── */
+//     if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
+//     {
+//         g_recorde_file_head.nFrameNum = record_frame_num;
+//         g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+
+//         /* 回写文件头部（更新帧数） */
+//         res = f_lseek(&g_offline_record_fil, 0);
+//         if (res == FR_OK)
+//         {
+//             res = f_write(&g_offline_record_fil,
+//                           &g_recorde_file_head,
+//                           sizeof(g_recorde_file_head),
+//                           &bw);
+//         }
+//         if (res != FR_OK || bw != sizeof(g_recorde_file_head))
+//         {
+//             usb_printf("[Record] Failed to update file header, res=%d\n", res);
+//         }
+
+//         f_sync(&g_offline_record_fil);
+//         f_close(&g_offline_record_fil);
+
+//         record_frame_num = 0;
+//         memset(&g_offline_record_fil, 0, sizeof(g_offline_record_fil));
+//         g_IdaSystemStatus.st_dev_record.record_status = RECORD_IDLE;
+
+//         usb_printf("[Record] Record stopped, total frames=%lu\n",
+//                    (unsigned long)g_recorde_file_head.nFrameNum);
+//     }
+// }
+
 static void OfflineDatasRecord(void)
 {
-
     FRESULT res;
     UINT bw;
 
     g_offline_GlobalParam.nBlockSize = BLOCK_LEN;
-
     const uint32_t block_bytes = (uint32_t)g_offline_GlobalParam.nBlockSize * sizeof(short);
 
     /* ── 1. 检查是否有足够数据（所有使能通道都需满足 nBlockSize 个采样点）── */
@@ -891,29 +1009,32 @@ static void OfflineDatasRecord(void)
         if (!(g_ch_enable_mask & (1u << i)))
             continue;
         if (!g_cb_ch[i] || cb_size(g_cb_ch[i]) < (int)block_bytes)
-            return; /* 任一使能通道不足，等待下次 */
+        {
+            /* 数据不足：若此时已请求停止，跳过本帧直接收尾 */
+            if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
+                goto do_finalize;
+            return; /* 否则正常等待下次 */
+        }
     }
 
     /* ── 2. 按通道逐个写入 [RECORD_FRAMEHEADER + 数据] ── */
-    short ch_buf[BLOCK_LEN]; /* 按实际最大 nBlockSize 调整 */
+    short ch_buf[BLOCK_LEN];
 
     for (uint8_t ch = 0; ch < ADC_CH_TOTAL; ch++)
     {
         if (!(g_ch_enable_mask & (1u << ch)))
             continue;
 
-        /* 填写通道帧头 */
         RECORD_FRAMEHEADER rec_hdr;
         memset(&rec_hdr, 0, sizeof(rec_hdr));
 
-        /* AoLocalColumn 部分 */
         rec_hdr.RecLocalColumn.nVersion = 0x12345678;
         rec_hdr.RecLocalColumn.nDataSource = 0;
-        rec_hdr.RecLocalColumn.nFrameChCount = 1; /* 每个头只描述本通道 */
+        rec_hdr.RecLocalColumn.nFrameChCount = 1;
         rec_hdr.RecLocalColumn.nFrameLen = g_offline_GlobalParam.nBlockSize;
         rec_hdr.RecLocalColumn.nTotalFrameNum = record_frame_num;
         rec_hdr.RecLocalColumn.nCurNs = dwt_get_ns() / NANOSECONDS_PER_SECOND;
-        rec_hdr.RecLocalColumn.gp11 = ch; /* 通道ID存入gp11，便于合并时区分 */
+        rec_hdr.RecLocalColumn.gp11 = ch;
 
         rec_hdr.nValidNum = (unsigned int)g_offline_GlobalParam.nBlockSize;
         rec_hdr.nChID = (int)ch;
@@ -921,11 +1042,8 @@ static void OfflineDatasRecord(void)
         record_frame_num++;
 
         if (record_frame_num == 1)
-        {
             g_recorde_file_head.dRecValidStartTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
-        }
 
-        /* 写帧头 */
         res = f_write(&g_offline_record_fil, &rec_hdr, sizeof(rec_hdr), &bw);
         if (res != FR_OK || bw != sizeof(rec_hdr))
         {
@@ -935,7 +1053,6 @@ static void OfflineDatasRecord(void)
             return;
         }
 
-        /* 从环形缓冲区读取数据并写入文件 */
         cb_read(g_cb_ch[ch], (char *)ch_buf, block_bytes);
         res = f_write(&g_offline_record_fil, ch_buf, block_bytes, &bw);
         if (res != FR_OK || bw != block_bytes)
@@ -949,7 +1066,6 @@ static void OfflineDatasRecord(void)
 
     static uint32_t last_tell = 0;
     static uint32_t last_time = 0;
-    // 每秒打印一次
     if (HAL_GetTick() - last_time >= 1000)
     {
         uint32_t now_tell = f_tell(&g_offline_record_fil);
@@ -962,10 +1078,10 @@ static void OfflineDatasRecord(void)
     /* ── 3. 记录停止时的最终处理 ── */
     if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_STOP)
     {
+    do_finalize:
         g_recorde_file_head.nFrameNum = record_frame_num;
         g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
 
-        /* 回写文件头部（更新帧数） */
         res = f_lseek(&g_offline_record_fil, 0);
         if (res == FR_OK)
         {
@@ -975,9 +1091,7 @@ static void OfflineDatasRecord(void)
                           &bw);
         }
         if (res != FR_OK || bw != sizeof(g_recorde_file_head))
-        {
             usb_printf("[Record] Failed to update file header, res=%d\n", res);
-        }
 
         f_sync(&g_offline_record_fil);
         f_close(&g_offline_record_fil);
