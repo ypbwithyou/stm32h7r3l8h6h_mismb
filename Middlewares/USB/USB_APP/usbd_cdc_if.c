@@ -219,7 +219,7 @@ void usbd_cdc_transmit(uint8_t *data, uint32_t len)
 
     while ((g_usbd_cdc_tx_done != 1) && (--timeout != 0))
     {
-        // delay_ms(1);
+        delay_ms(1);
     }
 
     g_usbd_cdc_tx_done = 0;
