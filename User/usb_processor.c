@@ -618,7 +618,7 @@ static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadI
     g_IdaSystemStatus.st_dev_mode.reset_all_flag = 1; // ready to restart
     g_reset_time = dwt_get_ns();
 
-    // NVIC_SystemReset();
+    NVIC_SystemReset();
 
     return packet_len;
 }
@@ -1034,7 +1034,7 @@ send_reply:
     reply_user_head.nNanoSecond = dwt_get_ns();
     reply_user_head.nParameters0 = ret; // 删除结果：0=成功, <0=错误码
 
-    delay_ms(1000);
+    delay_ms(100);
 
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     return packet_len;
