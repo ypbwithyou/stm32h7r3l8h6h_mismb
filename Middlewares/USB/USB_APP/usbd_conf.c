@@ -75,7 +75,7 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *hpcd)
         HAL_GPIO_Init(GPIOM, &gpio_init_struct);
 
         /* ≈‰÷√÷–∂œ */
-        HAL_NVIC_SetPriority(OTG_HS_IRQn, 6, 0);
+        HAL_NVIC_SetPriority(OTG_HS_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(OTG_HS_IRQn);
     }
 }
