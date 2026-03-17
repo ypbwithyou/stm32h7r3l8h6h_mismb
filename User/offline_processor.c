@@ -393,6 +393,31 @@ void offline_processor(uint8_t mode)
     {
         usb_printf("Workmode change\n");
 
+        usb_printf("[WMC] offline_mode=%d prev=%d | "
+                   "run_flag=%d record_status=%d "
+                   "collect_cfg_flag=%d config_done=%d "
+                   "elapsed_ms=%lu schedule_count=%d\n",
+                   mode, prev_mode,
+                   g_IdaSystemStatus.st_dev_run.run_flag,
+                   g_IdaSystemStatus.st_dev_record.record_status,
+                   g_IdaSystemStatus.st_dev_run.collect_cfg_flag,
+                   config_done,
+                   HAL_GetTick() - base_tick_ms,
+                   g_offline_GlobalParam.nScheduleCount);
+
+        /* 同时打印所有调度项状态 */
+        for (uint8_t i = 0; i < g_offline_GlobalParam.nScheduleCount; i++)
+        {
+            usb_printf("[WMC] schedule[%d] type=%d status=%d "
+                       "param0=%.1f param1=%d elapsed=%lu\n",
+                       i,
+                       g_offline_ScheduleParam[i].nType,
+                       g_schedule_run_status[i],
+                       (double)g_offline_ScheduleParam[i].param0,
+                       g_offline_ScheduleParam[i].param1,
+                       HAL_GetTick() / 1000);
+        }
+
         if (g_IdaSystemStatus.st_dev_run.run_flag)
         {
             g_IdaSystemStatus.st_dev_run.run_flag = 0;
