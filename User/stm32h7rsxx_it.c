@@ -195,8 +195,7 @@ void SysTick_Handler(void)
  */
 void sys_tick_priority_init(void)
 {
-    // 设置SysTick中断优先级为1（高于SDMMC的优先级5）
-    HAL_NVIC_SetPriority(SysTick_IRQn, 1, 0);
+    HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 /******************************************************************************/
 /* STM32H7RSxx Peripheral Interrupt Handlers                                    */
