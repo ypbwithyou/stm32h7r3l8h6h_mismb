@@ -1037,7 +1037,7 @@ static void OfflineDatasRecord(void)
     }
 
     /* ── 2. 按通道逐个写入 [RECORD_FRAMEHEADER + 数据] ── */
-    short ch_buf[BLOCK_LEN];
+    static short ch_buf[BLOCK_LEN];
 
     for (uint8_t ch = 0; ch < ADC_CH_TOTAL; ch++)
     {

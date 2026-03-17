@@ -146,10 +146,11 @@ FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retrie
 int8_t check_filesystem_status(const TCHAR *drive);
 
 /***********************************全局变量*********************************/
-///* USBD句柄 */
-// USBD_HandleTypeDef g_usbd_handle = {0};
-/* 系统运行状态 */
+
+/* 在全局区紧挨着放哨兵 */
+volatile uint32_t g_sentinel_before = 0xDEADBEEF;
 volatile SystemStatus g_IdaSystemStatus;
+volatile uint32_t g_sentinel_after = 0xDEADBEEF;
 
 /***********************************函数*********************************/
 /**
@@ -1051,6 +1052,13 @@ int8_t app_processor(void)
 
     while (1)
     {
+
+        if (g_sentinel_before != 0xDEADBEEF ||
+            g_sentinel_after != 0xDEADBEEF)
+        {
+            // 哨兵被踩 → 内存溢出确认
+            __BKPT(0); // 触发断点
+        }
 
         // ----------------------------------------------------------------------
         t_now = HAL_GetTick();
