@@ -84,9 +84,9 @@ void external_io_init(void)
     HAL_GPIO_Init(EVENT_GPIO_PORT, &gpio_init_struct);
 
     /* 配置中断优先级并使能中断 */
-    HAL_NVIC_SetPriority(START_INT_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(START_INT_IRQn, 10, 0);
     HAL_NVIC_EnableIRQ(START_INT_IRQn);
-    HAL_NVIC_SetPriority(EVENT_INT_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(EVENT_INT_IRQn, 10, 0);
     HAL_NVIC_EnableIRQ(EVENT_INT_IRQn);
 }
 
@@ -116,26 +116,73 @@ void EVENT_INT_IRQHandler(void)
  * @param       GPIO_Pin:中断引脚号
  * @retval      无
  */
+/* 中断回调：只记录触发，不直接改状态 */
+static volatile uint32_t g_start_trigger_tick = 0;
+static volatile uint32_t g_event_trigger_tick = 0;
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+    // switch (GPIO_Pin)
+    // {
+    // case START_GPIO_PIN: /* WKUP按键对应引脚发生中断 */
+    // {
+    //     g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
+
+    //     usb_printf("---------------------------> HAL_GPIO_EXTI_Callback START_GPIO_PIN \r\n");
+    // }
+    // break;
+    // case EVENT_GPIO_PIN: /* KEY0按键对应引脚发生中断 */
+    // {
+    //     // g_IdaSystemStatus.st_dev_offline.event_flag = 1;
+
+    //     g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
+
+    //     usb_printf("---------------------------> HAL_GPIO_EXTI_Callback EVENT_GPIO_PIN \r\n");
+    // }
+    // break;
+    // }
     switch (GPIO_Pin)
     {
-    case START_GPIO_PIN: /* WKUP按键对应引脚发生中断 */
-    {
-        g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
-
-        usb_printf("---------------------------> HAL_GPIO_EXTI_Callback START_GPIO_PIN \r\n");
+    case START_GPIO_PIN:
+        g_start_trigger_tick = HAL_GetTick(); // 只记时间戳
+        break;
+    case EVENT_GPIO_PIN:
+        g_event_trigger_tick = HAL_GetTick();
+        break;
     }
-    break;
-    case EVENT_GPIO_PIN: /* KEY0按键对应引脚发生中断 */
+}
+
+#define DEBOUNCE_MS 50
+
+void ExternalIO_Process(void)
+{
+    uint32_t now = HAL_GetTick();
+
+    /* START 消抖 */
+    if (g_start_trigger_tick != 0 &&
+        (now - g_start_trigger_tick) >= DEBOUNCE_MS)
     {
-        // g_IdaSystemStatus.st_dev_offline.event_flag = 1;
+        g_start_trigger_tick = 0;
 
-        g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
-
-        usb_printf("---------------------------> HAL_GPIO_EXTI_Callback EVENT_GPIO_PIN \r\n");
+        /* 再次确认引脚电平，排除干扰 */
+        if (HAL_GPIO_ReadPin(START_GPIO_PORT, START_GPIO_PIN) == GPIO_PIN_RESET)
+        {
+            g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
+            usb_printf("START triggered, offline_mode=1\n");
+        }
     }
-    break;
+
+    /* EVENT 消抖 */
+    if (g_event_trigger_tick != 0 &&
+        (now - g_event_trigger_tick) >= DEBOUNCE_MS)
+    {
+        g_event_trigger_tick = 0;
+
+        if (HAL_GPIO_ReadPin(EVENT_GPIO_PORT, EVENT_GPIO_PIN) == GPIO_PIN_RESET)
+        {
+            g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
+            usb_printf("EVENT triggered, offline_mode=1\n");
+        }
     }
 }
 

@@ -1073,6 +1073,8 @@ int8_t app_processor(void)
             LED0_TOGGLE();
         }
 
+        ExternalIO_Process();  
+
         offline_processor(g_IdaSystemStatus.st_dev_offline.offline_mode);
 
         // ─── 最高优先级：接收到的完整协议帧 ───
