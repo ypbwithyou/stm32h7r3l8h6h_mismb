@@ -1063,7 +1063,9 @@ static void OfflineDatasRecord(void)
         record_frame_num++;
 
         if (record_frame_num == 1)
-            g_recorde_file_head.dRecValidStartTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        {
+            g_recorde_file_head.dRecValidStartTime = rec_hdr.RecLocalColumn.nNanoSec;
+        }
 
         res = f_write(&g_offline_record_fil, &rec_hdr, sizeof(rec_hdr), &bw);
         if (res != FR_OK || bw != sizeof(rec_hdr))
