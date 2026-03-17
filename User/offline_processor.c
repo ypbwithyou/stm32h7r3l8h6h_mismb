@@ -867,11 +867,14 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
-        if (g_offline_chCfgParam[0].fSampleRateIndex > 51200)
+        if (g_offline_chCfgParam[i].fSampleRateIndex > 51200)
         {
-            g_offline_chCfgParam[0].fSampleRateIndex = 51200;
-            g_offline_chCfgParam[0].fChRangeTransFactor = 1.0f;
+            g_offline_chCfgParam[i].fSampleRateIndex = 51200;
         }
+
+        g_offline_chCfgParam[i].fSensitivity = 12.5;
+        g_offline_chCfgParam[i].fChRangeTransOffset = 2.5;
+        g_offline_chCfgParam[i].fChRangeTransFactor = 5 / 65536.0;
     }
 
     WRITE_STRUCT(&g_offline_chCfgParam[0], g_offline_chCfgHeader.nTotalChannelNum * sizeof(g_offline_chCfgParam[0]), "channel config parameters");

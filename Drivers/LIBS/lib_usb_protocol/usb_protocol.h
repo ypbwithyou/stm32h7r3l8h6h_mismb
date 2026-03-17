@@ -368,17 +368,17 @@ typedef struct tagChannelTableElem
     float fReserved1;     // TachoEdgeValue = 1;//每转脉冲值
                           // 电荷输入开启时，电荷输入的增益，单位：mV/pC
 
-    float fReserved2;       /* 低通截止频率
+    float fLowPassFreq;        /* 低通截止频率
                                 00: direct
                                 01: 20kHz
                                 10: 10kHz
                                 11: 1kHz*/
-    float fReserved3;       //
-    float fReserved4;       //
+    float fChRangeTransOffset; // 通道量程转换偏置，用于记录文件 通道记录原始值转换成当前测量值(在记录开始前设定)
+    float fReserved4;
     int32_t nBoolVarStored; // nChannelStatus的扩展位
     int32_t nSensorType;    // 传感器类型， 物理量纲是温度时，1: PT1000, 0: PT100，其它：热电偶
     float fWeighting;
-    int32_t nG1oba1Physica1I; // 在整个系统(所有设备)里面的唯一ID，从0开始
+    int32_t nG1oba1Physica1ID; // 在整个系统(所有设备)里面的唯一ID，从0开始
 
     int32_t nReserved4;
     float fRealSampleRate;     // 真实的采样率，FPGA不支持则DSP降采，即界面显示的采样率
