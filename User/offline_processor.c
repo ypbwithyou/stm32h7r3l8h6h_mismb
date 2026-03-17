@@ -292,10 +292,10 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
 
     uint32_t sample_rate = GetOfflineSampleRate();
 
-    if (sample_rate > 51200)
-    {
-        sample_rate = 51200;
-    }
+    // if (sample_rate > 51200)
+    // {
+    //     sample_rate = 51200;
+    // }
 
     usb_printf("sample_rate:%d", sample_rate);
 
