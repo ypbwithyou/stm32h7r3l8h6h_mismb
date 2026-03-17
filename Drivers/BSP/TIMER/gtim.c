@@ -225,8 +225,7 @@ void gtim_timx_cfg(uint16_t arr, uint16_t psc)
 
     g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
-
-    gtim_timx_start(); // ← 用新的start
+ 
 }
 
 /**
