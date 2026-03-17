@@ -909,7 +909,7 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
         }
 
         g_offline_chCfgParam[i].fSensitivity = 12.5;
-        g_offline_chCfgParam[i].fChRangeTransOffset = 2.5;
+        g_offline_chCfgParam[i].fChRangeTransOffset = -2.5;
         g_offline_chCfgParam[i].fChRangeTransFactor = 5 / 65536.0;
     }
 

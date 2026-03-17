@@ -1030,4 +1030,6 @@ UserDataHeadInfo create_user_data_head(
     uint32_t dest_id,
     uint32_t data_len);
 
+extern uint8_t *g_tx_packet;
+
 #endif // __LIB_USB_PROTOCOL_H

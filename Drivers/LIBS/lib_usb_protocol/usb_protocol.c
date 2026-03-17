@@ -4,6 +4,8 @@
 #include "./LIBS/lib_dwt/lib_dwt_timestamp.h"
 #include "./MALLOC/malloc.h"
 
+uint8_t *g_tx_packet;
+
 // 打包函数
 // 参数：
 //   user_data: 用户实际数据
@@ -32,13 +34,13 @@ uint8_t *pack_data(
     uint32_t aligned_user_len = user_part_len + padding;
 
     // 计算整个数据包长度
-    uint32_t total_len = sizeof(FrameHeadInfo) +                    // 帧头
-                         sizeof(uint32_t) +                         // 帧长度字段
-                         aligned_user_len +                         // 用户数据部分（对齐后）
-                         sizeof(uint32_t) +                         // CRC32校验
-                         sizeof(uint32_t);                          // 帧尾
-                         
-    uint8_t *packet = (uint8_t *)mymalloc(SRAM12, total_len + 256); // 按实际大小分配
+    uint32_t total_len = sizeof(FrameHeadInfo) + // 帧头
+                         sizeof(uint32_t) +      // 帧长度字段
+                         aligned_user_len +      // 用户数据部分（对齐后）
+                         sizeof(uint32_t) +      // CRC32校验
+                         sizeof(uint32_t);       // 帧尾
+
+    uint8_t *packet = g_tx_packet;
     uint8_t *ptr = packet;
 
     // 1. 复制帧头
@@ -82,8 +84,6 @@ uint8_t *pack_data(
 
     // 8. 发送
     usbd_cdc_transmit(packet, total_len);
-
-    myfree(SRAM12, packet);
 
     return NULL;
 }

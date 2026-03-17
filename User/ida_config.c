@@ -1008,6 +1008,13 @@ int8_t app_processor(void)
     uint32_t t_now = 0;
     uint32_t t_off = 0;
 
+    g_tx_packet = (uint8_t *)mymalloc(SRAMEX, (sizeof(FrameHeadInfo) +
+                                               sizeof(uint32_t) +
+                                               sizeof(UserDataHeadInfo) +
+                                               sizeof(ArmBackFrameHeader) +
+                                               ADC_CH_TOTAL * BLOCK_LEN * sizeof(short) + sizeof(uint32_t) +
+                                               sizeof(uint32_t) + 256));
+
     if (collect_cb_init_all(ADC_CB_SIZE_PER_CH) != RET_OK)
     {
         printf("collect_cb_init_all err.\n");
@@ -1078,7 +1085,7 @@ int8_t app_processor(void)
             LED0_TOGGLE();
         }
 
-        ExternalIO_Process();  
+        ExternalIO_Process();
 
         offline_processor(g_IdaSystemStatus.st_dev_offline.offline_mode);
 
@@ -1104,7 +1111,7 @@ int8_t app_processor(void)
 
         IdaProcessor();
     }
-    
+
     // 虽然这里不会执行到，但为了代码完整性添加释放
     myfree(SRAMEX, frame_copy);
     return ret;
