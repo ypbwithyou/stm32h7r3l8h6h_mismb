@@ -167,7 +167,7 @@ void ExternalIO_Process(void)
         /* 再次确认引脚电平，排除干扰 */
         if (HAL_GPIO_ReadPin(START_GPIO_PORT, START_GPIO_PIN) == GPIO_PIN_RESET)
         {
-            g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
+            g_offline_mode = 1;
             usb_printf("START triggered, offline_mode=1\n");
         }
     }
@@ -180,7 +180,7 @@ void ExternalIO_Process(void)
 
         if (HAL_GPIO_ReadPin(EVENT_GPIO_PORT, EVENT_GPIO_PIN) == GPIO_PIN_RESET)
         {
-            g_IdaSystemStatus.st_dev_offline.offline_mode = 1;
+            g_offline_mode = 1;
             usb_printf("EVENT triggered, offline_mode=1\n");
         }
     }

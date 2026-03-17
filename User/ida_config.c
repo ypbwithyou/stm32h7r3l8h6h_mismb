@@ -29,6 +29,8 @@
 #define TEST_FILE_SIZE (4 * 1024 * 1024) // 4MB
 #define TEST_BLOCK_SIZE (16 * 1024)      // 16KB
 
+uint8_t offline_mode; 
+
 void sd_file_speed_test(void)
 {
     FIL file;
@@ -146,6 +148,8 @@ FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retrie
 int8_t check_filesystem_status(const TCHAR *drive);
 
 /***********************************全局变量*********************************/
+
+uint8_t g_offline_mode; // 离线模式：0--待机，1--离线运行
 
 /* 在全局区紧挨着放哨兵 */
 volatile uint32_t g_sentinel_before = 0xDEADBEEF;
@@ -1087,7 +1091,7 @@ int8_t app_processor(void)
 
         ExternalIO_Process();
 
-        offline_processor(g_IdaSystemStatus.st_dev_offline.offline_mode);
+        offline_processor(g_offline_mode);
 
         // ─── 最高优先级：接收到的完整协议帧 ───
         if (g_slidingWindow_receiver.frame_flag)

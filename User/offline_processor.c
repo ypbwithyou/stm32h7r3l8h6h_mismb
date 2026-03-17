@@ -147,7 +147,7 @@ void OfflineRecordInit(void)
         return;
     }
 
-    g_IdaSystemStatus.st_dev_offline.offline_mode = 0; // 默认离线模式为待机
+    g_offline_mode = 0; // 默认离线模式为待机
 
     file_num = ScanMaxFileNum("0:/RecordDataFiles");
     usb_printf("[Record] file_num init to %lu, next will be %lu\r\n",
@@ -612,7 +612,7 @@ void offline_processor(uint8_t mode)
                 {
                     HandleRecordEnd(i);
 
-                    g_IdaSystemStatus.st_dev_offline.offline_mode = 0;
+                    g_offline_mode = 0;
 
                     usb_printf("Offline schedule Record_Start %d ended (Record_End)\n", i);
                 }
@@ -625,7 +625,7 @@ void offline_processor(uint8_t mode)
                     g_IdaSystemStatus.st_dev_run.run_flag = 0;
                     AdcCollectorContrl(0);
 
-                    g_IdaSystemStatus.st_dev_offline.offline_mode = 0;
+                    g_offline_mode = 0;
 
                     usb_printf("Offline schedule ACQ_Start %d ended (Record_End)\n", i);
                 }
