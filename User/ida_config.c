@@ -1049,6 +1049,11 @@ int8_t app_processor(void)
     //    }
 
     uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMEX, SWR_BUFFER_SIZE);
+    if (!frame_copy)
+    {
+        usb_printf("Failed to allocate frame_copy buffer\n");
+        return RET_ERROR;
+    }
 
     while (1)
     {
@@ -1099,5 +1104,8 @@ int8_t app_processor(void)
 
         IdaProcessor();
     }
+    
+    // 虽然这里不会执行到，但为了代码完整性添加释放
+    myfree(SRAMEX, frame_copy);
     return ret;
 }

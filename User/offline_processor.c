@@ -154,6 +154,17 @@ void OfflineRecordInit(void)
                file_num, file_num + 1);
 }
 
+// 释放离线记录资源
+void OfflineRecordDeinit(void)
+{
+    if (g_offline_signal_source)
+    {
+        myfree(SRAMEX, g_offline_signal_source);
+        g_offline_signal_source = NULL;
+        usb_printf("[Record] Memory released for signal source\r\n");
+    }
+}
+
 // 安全的毫秒差计算（防止 uint32_t 溢出）
 static uint32_t SafeElapsedMs(uint32_t old_tick, uint32_t new_tick)
 {

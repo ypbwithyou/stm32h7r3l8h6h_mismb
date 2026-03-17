@@ -23,7 +23,7 @@ CircularBuffer *cb_init(int capacity)
     cb->buffer = (char *)mymalloc(SRAMIN, capacity);
     if (!cb->buffer)
     {
-        free(cb);
+        myfree(SRAMIN, cb);
         return NULL;
     }
 
@@ -41,8 +41,8 @@ void cb_free(CircularBuffer *cb)
 {
     if (cb)
     {
-        free(cb->buffer);
-        free(cb);
+        myfree(SRAMIN, cb->buffer);
+        myfree(SRAMIN, cb);
     }
 }
 
