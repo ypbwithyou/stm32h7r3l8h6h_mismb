@@ -200,38 +200,33 @@ void GTIM_TIMX_IRQHandler(void)
 void gtim_timx_cfg(uint16_t arr, uint16_t psc)
 {
 
-    /* 第一次初始化：State 为 RESET 时走完整 Init 流程 */
     if (g_gtimx_handle.State == HAL_TIM_STATE_RESET)
     {
+        /* 首次初始化走完整 HAL 流程 */
         g_gtimx_handle.Instance = GTIM_TIMX;
         g_gtimx_handle.Init.Prescaler = psc;
         g_gtimx_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
         g_gtimx_handle.Init.Period = arr;
         g_gtimx_handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
         g_gtimx_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-
         HAL_TIM_Base_Init(&g_gtimx_handle);
     }
     else
     {
-        /* 后续重新配置：直接写寄存器，不走 DeInit */
-        HAL_TIM_Base_Stop_IT(&g_gtimx_handle);
+        /* 后续重配：直接操作寄存器 */
+        gtim_timx_stop(); // ← 用新的stop
 
         __HAL_TIM_SET_PRESCALER(&g_gtimx_handle, psc);
         __HAL_TIM_SET_AUTORELOAD(&g_gtimx_handle, arr);
         __HAL_TIM_SET_COUNTER(&g_gtimx_handle, 0);
-
-        /* UG 事件强制 PSC/ARR 影子寄存器立即装载 */
-        g_gtimx_handle.Instance->EGR = TIM_EGR_UG;
-
-        /* 清除 UG 产生的更新中断标志，防止误触发 */
+        g_gtimx_handle.Instance->EGR = TIM_EGR_UG; // 强制装载影子寄存器
         __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
     }
 
     g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
 
-    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
+    gtim_timx_start(); // ← 用新的start
 }
 
 /**
@@ -239,7 +234,14 @@ void gtim_timx_cfg(uint16_t arr, uint16_t psc)
  */
 void gtim_timx_start(void)
 {
-    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
+    /* 清除上次可能残留的更新中断标志，防止启动后立即误触发 */
+    __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
+
+    /* 使能更新中断 */
+    __HAL_TIM_ENABLE_IT(&g_gtimx_handle, TIM_IT_UPDATE);
+
+    /* 启动计数器 */
+    __HAL_TIM_ENABLE(&g_gtimx_handle);
 }
 
 /**
@@ -247,7 +249,14 @@ void gtim_timx_start(void)
  */
 void gtim_timx_stop(void)
 {
-    HAL_TIM_Base_Stop_IT(&g_gtimx_handle);
+    /* 停止计数器 */
+    __HAL_TIM_DISABLE(&g_gtimx_handle);
+
+    /* 关闭更新中断 */
+    __HAL_TIM_DISABLE_IT(&g_gtimx_handle, TIM_IT_UPDATE);
+
+    /* 清除中断标志，防止下次启动时立即触发 */
+    __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
 }
 
 /**
