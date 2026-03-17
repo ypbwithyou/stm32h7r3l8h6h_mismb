@@ -193,7 +193,7 @@ static void HandleRecordStart(uint8_t idx)
 
     record_frame_num = 0;
 
-    g_recorde_file_head.nVersion = 15002;
+    g_recorde_file_head.nVersion = 16002;
     g_recorde_file_head.nCreateTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
     g_recorde_file_head.nDeviceChNum = g_offline_chCfgHeader.nTotalChannelNum;
     g_recorde_file_head.nRecordNum = g_enabled_ch_cnt;
@@ -1045,14 +1045,13 @@ static void OfflineDatasRecord(void)
             continue;
 
         RECORD_FRAMEHEADER rec_hdr;
-        memset(&rec_hdr, 0, sizeof(rec_hdr));
 
-        rec_hdr.RecLocalColumn.nVersion = 0x12345678;
-        rec_hdr.RecLocalColumn.nDataSource = 0;
-        rec_hdr.RecLocalColumn.nFrameChCount = 1;
-        rec_hdr.RecLocalColumn.nFrameLen = g_offline_GlobalParam.nBlockSize;
-        rec_hdr.RecLocalColumn.nTotalFrameNum = record_frame_num;
-        rec_hdr.RecLocalColumn.nCurNs = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        // memset(&rec_hdr, 0, sizeof(rec_hdr));
+        memcpy(&rec_hdr, &g_offline_signal_source[ch].localColumnX, sizeof(AoLocalColumn));
+
+        rec_hdr.RecLocalColumn.nNanoSec = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        rec_hdr.RecLocalColumn.gp0 = rec_hdr.RecLocalColumn.nNanoSec;
+        rec_hdr.RecLocalColumn.gp10 = BLOCK_LEN;
         rec_hdr.RecLocalColumn.gp11 = ch;
 
         rec_hdr.nValidNum = (unsigned int)g_offline_GlobalParam.nBlockSize;
