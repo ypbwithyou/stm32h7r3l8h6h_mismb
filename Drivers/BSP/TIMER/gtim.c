@@ -21,6 +21,10 @@ volatile uint32_t g_isr_overrun_count = 0;
  */
 void gtim_timx_int_init(unsigned short arr, unsigned short psc)
 {
+    /* 先停止并反初始化，强制状态回到 RESET */
+    HAL_TIM_Base_Stop_IT(&g_gtimx_handle);
+    HAL_TIM_Base_DeInit(&g_gtimx_handle); // ← State 复位为 HAL_TIM_STATE_RESET
+
     g_gtimx_handle.Instance = GTIM_TIMX;
     g_gtimx_handle.Init.Prescaler = psc;
     g_gtimx_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -29,8 +33,7 @@ void gtim_timx_int_init(unsigned short arr, unsigned short psc)
     g_gtimx_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     HAL_TIM_Base_Init(&g_gtimx_handle);
-    //    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
-
+ 
     g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
 }
