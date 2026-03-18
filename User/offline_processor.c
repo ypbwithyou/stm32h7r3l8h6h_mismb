@@ -375,7 +375,7 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     // {
     //     sample_rate = 51200;
     // }
-    sample_rate = 102400;
+    // sample_rate = 102400;
     usb_printf("sample_rate:%d", sample_rate);
 
     // ------------------------启动采集----------------------------------
