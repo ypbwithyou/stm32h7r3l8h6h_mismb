@@ -263,7 +263,7 @@ void HAL_MMC_MspInit(MMC_HandleTypeDef *hsd)
         HAL_GPIO_Init(SD_SDMMCX_D3_GPIO_PORT, &gpio_init_struct);
 
         /* 配置SDMMC中断 */
-        HAL_NVIC_SetPriority(SDMMC1_IRQn, 5, 0);
+        HAL_NVIC_SetPriority(SDMMC1_IRQn, 2, 0);
         HAL_NVIC_EnableIRQ(SDMMC1_IRQn);
     }
 }
