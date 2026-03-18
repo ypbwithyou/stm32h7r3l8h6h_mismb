@@ -35,7 +35,7 @@ typedef struct
   uint32_t timestamp;
 } ADC_Sample_t;
 
-#define ADC_CB_SIZE_PER_CH (BLOCK_LEN * ADC_DATA_LEN * 4) // 每通道缓冲，建议4×BLOCK
+#define ADC_CB_SIZE_PER_CH (BLOCK_LEN * ADC_DATA_LEN * 16) // 每通道缓冲，建议4×BLOCK
 extern CircularBuffer *g_cb_ch[ADC_CH_TOTAL];             // 24个独立通道缓冲区
 
 /* 通道使能掩码（运行时由配置文件设置）*/

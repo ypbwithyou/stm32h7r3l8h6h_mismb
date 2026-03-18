@@ -100,7 +100,7 @@ static FRESULT cache_write(FIL *fp, const void *data, uint32_t len);
 static FRESULT cache_flush(FIL *fp);
 
 // ===== 写缓冲区（攒够一次性写入 eMMC）=====
-#define WRITE_CACHE_SIZE (512 * 1024) // 128KB，根据你的 RAM 大小调整
+#define WRITE_CACHE_SIZE (4 * 1024) // 128KB，根据你的 RAM 大小调整
 
 static uint8_t *s_write_cache;
 static uint32_t s_write_cache_pos = 0;
@@ -375,7 +375,7 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     // {
     //     sample_rate = 51200;
     // }
-
+    sample_rate = 102400;
     usb_printf("sample_rate:%d", sample_rate);
 
     // ------------------------启动采集----------------------------------
@@ -1092,22 +1092,22 @@ static void OfflineDatasRecord(void)
     {
         last_header_sync_time = HAL_GetTick();
 
-        g_recorde_file_head.nFrameNum = record_frame_num;
-        g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        // g_recorde_file_head.nFrameNum = record_frame_num;
+        // g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
 
-        // ★ 先把缓冲区数据写完，再 seek
-        cache_flush(&g_offline_record_fil);
+        // // ★ 先把缓冲区数据写完，再 seek
+        // cache_flush(&g_offline_record_fil);
 
-        uint32_t cur_pos = f_tell(&g_offline_record_fil);
-        res = f_lseek(&g_offline_record_fil, 0);
-        if (res == FR_OK)
-        {
-            f_write(&g_offline_record_fil,
-                    &g_recorde_file_head,
-                    sizeof(g_recorde_file_head),
-                    &bw);
-            f_lseek(&g_offline_record_fil, cur_pos);
-        }
+        // uint32_t cur_pos = f_tell(&g_offline_record_fil);
+        // res = f_lseek(&g_offline_record_fil, 0);
+        // if (res == FR_OK)
+        // {
+        //     f_write(&g_offline_record_fil,
+        //             &g_recorde_file_head,
+        //             sizeof(g_recorde_file_head),
+        //             &bw);
+        //     f_lseek(&g_offline_record_fil, cur_pos);
+        // }
         f_sync(&g_offline_record_fil);
     }
 
