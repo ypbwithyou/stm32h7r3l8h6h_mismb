@@ -864,15 +864,15 @@ static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadIn
             strncat((char *)user_data, ",", remaining);
             remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
 
-            char str[16];
-            snprintf(str, sizeof(str), "%u", file_list.files[i].size);
-            strncat((char *)user_data, str, remaining);
+            strncat((char *)user_data, date_time_buf, remaining);
             remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
 
             strncat((char *)user_data, ",", remaining);
             remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
 
-            strncat((char *)user_data, date_time_buf, remaining);
+            char str[16];
+            snprintf(str, sizeof(str), "%u", file_list.files[i].size);
+            strncat((char *)user_data, str, remaining);
             remaining = FILELIST_BUFFER_SIZE - strlen((const char *)user_data) - 1;
 
             strncat((char *)user_data, "|", remaining);
