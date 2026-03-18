@@ -22,6 +22,10 @@ volatile uint32_t g_isr_overrun_count = 0;
  */
 void gtim_timx_int_init(unsigned short arr, unsigned short psc)
 {
+    /* 先停止并反初始化，强制状态回到 RESET */
+    HAL_TIM_Base_Stop_IT(&g_gtimx_handle);
+    HAL_TIM_Base_DeInit(&g_gtimx_handle); // ← State 复位为 HAL_TIM_STATE_RESET
+
     g_gtimx_handle.Instance = GTIM_TIMX;
     g_gtimx_handle.Init.Prescaler = psc;
     g_gtimx_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -30,7 +34,6 @@ void gtim_timx_int_init(unsigned short arr, unsigned short psc)
     g_gtimx_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     HAL_TIM_Base_Init(&g_gtimx_handle);
-    //    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
 
     g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
@@ -47,14 +50,66 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 
         // 降低中断优先级，避免影响任务调度
         // 优先级10（数字越大优先级越低）
-        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 3, 0);
+        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 10, 0);
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
  
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    static uint8_t first_run = 1;
+
+    // if (htim->Instance != GTIM_TIMX)
+    //     return;
+    // g_gtim_it_counts++;
+
+    // static uint8_t first_frame = 1;
+    // uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
+
+    // // 第1步：先读上一次转换结果（第1帧跳过）
+    // if (!first_frame)
+    // {
+    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    //     {
+    //         if (g_spi_adc_cnt[spi] == 0)
+    //             continue;
+    //         ads8319_read_daisy_chain_fast(spi + 1, g_spi_adc_cnt[spi], adc_buf[spi]);
+    //     }
+    //     ADS8319_CONVST_LOW(); // 结束上次转换周期
+
+    //     // for (volatile uint16_t i = 0; i < 100; i++)
+    //     // {
+    //     //     __NOP();
+    //     // } // 等待1.2μs转换完成
+    // }
+    // else
+    // {
+    //     first_frame = 0;
+    //     ADS8319_CONVST_LOW();
+    // }
+
+    // // 第2步：启动本次转换
+    // ADS8319_CONVST_HIGH();
+    // // for (volatile uint16_t i = 0; i < 300; i++)
+    // // {
+    // //     __NOP();
+    // // } // 等待1.2μs转换完成
+
+    // // 第3步：写入缓冲区（使用刚读到的上帧数据）
+    // if (g_gtim_it_counts > 1)
+    // {
+    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    //     {
+    //         for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
+    //         {
+    //             uint8_t ch = pos * SPI_NUM + spi;
+    //             if (ch >= ADC_CH_TOTAL)
+    //                 continue;
+    //             if (!(g_ch_enable_mask & (1u << ch)))
+    //                 continue;
+    //             cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
+    //         }
+    //     }
+    // }
 
     if (htim->Instance != GTIM_TIMX)
         return;
@@ -118,7 +173,32 @@ void GTIM_TIMX_IRQHandler(void)
  */
 void gtim_timx_cfg(uint16_t arr, uint16_t psc)
 {
-    gtim_timx_int_init(arr, psc);
+
+    if (g_gtimx_handle.State == HAL_TIM_STATE_RESET)
+    {
+        /* 首次初始化走完整 HAL 流程 */
+        g_gtimx_handle.Instance = GTIM_TIMX;
+        g_gtimx_handle.Init.Prescaler = psc;
+        g_gtimx_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
+        g_gtimx_handle.Init.Period = arr;
+        g_gtimx_handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+        g_gtimx_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+        HAL_TIM_Base_Init(&g_gtimx_handle);
+    }
+    else
+    {
+        /* 后续重配：直接操作寄存器 */
+        gtim_timx_stop(); // ← 用新的stop
+
+        __HAL_TIM_SET_PRESCALER(&g_gtimx_handle, psc);
+        __HAL_TIM_SET_AUTORELOAD(&g_gtimx_handle, arr);
+        __HAL_TIM_SET_COUNTER(&g_gtimx_handle, 0);
+        g_gtimx_handle.Instance->EGR = TIM_EGR_UG; // 强制装载影子寄存器
+        __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
+    }
+
+    g_gtim_it_counts = 0;
+    g_isr_overrun_count = 0;
 }
 
 /**
@@ -126,7 +206,14 @@ void gtim_timx_cfg(uint16_t arr, uint16_t psc)
  */
 void gtim_timx_start(void)
 {
-    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
+    /* 清除上次可能残留的更新中断标志，防止启动后立即误触发 */
+    __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
+
+    /* 使能更新中断 */
+    __HAL_TIM_ENABLE_IT(&g_gtimx_handle, TIM_IT_UPDATE);
+
+    /* 启动计数器 */
+    __HAL_TIM_ENABLE(&g_gtimx_handle);
 }
 
 /**
@@ -134,7 +221,14 @@ void gtim_timx_start(void)
  */
 void gtim_timx_stop(void)
 {
-    HAL_TIM_Base_Stop_IT(&g_gtimx_handle);
+    /* 停止计数器 */
+    __HAL_TIM_DISABLE(&g_gtimx_handle);
+
+    /* 关闭更新中断 */
+    __HAL_TIM_DISABLE_IT(&g_gtimx_handle, TIM_IT_UPDATE);
+
+    /* 清除中断标志，防止下次启动时立即触发 */
+    __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
 }
 
 /**

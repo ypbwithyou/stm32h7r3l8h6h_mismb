@@ -5,6 +5,7 @@
 #include "usbd_desc.h"
 #include "usbd_cdc.h"
 
+#include "./SYSTEM/delay/delay.h"
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
 #include "./LIBS/lib_usb_protocol/usb_protocol.h"
 #include "./LIBS/lib_circular_buffer/CircularBuffer.h"
@@ -136,6 +137,8 @@ SubDevicelnfo g_SubDevicelnfo[SUBDEV_NUM_MAX];
 
 uint64_t g_reset_time = 0;
 
+struct UserData *g_user_data;
+
 /*********************************************************************************/
 
 void usb_init(void)
@@ -194,6 +197,10 @@ void usb_init(void)
     USBD_RegisterClass(&g_usbd_handle, USBD_CDC_CLASS);
     USBD_CDC_RegisterInterface(&g_usbd_handle, &USBD_CDC_fops);
     USBD_Start(&g_usbd_handle);
+
+    // ----------------------
+
+    g_user_data = (struct UserData *)mymalloc(SRAMEX, sizeof(struct UserData));
 }
 
 void SystemStatusInit(void)
@@ -499,6 +506,11 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
         }
     }
 
+    if (sample_rate > 51200)
+    {
+        sample_rate = 51200;
+    }
+
     usb_printf("sample_rate:%d", sample_rate);
 
     if (sample_rate > 0)
@@ -669,15 +681,15 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     }
 
     /* 填充帧头 */
-    struct UserData user_data;
-    memset(&user_data, 0, sizeof(user_data));
+    struct UserData *user_data = g_user_data;
+
     frame_num++;
-    user_data.data_head.nVersion = 0x12345678;
-    user_data.data_head.nDataSource = 0;
-    user_data.data_head.nFrameChCount = g_enabled_ch_cnt; // 固定值
-    user_data.data_head.nFrameLen = BLOCK_LEN;
-    user_data.data_head.nTotalFrameNum = frame_num;
-    user_data.data_head.nCurNs = dwt_get_ns();
+    user_data->data_head.nVersion = 0x12345678;
+    user_data->data_head.nDataSource = 0;
+    user_data->data_head.nFrameChCount = g_enabled_ch_cnt; // 固定值
+    user_data->data_head.nFrameLen = BLOCK_LEN;
+    user_data->data_head.nTotalFrameNum = frame_num;
+    user_data->data_head.nCurNs = dwt_get_ns();
 
     // cb_read 之前加
     // usb_printf("frame=%lu cb0_size=%d overflow=%lu\n",
@@ -689,7 +701,7 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     for (uint8_t n = 0; n < g_enabled_ch_cnt; n++)
     {
         uint8_t ch = g_enabled_chs[n];
-        cb_read(g_cb_ch[ch], (char *)user_data.send_frame[n], cb_needed);
+        cb_read(g_cb_ch[ch], (char *)user_data->send_frame[n], cb_needed);
     }
 
     // USB_Display_Reply 里，cb_read 之后加：
@@ -714,8 +726,9 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
         DVSARM_DISPNEXT_OK, SOURCE_TYPE_WITH_DATAS, DESTINATION_ARM_TO_PC, send_len);
 
     uint32_t packet_len = 0;
-    pack_data((uint8_t *)&user_data, send_len,
+    pack_data((uint8_t *)user_data, send_len,
               &reply_user_head, &reply_frame_head, &packet_len);
+
     return packet_len;
 }
 
@@ -998,6 +1011,8 @@ send_reply:
     reply_user_head.nDataLength = 0;
     reply_user_head.nNanoSecond = dwt_get_ns();
     reply_user_head.nParameters0 = ret; // 删除结果：0=成功, <0=错误码
+
+    delay_ms(100);
 
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     return packet_len;

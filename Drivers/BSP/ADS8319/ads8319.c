@@ -59,7 +59,7 @@ void ads8319_start_convst(void)
     // while (HAL_GPIO_ReadPin(ADS8319_2_IRQ_GPIO, ADS8319_2_IRQ_PIN) == GPIO_PIN_RESET);
     // while (HAL_GPIO_ReadPin(ADS8319_3_IRQ_GPIO, ADS8319_3_IRQ_PIN) == GPIO_PIN_RESET);
 
-    for (uint16_t i = 0; i < 1000; i++)
+    for (uint16_t i = 0; i < 900; i++)
     {
         __NOP();
     }

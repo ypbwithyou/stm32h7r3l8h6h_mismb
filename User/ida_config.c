@@ -31,6 +31,8 @@
 #define TEST_FILE_SIZE (4 * 1024 * 1024) // 4MB
 #define TEST_BLOCK_SIZE (16 * 1024)      // 16KB
 
+uint8_t offline_mode; 
+
 void sd_file_speed_test(void)
 {
     FIL file;
@@ -148,10 +150,13 @@ FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retrie
 int8_t check_filesystem_status(const TCHAR *drive);
 
 /***********************************全局变量*********************************/
-///* USBD句柄 */
-// USBD_HandleTypeDef g_usbd_handle = {0};
-/* 系统运行状态 */
+
+uint8_t g_offline_mode; // 离线模式：0--待机，1--离线运行
+
+/* 在全局区紧挨着放哨兵 */
+volatile uint32_t g_sentinel_before = 0xDEADBEEF;
 volatile SystemStatus g_IdaSystemStatus;
+volatile uint32_t g_sentinel_after = 0xDEADBEEF;
 
 /***********************************函数*********************************/
 /**
@@ -1013,14 +1018,18 @@ int8_t app_processor(void)
     uint32_t t_now = 0;
     uint32_t t_off = 0;
 
+    g_tx_packet = (uint8_t *)mymalloc(SRAMEX, (sizeof(FrameHeadInfo) +
+                                               sizeof(uint32_t) +
+                                               sizeof(UserDataHeadInfo) +
+                                               sizeof(ArmBackFrameHeader) +
+                                               ADC_CH_TOTAL * BLOCK_LEN * sizeof(short) + sizeof(uint32_t) +
+                                               sizeof(uint32_t) + 256));
+
     if (collect_cb_init_all(ADC_CB_SIZE_PER_CH) != RET_OK)
     {
         printf("collect_cb_init_all err.\n");
         return 0;
     }
-
-    // 滑动窗口初始化
-    // SWR_Init(&receiver, on_frame, NULL);
 
     // 系统运行参数初始化
     SystemStatusInit();
@@ -1057,9 +1066,21 @@ int8_t app_processor(void)
     //    }
 
     uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMEX, SWR_BUFFER_SIZE);
+    if (!frame_copy)
+    {
+        usb_printf("Failed to allocate frame_copy buffer\n");
+        return RET_ERROR;
+    }
 
     while (1)
     {
+
+        if (g_sentinel_before != 0xDEADBEEF ||
+            g_sentinel_after != 0xDEADBEEF)
+        {
+            // 哨兵被踩 → 内存溢出确认
+            __BKPT(0); // 触发断点
+        }
 
         // ----------------------------------------------------------------------
         t_now = HAL_GetTick();
@@ -1072,34 +1093,12 @@ int8_t app_processor(void)
             CheckMcuPwrStatus();
             CheckMcuRunStatus();
             LED0_TOGGLE();
-
-            // extern volatile uint32_t g_gtim_it_counts;
-            // usb_printf("TIM_IT cnt=%lu  run_flag=%d\n",
-            //            g_gtim_it_counts,
-            //            g_IdaSystemStatus.st_dev_run.run_flag);
-
-            // // 打印前3通道的缓冲区大小
-            // usb_printf("cb[0]=%d cb[1]=%d cb[2]=%d  mask=0x%06lX\n",
-            //            g_cb_ch[0] ? cb_size(g_cb_ch[0]) : -1,
-            //            g_cb_ch[1] ? cb_size(g_cb_ch[1]) : -1,
-            //            g_cb_ch[2] ? cb_size(g_cb_ch[2]) : -1,
-            //            g_ch_enable_mask);
         }
 
-        //       // START事件处理（事件发生时执行一次离线计划表offline_processor，计划表执行期间的重复事件视为同一次）
-        //       if (g_IdaSystemStatus.st_dev_offline.start_flag == 1) {
-        //           offline_processor(g_IdaSystemStatus.st_dev_offline.start_flag);
-        //       }
+        ExternalIO_Process();
 
-        offline_processor(g_IdaSystemStatus.st_dev_offline.offline_mode);
+        offline_processor(g_offline_mode);
 
-        // USB通信数据处理
-        // USB_CDC_Receive_From_Queue(usb_rx_buf, &data_len);
-        // if (data_len > 0)
-        // {
-        //     /* 数据回显（可根据需要修改为业务逻辑） */
-        //     SWR_ProcessBytes(&receiver, usb_rx_buf, data_len);
-        // }
         // ─── 最高优先级：接收到的完整协议帧 ───
         if (g_slidingWindow_receiver.frame_flag)
         {
@@ -1122,5 +1121,8 @@ int8_t app_processor(void)
 
         IdaProcessor();
     }
+
+    // 虽然这里不会执行到，但为了代码完整性添加释放
+    myfree(SRAMEX, frame_copy);
     return ret;
 }
