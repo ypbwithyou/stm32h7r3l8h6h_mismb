@@ -47,4 +47,17 @@ uint8_t sd_write_disk(uint8_t *buf, uint32_t address, uint32_t count);  /* 写SD
  
 void sd_get_status(void);
 
+typedef enum {
+    MMC_IDLE = 0,
+    MMC_RX_BUSY,
+    MMC_TX_BUSY,
+    MMC_DONE,
+    MMC_ERROR,
+} MmcAsyncState;
+
+MmcAsyncState sd_disk_poll(void);
+void          sd_disk_reset(void);
+uint8_t       sd_read_disk_async(uint8_t *buf, uint32_t address, uint32_t count);
+uint8_t       sd_write_disk_async(uint8_t *buf, uint32_t address, uint32_t count);
+
 #endif

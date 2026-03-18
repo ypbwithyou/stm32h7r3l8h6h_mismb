@@ -29,7 +29,7 @@
 #define TEST_FILE_SIZE (4 * 1024 * 1024) // 4MB
 #define TEST_BLOCK_SIZE (16 * 1024)      // 16KB
 
-uint8_t offline_mode; 
+uint8_t offline_mode;
 
 void sd_file_speed_test(void)
 {
@@ -1087,6 +1087,13 @@ int8_t app_processor(void)
             CheckMcuPwrStatus();
             CheckMcuRunStatus();
             LED0_TOGGLE();
+        }
+
+        // ---------------------------emmc--------------------
+        MmcAsyncState st = sd_disk_poll();
+        if (st == MMC_DONE || st == MMC_ERROR)
+        {
+            sd_disk_reset();
         }
 
         ExternalIO_Process();

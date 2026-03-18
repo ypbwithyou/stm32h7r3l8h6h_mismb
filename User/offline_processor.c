@@ -96,6 +96,15 @@ static void HandleRecordEnd(uint8_t idx);
 static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds);
 static void ExecuteScheduleAction(uint8_t idx, uint32_t elapsed_seconds);
 
+static FRESULT cache_write(FIL *fp, const void *data, uint32_t len);
+static FRESULT cache_flush(FIL *fp);
+
+// ===== 写缓冲区（攒够一次性写入 eMMC）=====
+#define WRITE_CACHE_SIZE (512 * 1024) // 128KB，根据你的 RAM 大小调整
+
+static uint8_t *s_write_cache;
+static uint32_t s_write_cache_pos = 0;
+
 FIL g_offline_record_fil; // 离线记录文件指针
 
 // 如文件中尚未定义，可添加以下宏
@@ -103,6 +112,48 @@ FIL g_offline_record_fil; // 离线记录文件指针
 #define DEFAULT_CHANNEL_COUNT 3U
 
 static uint32_t file_num = 0;
+
+// 将数据追加到缓冲区，满了就刷盘
+static FRESULT cache_write(FIL *fp, const void *data, uint32_t len)
+{
+    const uint8_t *src = (const uint8_t *)data;
+
+    while (len > 0)
+    {
+        uint32_t space = WRITE_CACHE_SIZE - s_write_cache_pos;
+        uint32_t copy = (len < space) ? len : space;
+
+        memcpy(s_write_cache + s_write_cache_pos, src, copy);
+        s_write_cache_pos += copy;
+        src += copy;
+        len -= copy;
+
+        // 缓冲区满，刷入 eMMC
+        if (s_write_cache_pos >= WRITE_CACHE_SIZE)
+        {
+            UINT bw;
+            FRESULT res = f_write_dma_safe(fp, s_write_cache, WRITE_CACHE_SIZE, &bw);
+            s_write_cache_pos = 0;
+            if (res != FR_OK || bw != WRITE_CACHE_SIZE)
+                return res ? res : FR_DENIED;
+        }
+    }
+    return FR_OK;
+}
+
+// 强制把缓冲区剩余数据刷入 eMMC
+static FRESULT cache_flush(FIL *fp)
+{
+    if (s_write_cache_pos == 0)
+        return FR_OK;
+    UINT bw;
+    FRESULT res = f_write_dma_safe(fp, s_write_cache, s_write_cache_pos, &bw);
+    uint32_t flushed = s_write_cache_pos;
+    s_write_cache_pos = 0;
+    if (res != FR_OK || bw != flushed)
+        return res ? res : FR_DENIED;
+    return FR_OK;
+}
 
 // 扫描目录获取当前最大文件编号
 static uint32_t ScanMaxFileNum(const char *dir_path)
@@ -152,6 +203,13 @@ void OfflineRecordInit(void)
     if (!g_offline_signal_source)
     {
         usb_printf("[Record] Failed to allocate memory for signal source\r\n");
+        return;
+    }
+
+    s_write_cache = (uint8_t *)mymalloc(SRAMEX, WRITE_CACHE_SIZE);
+    if (!s_write_cache)
+    {
+        usb_printf("[Record] Failed to allocate memory for s_write_cache\r\n");
         return;
     }
 
@@ -234,6 +292,8 @@ static void HandleRecordStart(uint8_t idx)
     g_recorde_file_head.nUseCalib = 1;
     g_recorde_file_head.nUseSenserity = 1;
 
+    s_write_cache_pos = 0; // 新文件开始前清空缓冲区
+
     file_num++;
 
     if (CreatOfflineRecordFile(file_num) != FR_OK)
@@ -311,10 +371,10 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
 
     uint32_t sample_rate = GetOfflineSampleRate();
 
-    if (sample_rate > 51200)
-    {
-        sample_rate = 51200;
-    }
+    // if (sample_rate > 51200)
+    // {
+    //     sample_rate = 51200;
+    // }
 
     usb_printf("sample_rate:%d", sample_rate);
 
@@ -991,21 +1051,25 @@ static void OfflineDatasRecord(void)
             g_recorde_file_head.dRecValidStartTime = rec_hdr.RecLocalColumn.nNanoSec;
         }
 
-        res = f_write(&g_offline_record_fil, &rec_hdr, sizeof(rec_hdr), &bw);
-        if (res != FR_OK || bw != sizeof(rec_hdr))
+        res = cache_write(&g_offline_record_fil, &rec_hdr, sizeof(rec_hdr));
+        if (res != FR_OK)
         {
             usb_printf("[Record] ch%u: write header failed, res=%d\n", ch, res);
             g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+            cache_flush(&g_offline_record_fil); // ★ 先刷，尽量保留已有数据
+            s_write_cache_pos = 0;
             f_close(&g_offline_record_fil);
             return;
         }
 
         cb_read(g_cb_ch[ch], (char *)ch_buf, block_bytes);
-        res = f_write(&g_offline_record_fil, ch_buf, block_bytes, &bw);
-        if (res != FR_OK || bw != block_bytes)
+        res = cache_write(&g_offline_record_fil, ch_buf, block_bytes);
+        if (res != FR_OK)
         {
             usb_printf("[Record] ch%u: write data failed, res=%d\n", ch, res);
             g_IdaSystemStatus.st_dev_record.record_status = RECORD_ERROR;
+            cache_flush(&g_offline_record_fil); // ★ 先刷，尽量保留已有数据
+            s_write_cache_pos = 0;
             f_close(&g_offline_record_fil);
             return;
         }
@@ -1015,7 +1079,7 @@ static void OfflineDatasRecord(void)
     static uint32_t last_time = 0;
     if (HAL_GetTick() - last_time >= 1000)
     {
-        uint32_t now_tell = f_tell(&g_offline_record_fil);
+        uint32_t now_tell = f_tell(&g_offline_record_fil) + s_write_cache_pos;
         uint32_t bytes_per_sec = now_tell - last_tell;
         usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
         last_tell = now_tell;
@@ -1030,6 +1094,9 @@ static void OfflineDatasRecord(void)
 
         g_recorde_file_head.nFrameNum = record_frame_num;
         g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+
+        // ★ 先把缓冲区数据写完，再 seek
+        cache_flush(&g_offline_record_fil);
 
         uint32_t cur_pos = f_tell(&g_offline_record_fil);
         res = f_lseek(&g_offline_record_fil, 0);
@@ -1050,6 +1117,10 @@ static void OfflineDatasRecord(void)
     do_finalize:
         g_recorde_file_head.nFrameNum = record_frame_num;
         g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+
+        // ★ 先把缓冲区刷完
+        cache_flush(&g_offline_record_fil);
+        s_write_cache_pos = 0; // 确保清零
 
         res = f_lseek(&g_offline_record_fil, 0);
         if (res == FR_OK)
