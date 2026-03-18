@@ -28,6 +28,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stm32h7rsxx.h"
+#include "./LIBS/lib_dwt/lib_dwt_timestamp.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
