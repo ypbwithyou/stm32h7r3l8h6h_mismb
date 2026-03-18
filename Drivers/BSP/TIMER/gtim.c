@@ -49,7 +49,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 
         // 降低中断优先级，避免影响任务调度
         // 优先级10（数字越大优先级越低）
-        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 2, 0);
+        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 6, 0);
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
@@ -225,7 +225,6 @@ void gtim_timx_cfg(uint16_t arr, uint16_t psc)
 
     g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
- 
 }
 
 /**
