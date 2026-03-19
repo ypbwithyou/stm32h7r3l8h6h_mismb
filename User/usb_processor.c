@@ -21,53 +21,9 @@
 #include "offline_processor.h"
 #include "./BSP/MMC/mmc_sdcard.h"
 
+#include "dataType.h"
+
 /*********************************************************************************/
-// typedef struct
-//{
-//     float       ch_cfg_value;
-//     uint32_t    ch_set_index;
-// } Dev_ch_cfg_index;
-const Dev_ch_cfg_index g_HighPassFreq[] =
-    {
-        {0.05, HIGH_PASS_FREQ_005hz},
-        {0.5, HIGH_PASS_FREQ_05hz},
-        {1, HIGH_PASS_FREQ_1hz},
-        {10, HIGH_PASS_FREQ_10hz},
-};
-const Dev_ch_cfg_index g_LowPassFreq[] =
-    {
-        {0.0, LOW_PASS_FREQ_110kHz},
-        {20, LOW_PASS_FREQ_20Hz},
-        {1000, LOW_PASS_FREQ_1kHz},
-        {10000, LOW_PASS_FREQ_10kHz},
-        {20000, LOW_PASS_FREQ_20kHz},
-};
-const Dev_ch_cfg_index g_ida_ch_rate[] =
-    {
-        {512.0, SAMPLE_RATE_INDEX_512HZ},
-        {1024.0, SAMPLE_RATE_INDEX_1024HZ},
-        {2048.0, SAMPLE_RATE_INDEX_2048HZ},
-        {4096.0, SAMPLE_RATE_INDEX_4096HZ},
-        {8192.0, SAMPLE_RATE_INDEX_8192HZ},
-        {16384.0, SAMPLE_RATE_INDEX_16384HZ},
-        {32768.0, SAMPLE_RATE_INDEX_32768HZ},
-        {65536.0, SAMPLE_RATE_INDEX_65536HZ},
-        {131072.0, SAMPLE_RATE_INDEX_131072HZ},
-        {50.0, SAMPLE_RATE_INDEX_50HZ},
-        {100.0, SAMPLE_RATE_INDEX_100H},
-        {200.0, SAMPLE_RATE_INDEX_200H},
-        {400.0, SAMPLE_RATE_INDEX_400H},
-        {800.0, SAMPLE_RATE_INDEX_800HZ},
-        {1600.0, SAMPLE_RATE_INDEX_1600HZ},
-        {3200.0, SAMPLE_RATE_INDEX_3200HZ},
-        {6400.0, SAMPLE_RATE_INDEX_6400HZ},
-        {12800.0, SAMPLE_RATE_INDEX_12800HZ},
-        {25600.0, SAMPLE_RATE_INDEX_25600HZ},
-        {51200.0, SAMPLE_RATE_INDEX_51200HZ},
-        {102400.0, SAMPLE_RATE_INDEX_102400HZ},
-        {204800.0, SAMPLE_RATE_INDEX_204800HZ},
-        {256000.0, SAMPLE_RATE_INDEX_256000HZ},
-};
 
 /*********************************************************************************/
 FRESULT clear_file_content(const char *path);
@@ -364,7 +320,7 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHea
     g_dev_info.DeviceType = dev_detail->DeviceType;
 
     // 更新设备信息文件
-    write_device_info_file(g_dev_info);
+    // write_device_info_file(g_dev_info);
 
     return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
 }
@@ -472,7 +428,7 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
     // //------------------------------------------------------
 
     uint32_t sample_rate = 0;
-    for (uint8_t i = 0; i < (int)(sizeof(g_ida_ch_rate) / sizeof(g_ida_ch_rate[0])); i++)
+    for (uint8_t i = 0; i < (uint8_t)g_ida_ch_rate_count; i++)
     {
         if (channelTableHeader->fHardwareSampleRate == g_ida_ch_rate[i].ch_cfg_value)
         {
@@ -1468,232 +1424,5 @@ FRESULT clear_file_content(const char *path)
     res = ((res == FR_NO_FILE) || (res == FR_OK)) ? FR_OK : res;
     return res;
 }
-
-SendRecordPack g_SendRecordFilesPackHead;
-#define PACK_DATA_LEN (1024)
-int8_t SendRecordFiles(const char *file_name)
-{
-    int8_t ret = RET_OK;
-    static FIL fil;
-    static FIL *fp = NULL;
-    fp = &fil;
-    UINT bw, br;
-    uint32_t total_size = 0;
-    uint32_t offset = 0;
-
-    if ((g_SendRecordFilesPackHead.head.totalPackNum == 0) && (fp == NULL))
-    {
-
-        ret = f_open(fp, file_name, FA_OPEN_EXISTING);
-        total_size = f_size(fp);
-        g_SendRecordFilesPackHead.head.totalPackNum = (total_size + PACK_DATA_LEN - 1) / PACK_DATA_LEN;
-    }
-    if (g_SendRecordFilesPackHead.head.totalPackNum > g_SendRecordFilesPackHead.head.currentPackIdx)
-    {
-        // todo: get bytes from file
-        offset = g_SendRecordFilesPackHead.head.currentPackAddr;
-        ret = f_lseek(fp, offset);
-        ret = f_read(fp, g_SendRecordFilesPackHead.data, PACK_DATA_LEN, &br);
-
-        g_SendRecordFilesPackHead.head.currentPackAddr = offset;
-        g_SendRecordFilesPackHead.head.currentPackIdx++;
-        g_SendRecordFilesPackHead.head.packSize = PACK_DATA_LEN;
-        g_SendRecordFilesPackHead.head.crc32 = make_crc32(g_SendRecordFilesPackHead.data, br);
-
-        if (g_SendRecordFilesPackHead.head.totalPackNum == g_SendRecordFilesPackHead.head.currentPackIdx)
-        {
-            if (fp != NULL)
-            {
-                f_close(fp);
-                fp = NULL;
-            }
-        }
-
-        FrameHeadInfo frame_head = create_default_frame_head(0);
-        UserDataHeadInfo user_head = {0};
-        user_head.nIsValidFlag = 0x12345678;
-        user_head.nEventID = DVS_INIT_ARM_UPGRADE_REQ_OK;
-        user_head.nSourceType = SOURCE_TYPE_WITH_DATAS;
-        user_head.nDestinationID = DESTINATION_ARM_TO_PC;
-        user_head.nDataLength = sizeof(SendRecordPackHead) + br;
-        user_head.nNanoSecond = dwt_get_ns();
-        user_head.nParameters0 = 0;
-
-        uint32_t packet_len = 0;
-        pack_data((const uint8_t *)&g_SendRecordFilesPackHead.head, sizeof(SendRecordPackHead) + br, &user_head, &frame_head, &packet_len);
-
-        return packet_len;
-    }
-    else
-    {
-        return 0;
-    }
-}
-
-/* read device info file */
-int read_device_info_file(DeviceInfo *dev_info_data)
-{
-    int ret = 0;
-    // int tmp_value = 0;
-    char tmp_str[KEY_VALUE_MAX_LEN] = {0};
-    int tmp_int = 0;
-    float tmp_f = 0.0;
-    ret = LoadConfFile(IDA_DEVICE_INFO_FILE);
-    if (ret)
-    {
-        usb_printf("load config file [%s] fail\n", IDA_DEVICE_INFO_FILE);
-        return RET_ERROR;
-    }
-    else
-    {
-        /* get device infomation */
-        // Version
-        if (INI_RET_OK != GetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_SoftwareVersion, tmp_str))
-        {
-            usb_printf("[ Error ]get SoftwareVersion [%s] from %s faild.", tmp_str, IDA_DEVICE_INFO_FILE);
-            return RET_ERROR;
-        }
-        strncpy((char *)dev_info_data->Version, tmp_str, KEY_VALUE_MAX_LEN);
-        usb_printf("get Version [%s] from config file", dev_info_data->Version);
-        // AccessCode
-        if (INI_RET_OK != GetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_AccessCode, tmp_str))
-        {
-            usb_printf("[ Error ]get AccessCode [%s] from %s faild.", tmp_str, IDA_DEVICE_INFO_FILE);
-            return RET_ERROR;
-        }
-        strncpy((char *)dev_info_data->AccessCode, tmp_str, KEY_VALUE_MAX_LEN);
-        usb_printf("get AccessCode [%s] from config file", dev_info_data->AccessCode);
-        // ID
-        if (INI_RET_OK != GetSecInt(INI_SECTION_DEVICE_INFO, INI_KEY_ID, &tmp_int))
-        {
-            usb_printf("[ Error ]get ID [%d] from %s faild.", tmp_int, IDA_DEVICE_INFO_FILE);
-            return RET_ERROR;
-        }
-        dev_info_data->ID = tmp_int;
-        usb_printf("get ID [%d] from config file", dev_info_data->ID);
-        // SerialNumber
-        if (INI_RET_OK != GetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_SerialNumber, tmp_str))
-        {
-            usb_printf("[ Error ]get SerialNumber [%s] from %s faild.", tmp_str, IDA_DEVICE_INFO_FILE);
-            return RET_ERROR;
-        }
-        strcpy((char *)dev_info_data->SerialNumber, tmp_str);
-        usb_printf("get SerialNumber [%s] from config file", dev_info_data->SerialNumber);
-        // DeviceName
-        if (INI_RET_OK != GetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_DeviceName, tmp_str))
-        {
-            usb_printf("[ Error ]get DeviceName [%s] from %s faild.", tmp_str, IDA_DEVICE_INFO_FILE);
-            return RET_ERROR;
-        }
-        strcpy((char *)dev_info_data->DeviceName, tmp_str);
-        usb_printf("get DeviceName messages [%s] from config file", dev_info_data->DeviceName);
-        // DeviceType
-        if (INI_RET_OK != GetSecInt(INI_SECTION_DEVICE_INFO, INI_KEY_DeviceType, &tmp_int))
-        {
-            usb_printf("[ Error ]get DeviceType [%d] from %s faild.", tmp_int, IDA_DEVICE_INFO_FILE);
-            return RET_ERROR;
-        }
-        dev_info_data->DeviceType = tmp_int;
-        usb_printf("get DeviceType [%d] from config file", dev_info_data->DeviceType);
-        // LastUpdateDateTime
-        if (INI_RET_OK != GetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_LastUpdateDateTime, tmp_str))
-        {
-            usb_printf("[ Error ]get LastUpdateDateTime [%s] from %s faild.", tmp_str, IDA_DEVICE_INFO_FILE);
-            return RET_ERROR;
-        }
-        strcpy((char *)dev_info_data->LastUpdateDateTime, tmp_str);
-        usb_printf("get LastUpdateDateTime [%s] from config file", dev_info_data->LastUpdateDateTime);
-    }
-    usb_printf("get device information OK!", NULL);
-    return RET_OK;
-}
-
-/* write device_info_file */
-int write_device_info_file(DeviceInfo dev_data)
-{
-    int i = 0, ret = 0;
-    int tmp_int = 0;
-    float tmp_f = 0.0;
-
-    ret = LoadConfFile(IDA_DEVICE_INFO_FILE);
-    if (ret)
-    {
-        usb_printf("load config file [%s] fail when update ad config paramaters", IDA_DEVICE_INFO_FILE);
-        return RET_ERROR;
-    }
-    else
-    {
-        /* write ida device infomation */
-        // Version
-        if (INI_RET_OK != SetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_SoftwareVersion, (char *)dev_data.Version))
-        {
-            usb_printf("update [ %s ] failed! [Version = %s]", IDA_DEVICE_INFO_FILE, dev_data.Version);
-            i |= 0x01;
-        }
-        // AccessCode
-        if (INI_RET_OK != SetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_AccessCode, (char *)dev_data.AccessCode))
-        {
-            usb_printf("update [ %s ] failed! [AccessCode = %s]", IDA_DEVICE_INFO_FILE, dev_data.AccessCode);
-            i |= 0x01;
-        }
-        // ID
-        tmp_int = dev_data.ID;
-        if (INI_RET_OK != SetSecInt(INI_SECTION_DEVICE_INFO, INI_KEY_ID, &tmp_int))
-        {
-            usb_printf("update [ %s ] failed! [ID = %d]", IDA_DEVICE_INFO_FILE, tmp_int);
-            i |= 0x02;
-        }
-        // SerialNumber
-        if (INI_RET_OK != SetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_SerialNumber, (char *)dev_data.SerialNumber))
-        {
-            usb_printf("update [ %s ] failed! [SerialNumber = %s]", IDA_DEVICE_INFO_FILE, dev_data.SerialNumber);
-            i |= 0x04;
-        }
-        // DeviceName
-        if (INI_RET_OK != SetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_DeviceName, (char *)dev_data.DeviceName))
-        {
-            usb_printf("update [ %s ] failed! [DeviceName = %s]", IDA_DEVICE_INFO_FILE, dev_data.DeviceName);
-            i |= 0x08;
-        }
-        // DeviceType
-        tmp_int = dev_data.DeviceType;
-        if (INI_RET_OK != SetSecInt(INI_SECTION_DEVICE_INFO, INI_KEY_DeviceType, &tmp_int))
-        {
-            usb_printf("update [ %s ] failed! [DeviceType = %d]", IDA_DEVICE_INFO_FILE, tmp_int);
-            i |= 0x10;
-        }
-        // LastUpdateDateTime
-        if (INI_RET_OK != SetSecStr(INI_SECTION_DEVICE_INFO, INI_KEY_LastUpdateDateTime, (char *)dev_data.LastUpdateDateTime))
-        {
-            usb_printf("update [ %s ] failed! [LastUpdateDateTime = %s]", IDA_DEVICE_INFO_FILE, dev_data.LastUpdateDateTime);
-            i |= 0x20000;
-        }
-        if (0 != i)
-        {
-            usb_printf("update [ %s ] failed with err:0x%x!", IDA_DEVICE_INFO_FILE, i);
-            return RET_ERROR;
-        }
-        usb_printf("update [ %s ] successfully!", IDA_DEVICE_INFO_FILE);
-        return RET_OK;
-    }
-}
-
-// 获取设备信息
-void GetDeviceInfo(DeviceInfo *dev_info_data)
-{
-    int ret = 0;
-
-    ret = read_device_info_file(dev_info_data);
-    if (ret)
-    {
-        usb_printf("read device info file failed!");
-        // 读取设备信息异常时使用默认值
-        strcpy((char *)dev_info_data->Version, DEFAULT_VERSION);
-        strcpy((char *)dev_info_data->AccessCode, DEFAULT_ACCESSCODE);
-        dev_info_data->ID = DEFAULT_ID;
-        strcpy((char *)dev_info_data->SerialNumber, DEFAULT_SERIALNUMBER);
-        strcpy((char *)dev_info_data->DeviceName, DEFAULT_DEVICENAME);
-        dev_info_data->DeviceType = DEFAULT_DEVICETYPE;
-        strcpy((char *)dev_info_data->LastUpdateDateTime, DEFAULT_LASTUPDATETIME);
-    }
-}
+ 
+ 

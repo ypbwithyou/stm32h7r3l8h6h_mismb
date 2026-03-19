@@ -768,13 +768,7 @@ typedef struct SendRecordPackHead_t
     uint32_t crc32;           // 本包数据的 CRC32 校验值
     uint32_t reserved;        //
 } SendRecordPackHead;
-
-typedef struct SendRecordPack_t
-{
-    SendRecordPackHead head;
-    uint8_t data[1]; // 柔性数组，实际大小为 head.packSize
-} SendRecordPack;
-
+ 
 /**********************************************
  * 文件下载协议说明
  *

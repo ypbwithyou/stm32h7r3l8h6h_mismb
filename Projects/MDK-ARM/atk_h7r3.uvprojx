@@ -434,6 +434,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\User\usb_processor.c</FilePath>
             </File>
+            <File>
+              <FileName>dataType.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\User\dataType.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

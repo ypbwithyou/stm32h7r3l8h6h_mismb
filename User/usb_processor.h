@@ -79,11 +79,6 @@ enum usb_status
     USB_CONNECTED,
     USB_DISCONNECTED
 };
-typedef struct
-{
-    float ch_cfg_value;
-    uint32_t ch_set_index;
-} Dev_ch_cfg_index;
 
 struct UserData
 {
@@ -91,11 +86,6 @@ struct UserData
     short send_frame[ADC_CH_TOTAL][BLOCK_LEN]; // 24×BLOCK_LEN
 };
 
-struct OffsetUserData
-{
-    AoLocalColumn data_head;
-    short send_frame[SPI_NUM][BLOCK_LEN];
-};
 // 主卡设备信息
 extern DeviceInfo g_dev_info;
 // 子卡设备信息
@@ -108,17 +98,7 @@ void SystemStatusInit(void);
 void USB_Display_All(uint32_t run_flag);
 
 void IdaProcessor(void);
-void transpose(short src[BLOCK_LEN][SPI_NUM], short dst[SPI_NUM][BLOCK_LEN]);
 
-int read_device_info_file(DeviceInfo *dev_info_data);
-int write_device_info_file(DeviceInfo dev_data);
-int update_device_info_from_detail(DeviceDetailInfo dev_detail);
-void GetDeviceInfo(DeviceInfo *dev_info_data);
 void on_frame(uint8_t *frame, uint32_t frame_len);
-
-
-extern const Dev_ch_cfg_index g_ida_ch_rate[];
-extern const Dev_ch_cfg_index g_LowPassFreq[];
-extern const Dev_ch_cfg_index g_HighPassFreq[];
-
+ 
 #endif /* __USB_PROCESSOR_H */

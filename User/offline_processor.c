@@ -11,51 +11,8 @@
 #include "usb_processor.h"
 #include "usbd_cdc_if.h"
 #include "./LIBS/lib_file_utils/file_utils.h"
-
-const Dev_ch_cfg_index g_off_HighPassFreq[] =
-    {
-        {0.05, HIGH_PASS_FREQ_005hz},
-        {0.5, HIGH_PASS_FREQ_05hz},
-        {1, HIGH_PASS_FREQ_1hz},
-        {10, HIGH_PASS_FREQ_10hz},
-};
-
-const Dev_ch_cfg_index g_off_LowPassFreq[] =
-    {
-        {0.0, LOW_PASS_FREQ_110kHz},
-        {20, LOW_PASS_FREQ_20Hz},
-        {1000, LOW_PASS_FREQ_1kHz},
-        {10000, LOW_PASS_FREQ_10kHz},
-        {20000, LOW_PASS_FREQ_20kHz},
-};
-
-const Dev_ch_cfg_index g_off_ida_ch_rate[] =
-    {
-        {512.0, SAMPLE_RATE_INDEX_512HZ},
-        {1024.0, SAMPLE_RATE_INDEX_1024HZ},
-        {2048.0, SAMPLE_RATE_INDEX_2048HZ},
-        {4096.0, SAMPLE_RATE_INDEX_4096HZ},
-        {8192.0, SAMPLE_RATE_INDEX_8192HZ},
-        {16384.0, SAMPLE_RATE_INDEX_16384HZ},
-        {32768.0, SAMPLE_RATE_INDEX_32768HZ},
-        {65536.0, SAMPLE_RATE_INDEX_65536HZ},
-        {131072.0, SAMPLE_RATE_INDEX_131072HZ},
-        {50.0, SAMPLE_RATE_INDEX_50HZ},
-        {100.0, SAMPLE_RATE_INDEX_100H},
-        {200.0, SAMPLE_RATE_INDEX_200H},
-        {400.0, SAMPLE_RATE_INDEX_400H},
-        {800.0, SAMPLE_RATE_INDEX_800HZ},
-        {1600.0, SAMPLE_RATE_INDEX_1600HZ},
-        {3200.0, SAMPLE_RATE_INDEX_3200HZ},
-        {6400.0, SAMPLE_RATE_INDEX_6400HZ},
-        {12800.0, SAMPLE_RATE_INDEX_12800HZ},
-        {25600.0, SAMPLE_RATE_INDEX_25600HZ},
-        {51200.0, SAMPLE_RATE_INDEX_51200HZ},
-        {102400.0, SAMPLE_RATE_INDEX_102400HZ},
-        {204800.0, SAMPLE_RATE_INDEX_204800HZ},
-        {256000.0, SAMPLE_RATE_INDEX_256000HZ},
-};
-
+#include "dataType.h"
+ 
 #define OFFLINE_SCHEDULE_ITEM_MAX 32
 typedef enum ScheduleItemRunStatus
 {
@@ -245,13 +202,13 @@ static uint32_t SafeElapsedMs(uint32_t old_tick, uint32_t new_tick)
 static uint32_t GetOfflineSampleRate(void)
 {
     uint32_t rate = 0;
-    size_t count = sizeof(g_off_ida_ch_rate) / sizeof(g_off_ida_ch_rate[0]);
+    size_t count = g_ida_ch_rate_count;
 
     for (size_t i = 0; i < count; i++)
     {
-        if (g_offline_chCfgHeader.fHardwareSampleRate == g_off_ida_ch_rate[i].ch_cfg_value)
+        if (g_offline_chCfgHeader.fHardwareSampleRate == g_ida_ch_rate[i].ch_cfg_value)
         {
-            rate = g_off_ida_ch_rate[i].ch_cfg_value;
+            rate = g_ida_ch_rate[i].ch_cfg_value;
             break;
         }
     }
