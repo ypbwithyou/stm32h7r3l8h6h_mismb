@@ -16,6 +16,7 @@
 #include "./MALLOC/malloc.h"
 #include "usb_processor.h"
 #include "collector_processor.h"
+#include "rs485_processor.h"
 #include "./FATFS/exfuns/fattester.h"
 #include "offline_processor.h"
 #include "./BSP/MMC/mmc_sdcard.h"
@@ -220,51 +221,74 @@ static uint32_t PackReplyWithoutDatas(uint32_t event_id)
     return packet_len;
 }
 
+static void fill_default_subdev_info(SubDevicelnfo *info)
+{
+    if (info == NULL)
+    {
+        return;
+    }
+
+    memset(info, 0, sizeof(SubDevicelnfo));
+    strcpy((char *)&info->SerialNumber[0], "MIRA3102501001");
+    strcpy((char *)&info->DeviceName[0], Name_Mini_SliceAccel);
+    strcpy((char *)&info->Version[0], "1.0.0.0_20260114");
+    info->DeviceType = Mini_SliceAccel;
+    info->SlotId = 1;
+    info->Sensitivity = 3;
+}
+
+static uint8_t build_device_report_payload(uint8_t *send_frame, uint32_t *send_len)
+{
+    uint8_t i;
+    uint8_t subdev_count = 0U;
+    uint8_t *subdev_ptr;
+    SubDevicelnfo default_subdev;
+
+    if ((send_frame == NULL) || (send_len == NULL))
+    {
+        return 0U;
+    }
+
+    subdev_ptr = send_frame + sizeof(DeviceInfo);
+    for (i = 0U; i < SUBDEV_NUM_MAX; i++)
+    {
+        if (g_subdev_valid[i] != 0U)
+        {
+            memcpy(subdev_ptr, &g_SubDevicelnfo[i], sizeof(SubDevicelnfo));
+            subdev_ptr += sizeof(SubDevicelnfo);
+            subdev_count++;
+        }
+    }
+
+    if (subdev_count == 0U)
+    {
+        fill_default_subdev_info(&default_subdev);
+        memcpy(subdev_ptr, &default_subdev, sizeof(SubDevicelnfo));
+        subdev_ptr += sizeof(SubDevicelnfo);
+        subdev_count = 1U;
+    }
+
+    strcpy((char *)&g_dev_info.Version[0], "1.0.0.0_20260114");
+    strcpy((char *)&g_dev_info.DeviceName[0], Name_Mini_SliceMicro);
+    strcpy((char *)&g_dev_info.AccessCode[0], "NTS2026");
+    strcpy((char *)&g_dev_info.SerialNumber[0], "MISMB102501001");
+    g_dev_info.DeviceType = Mini_SliceMicro;
+    g_dev_info.IsConnected = (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED) ? 1 : 0;
+    g_dev_info.SubDeviceNum = subdev_count;
+
+    memcpy(send_frame, &g_dev_info, sizeof(DeviceInfo));
+    *send_len = sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * subdev_count;
+    return subdev_count;
+}
+
 static uint32_t USB_DetectPeriod(void)
 {
     uint8_t serial_num = 0;
     uint8_t send_frame[sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * SUBDEV_NUM_MAX];
     uint32_t send_len = 0;
 
-    // 获取子卡设备信息
-    uint8_t subden_num = 0; // 子卡设备数量
-    // for(uint8_t i=0; i<SUBDEV_NUM_MAX; i++) {
-    //     if (g_SubDevicelnfo[i].SlotId != 0) {
-    //         subden_num++;
-    //         memcpy(&send_frame[sizeof(DeviceInfo)+sizeof(SubDevicelnfo)*(subden_num-1)], &g_SubDevicelnfo[i], sizeof(SubDevicelnfo));
-    //     }
-    // }
-    SubDevicelnfo subden_info[SUBDEN_NUM];
-    subden_num = 1;
-    strcpy((char *)&subden_info[0].SerialNumber[0], "MIRA3102501002");
-    strcpy((char *)&subden_info[0].DeviceName[0], Name_Mini_SliceAccel);
-    strcpy((char *)&subden_info[0].Version[0], "1.0.0.0_20260114");
-    subden_info[0].DeviceType = Mini_SliceAccel;
-    subden_info[0].SlotId = 1;
-    subden_info[0].Sensitivity = 3; // 浼犳劅鍣ㄧ伒鏁忓害绱㈠紩
-    memcpy(send_frame + sizeof(DeviceInfo), subden_info[0].SerialNumber, sizeof(SubDevicelnfo));
-
-    strcpy((char *)&g_dev_info.Version[0], "1.0.0.0_20260114");
-    strcpy((char *)&g_dev_info.DeviceName[0], Name_Mini_SliceMicro);
-    strcpy((char *)&g_dev_info.AccessCode[0], "NTS2026");
-    strcpy((char *)&g_dev_info.SerialNumber[0], "MISMB102501002");
-    g_dev_info.DeviceType = Mini_SliceMicro;
-    // 获取base板设备信息
-    if (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED)
-    {
-        g_dev_info.IsConnected = 1;
-    }
-    else
-    {
-        g_dev_info.IsConnected = 0;
-    }
-    g_dev_info.SubDeviceNum = subden_num;
-    memcpy(send_frame, &g_dev_info, sizeof(DeviceInfo));
-
-    // 计算数据长度
-    send_len = sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * subden_num;
-
-    // 发送数据
+      // 发送数据
+    build_device_report_payload(send_frame, &send_len);
     FrameHeadInfo frame_head = create_default_frame_head(serial_num);
     UserDataHeadInfo user_head = create_user_data_head(DVS_INIT_DETECT,
                                                        SOURCE_TYPE_WITH_DATAS,
@@ -281,7 +305,6 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     (void)data_in;  // 未使用用户数据
     (void)data_len; // 未使用用户数据长度
     (void)fHead;    // 未使用帧头
-    (void)userHead; // 未使用用户头
 
     g_IdaSystemStatus.st_dev_link.link_status = USB_CONNECTED;
     if (userHead != NULL)
@@ -296,46 +319,8 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     uint8_t send_frame[sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * SUBDEV_NUM_MAX];
     uint32_t send_len = 0;
 
-    // 获取子卡设备信息
-    uint8_t subden_num = 0; // 子卡设备数量
-    // for(uint8_t i=0; i<SUBDEV_NUM_MAX; i++) {
-    //     if (g_SubDevicelnfo[i].SlotId != 0) {
-    //         subden_num++;
-    //         memcpy(&send_frame[sizeof(DeviceInfo)+sizeof(SubDevicelnfo)*(subden_num-1)], &g_SubDevicelnfo[i], sizeof(SubDevicelnfo));
-    //     }
-    // }
-    SubDevicelnfo subden_info[SUBDEN_NUM];
-    subden_num = 1;
-    strcpy((char *)&subden_info[0].SerialNumber[0], "MIRA3102501002");
-    strcpy((char *)&subden_info[0].DeviceName[0], Name_Mini_SliceAccel);
-    strcpy((char *)&subden_info[0].Version[0], "1.0.0.0_20260114");
-    subden_info[0].DeviceType = Mini_SliceAccel;
-    subden_info[0].SlotId = 1;
-    subden_info[0].Sensitivity = 3;
-    memcpy(send_frame + sizeof(DeviceInfo), subden_info[0].SerialNumber, sizeof(SubDevicelnfo));
-
-    strcpy((char *)&g_dev_info.Version[0], "1.0.0.0_20260114");
-    strcpy((char *)&g_dev_info.DeviceName[0], Name_Mini_SliceMicro);
-    strcpy((char *)&g_dev_info.AccessCode[0], "NTS2026");
-    strcpy((char *)&g_dev_info.SerialNumber[0], "MISMB102501002");
-    g_dev_info.DeviceType = Mini_SliceMicro;
-
-    // 获取base板设备信息
-    if (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED)
-    {
-        g_dev_info.IsConnected = 1;
-    }
-    else
-    {
-        g_dev_info.IsConnected = 0;
-    }
-    g_dev_info.SubDeviceNum = subden_num;
-    memcpy(send_frame, &g_dev_info, sizeof(DeviceInfo));
-
-    // 计算数据长度
-    send_len = sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * subden_num;
-
     // 发送数据
+    build_device_report_payload(send_frame, &send_len);
     FrameHeadInfo frame_head = create_default_frame_head(serial_num);
     UserDataHeadInfo user_head = create_user_data_head(DVS_INIT_CONNECT_OK,
                                                        SOURCE_TYPE_WITH_DATAS,
