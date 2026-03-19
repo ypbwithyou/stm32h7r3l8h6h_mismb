@@ -681,7 +681,7 @@ static int8_t format_emmc(void)
     usb_printf("[FatFs] === Format complete ===\r\n");
     return 0;
 }
- 
+
 /**
  * @brief 创建测试文件和目录，验证文件系统功能
  */
@@ -911,7 +911,7 @@ FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retrie
                max_retries, res);
     return res;
 }
- 
+
 /**
  * @brief  Check filesystem status and print capacity info
  * @param  drive  Drive path e.g. "0:"
@@ -982,7 +982,7 @@ static void CheckMcuPwrStatus(void)
 {
     SysPwrLED_Output();
 }
- 
+
 /**
  * @brief   系统运行指示灯输出控制
  * @param   无
@@ -1116,28 +1116,6 @@ int8_t app_processor(void)
     //    // 获取BASE卡设备信息（设备信息预期不符则使用默认设备信息）
     //    GetDeviceInfo(&g_dev_info);
 
-    //    // 轮询查询子卡设备信息
-    //    for (uint8_t i=0; i<SUBDEV_NUM_MAX; i++) {
-    //       rs485_send_frame(i+1, 0x01, NULL, 0);
-    //    }
-    //    t_last = ticks_timx_get_counter();
-    //    while (t_off < 1000) {
-    //       /* 处理所有待处理的帧 */
-    //       pending_frames = rs485_get_pending_frames();
-    //
-    //       for (uint8_t i = 0; i < pending_frames; i++) {
-    //           /* 从队列中获取数据帧 */
-    //           if (rs485_recv_data(rs485buf, &len) == 0 && len > 0) {
-    //               /* 解析数据帧 */
-    //               rs485_parse_frame(rs485buf, len);
-    //               /* 可选：数据回环测试（自动添加帧头帧尾） */
-    //    //                rs485_send_data(rs485buf, len);
-    //           }
-    //       }
-    //       t_now = ticks_timx_get_counter();
-    //       t_off = t_now - t_last;
-    //    }
-
     uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMEX, SWR_BUFFER_SIZE);
     if (!frame_copy)
     {
@@ -1178,6 +1156,7 @@ int8_t app_processor(void)
         }
 
         ExternalIO_Process();
+        rs485_processor_poll();
 
         offline_processor(g_offline_mode);
 
