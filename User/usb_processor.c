@@ -437,7 +437,7 @@ static uint8_t build_device_report_payload(uint8_t *send_frame, uint32_t *send_l
 
     g_dev_info.IsConnected = (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED) ? 1 : 0;
     g_dev_info.SubDeviceNum = subdev_count;
-    device_info_update_disk_space();
+    // device_info_update_disk_space();
 
     memcpy(send_frame, &g_dev_info, sizeof(DeviceInfo));
     *send_len = sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * subdev_count;
@@ -483,6 +483,7 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     uint32_t send_len = 0;
 
     // 发送数据
+    device_info_update_disk_space();
     build_device_report_payload(send_frame, &send_len);
     FrameHeadInfo frame_head = create_default_frame_head(serial_num);
     UserDataHeadInfo user_head = create_user_data_head(DVS_INIT_CONNECT_OK,
