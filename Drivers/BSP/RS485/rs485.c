@@ -31,11 +31,11 @@ static void rs485_publish_frame(const uint8_t *data, uint16_t len)
     }
 
     s_ready_seq++;
-    __DMB();
+    // __DMB();
     memcpy(s_ready_buf, data, len);
     s_ready_len = len;
     s_ready_flag = 1U; /* overwrite old frame if not consumed */
-    __DMB();
+    // __DMB();
     s_ready_seq++;
 }
 
@@ -223,7 +223,7 @@ int8_t rs485_read_raw_frame(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
             continue;
         }
 
-        __DMB();
+        // __DMB();
         len = s_ready_len;
         if ((len == 0U) || (len > buf_size))
         {
@@ -231,7 +231,7 @@ int8_t rs485_read_raw_frame(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
             return -1;
         }
         memcpy(buf, s_ready_buf, len);
-        __DMB();
+        // __DMB();
         seq2 = s_ready_seq;
         if (seq1 == seq2)
         {

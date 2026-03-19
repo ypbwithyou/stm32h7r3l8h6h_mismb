@@ -5,8 +5,7 @@
 
 #define RS485_BAUDRATE (115200U)
 #define RS485_PROTO_MAX_PAYLOAD 128U
-#define RS485_SCAN_INTERVAL_MS 1000U
-#define RS485_SUBDEV_VALID_TIMEOUT_MS 5000U
+#define RS485_STARTUP_SCAN_INTERVAL_MS 100U
 #define RS485_SUBDEV_MAX 8U
 
 enum Event
@@ -36,5 +35,7 @@ void rs485_processor_poll(void);
 extern uint8_t g_subdev_valid[RS485_SUBDEV_MAX];
 extern uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX];
 uint8_t rs485_subdev_is_valid(uint8_t addr);
+void rs485_subdev_scan_reset(void);
+void rs485_subdev_scan_once(void);
 
 #endif

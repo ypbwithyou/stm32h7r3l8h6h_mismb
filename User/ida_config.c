@@ -574,7 +574,9 @@ int8_t IdaDeviceInit(void)
     OfflineRecordInit();
 
     test_filesystem();
-    // sd_file_speed_test();
+
+    rs485_subdev_scan_once();
+
     return RET_OK;
 }
 
@@ -1156,7 +1158,7 @@ int8_t app_processor(void)
         }
 
         ExternalIO_Process();
-        
+
         rs485_processor_poll();
 
         offline_processor(g_offline_mode);

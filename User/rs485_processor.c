@@ -50,6 +50,43 @@ uint8_t rs485_subdev_is_valid(uint8_t addr)
     return g_subdev_valid[addr - 1U];
 }
 
+void rs485_subdev_scan_reset(void)
+{
+    uint8_t i;
+
+    for (i = 0U; i < RS485_SUBDEV_MAX; i++)
+    {
+        g_subdev_valid[i] = 0U;
+        g_subdev_last_tick[i] = 0U;
+        memset(&g_SubDevicelnfo[i], 0, sizeof(SubDevicelnfo));
+    }
+}
+
+void rs485_subdev_scan_once(void)
+{
+    uint8_t addr;
+    uint32_t start_tick;
+    uint8_t frame[RS485_RX_BUF_LEN];
+    uint16_t frame_len;
+
+    rs485_subdev_scan_reset();
+
+    for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
+    {
+        usb_printf("rs485_send_frame DEVINFO_READ_REQ %d \n", addr);
+        (void)rs485_send_frame(addr, DEVINFO_READ_REQ, NULL, 0U);
+
+        start_tick = HAL_GetTick();
+        while ((HAL_GetTick() - start_tick) < RS485_STARTUP_SCAN_INTERVAL_MS)
+        {
+            if (rs485_recv_frame_poll(frame, sizeof(frame), &frame_len, 1U) == 0)
+            {
+                rs485_parse_frame(frame, frame_len);
+            }
+        }
+    }
+}
+
 int8_t rs485_build_frame(const rs485_packet_t *packet, uint8_t *out, uint16_t out_size, uint16_t *out_len)
 {
     uint16_t frame_len;
@@ -201,34 +238,8 @@ int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, const uint8_t *data, uint1
 
 void rs485_processor_poll(void)
 {
-    static uint32_t s_last_scan_tick = 0U;
-    static uint8_t s_next_scan_addr = RS485_SLAVE_ADDR_MIN;
-    uint32_t now_tick = HAL_GetTick();
-    uint8_t i;
     uint8_t frame[RS485_RX_BUF_LEN];
     uint16_t frame_len = 0U;
-
-    for (i = 0U; i < RS485_SUBDEV_MAX; i++)
-    {
-        if ((g_subdev_valid[i] != 0U) &&
-            ((now_tick - g_subdev_last_tick[i]) >= RS485_SUBDEV_VALID_TIMEOUT_MS))
-        {
-            g_subdev_valid[i] = 0U;
-            memset(&g_SubDevicelnfo[i], 0, sizeof(SubDevicelnfo));
-        }
-    }
-
-    if ((now_tick - s_last_scan_tick) >= RS485_SCAN_INTERVAL_MS)
-    {
-        usb_printf("rs485_send_frame DEVINFO_READ_REQ %d \n", s_next_scan_addr);
-        (void)rs485_send_frame(s_next_scan_addr, DEVINFO_READ_REQ, NULL, 0U);
-        s_next_scan_addr++;
-        if (s_next_scan_addr > RS485_SLAVE_ADDR_MAX)
-        {
-            s_next_scan_addr = RS485_SLAVE_ADDR_MIN;
-        }
-        s_last_scan_tick = now_tick;
-    }
 
     if (rs485_recv_frame_poll(frame, sizeof(frame), &frame_len, 1U) == 0)
     {
