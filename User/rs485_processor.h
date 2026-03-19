@@ -5,7 +5,9 @@
 
 #define RS485_BAUDRATE (115200U)
 #define RS485_PROTO_MAX_PAYLOAD 128U
-#define RS485_SCAN_INTERVAL_MS 3000U
+#define RS485_SCAN_INTERVAL_MS 1000U
+#define RS485_SUBDEV_VALID_TIMEOUT_MS 5000U
+#define RS485_SUBDEV_MAX 8U
 
 enum Event
 {
@@ -29,5 +31,10 @@ int8_t rs485_parse_packet(const uint8_t *frame, uint16_t frame_len, rs485_packet
 int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, const uint8_t *data, uint16_t len);
 void rs485_parse_frame(uint8_t *frame, uint16_t frame_len);
 void rs485_processor_poll(void);
+
+/* sub-device validity state by slave address 1..8 => index 0..7 */
+extern uint8_t g_subdev_valid[RS485_SUBDEV_MAX];
+extern uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX];
+uint8_t rs485_subdev_is_valid(uint8_t addr);
 
 #endif

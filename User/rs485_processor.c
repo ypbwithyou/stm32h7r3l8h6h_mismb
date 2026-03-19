@@ -4,6 +4,9 @@
 #include <string.h>
 #include "usbd_cdc_if.h"
 
+uint8_t g_subdev_valid[RS485_SUBDEV_MAX] = {0};
+uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX] = {0};
+
 static uint8_t rs485_xor_u8(const uint8_t *data, uint16_t len)
 {
     uint8_t x = 0U;
@@ -17,6 +20,34 @@ static uint8_t rs485_xor_u8(const uint8_t *data, uint16_t len)
         x ^= data[i];
     }
     return x;
+}
+
+static uint8_t rs485_subdev_payload_is_valid(uint8_t addr, const SubDevicelnfo *info)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX) || (info == NULL))
+    {
+        return 0U;
+    }
+
+    if ((info->SlotId < RS485_SLAVE_ADDR_MIN) || (info->SlotId > RS485_SLAVE_ADDR_MAX))
+    {
+        return 0U;
+    }
+    if (info->SerialNumber[0] == 0)
+    {
+        return 0U;
+    }
+
+    return 1U;
+}
+
+uint8_t rs485_subdev_is_valid(uint8_t addr)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    {
+        return 0U;
+    }
+    return g_subdev_valid[addr - 1U];
 }
 
 int8_t rs485_build_frame(const rs485_packet_t *packet, uint8_t *out, uint16_t out_size, uint16_t *out_len)
@@ -121,12 +152,16 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
     switch (pkt.function)
     {
     case DEVINFO_READ_REQ_ACK:
-
         usb_printf("rs485_parse_frame DEVINFO_READ_REQ_ACK %d \n", pkt.address);
-        
         if (pkt.data_len == sizeof(SubDevicelnfo))
         {
-            memcpy(&g_SubDevicelnfo[pkt.address - 1U], pkt.data, pkt.data_len);
+            const SubDevicelnfo *info = (const SubDevicelnfo *)pkt.data;
+            if (rs485_subdev_payload_is_valid(pkt.address, info))
+            {
+                memcpy(&g_SubDevicelnfo[pkt.address - 1U], info, sizeof(SubDevicelnfo));
+                g_subdev_valid[pkt.address - 1U] = 1U;
+                g_subdev_last_tick[pkt.address - 1U] = HAL_GetTick();
+            }
         }
         break;
     case DEVINFO_WRITE_REQ_ACK:
@@ -168,10 +203,22 @@ void rs485_processor_poll(void)
 {
     static uint32_t s_last_scan_tick = 0U;
     static uint8_t s_next_scan_addr = RS485_SLAVE_ADDR_MIN;
+    uint32_t now_tick = HAL_GetTick();
+    uint8_t i;
     uint8_t frame[RS485_RX_BUF_LEN];
     uint16_t frame_len = 0U;
 
-    if ((HAL_GetTick() - s_last_scan_tick) >= RS485_SCAN_INTERVAL_MS)
+    for (i = 0U; i < RS485_SUBDEV_MAX; i++)
+    {
+        if ((g_subdev_valid[i] != 0U) &&
+            ((now_tick - g_subdev_last_tick[i]) >= RS485_SUBDEV_VALID_TIMEOUT_MS))
+        {
+            g_subdev_valid[i] = 0U;
+            memset(&g_SubDevicelnfo[i], 0, sizeof(SubDevicelnfo));
+        }
+    }
+
+    if ((now_tick - s_last_scan_tick) >= RS485_SCAN_INTERVAL_MS)
     {
         usb_printf("rs485_send_frame DEVINFO_READ_REQ %d \n", s_next_scan_addr);
         (void)rs485_send_frame(s_next_scan_addr, DEVINFO_READ_REQ, NULL, 0U);
@@ -180,7 +227,7 @@ void rs485_processor_poll(void)
         {
             s_next_scan_addr = RS485_SLAVE_ADDR_MIN;
         }
-        s_last_scan_tick = HAL_GetTick();
+        s_last_scan_tick = now_tick;
     }
 
     if (rs485_recv_frame_poll(frame, sizeof(frame), &frame_len, 1U) == 0)
