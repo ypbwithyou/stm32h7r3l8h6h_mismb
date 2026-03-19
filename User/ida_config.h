@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // 文件路径定义
-#define DEVICE_INFO_FILE "0:/DeviceInfo.ini"
+ 
 #define OFFLINE_SCHEDULE_FILE "0:/OfflineCfgSchedule.txt"
 #define RECORD_FILE_PATH "0:/RecordDataFiles"
 

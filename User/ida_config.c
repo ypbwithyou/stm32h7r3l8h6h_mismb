@@ -600,6 +600,7 @@ int8_t IdaDeviceInit(void)
     }
 
     soft_time_init_after_mount();
+    usb_device_info_reload_from_file();
     check_filesystem_status("0:");
 
     OfflineRecordInit();

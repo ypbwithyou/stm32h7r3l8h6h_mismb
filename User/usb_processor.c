@@ -20,6 +20,7 @@
 #include "./FATFS/exfuns/fattester.h"
 #include "offline_processor.h"
 #include "./BSP/MMC/mmc_sdcard.h"
+#include "./FATFS/source/ff.h"
 
 #include "dataType.h"
 
@@ -97,8 +98,218 @@ struct UserData *g_user_data;
 
 /*********************************************************************************/
 
+#define DEVICE_INFO_BIN_PATH "0:/DeviceInfo.bin"
+#define DEVICE_INFO_BIN_MAGIC (0x31495644UL) /* "DVI1" */
+#define DEVICE_INFO_BIN_VERSION (1U)
+
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint32_t payload_len;
+    uint32_t payload_crc32;
+} DeviceInfoBinHeader;
+
+static void copy_text_field(char *dst, uint32_t dst_size, const char *src, uint32_t src_size)
+{
+    uint32_t i;
+
+    if ((dst == NULL) || (src == NULL) || (dst_size == 0U))
+    {
+        return;
+    }
+
+    for (i = 0U; i < (dst_size - 1U); i++)
+    {
+        if ((i >= src_size) || (src[i] == '\0'))
+        {
+            break;
+        }
+        dst[i] = src[i];
+    }
+    dst[i] = '\0';
+}
+
+static void device_info_set_defaults(void)
+{
+    memset(&g_dev_info, 0, sizeof(g_dev_info));
+    strcpy((char *)g_dev_info.Version, DEFAULT_VERSION);
+    strcpy((char *)g_dev_info.DeviceName, DEFAULT_DEVICENAME);
+    strcpy((char *)g_dev_info.AccessCode, DEFAULT_ACCESSCODE);
+    strcpy((char *)g_dev_info.SerialNumber, DEFAULT_SERIALNUMBER);
+    g_dev_info.DeviceType = DEFAULT_DEVICETYPE;
+}
+
+static int8_t device_info_save_to_bin(const DeviceInfo *info)
+{
+    FIL fil;
+    FRESULT res;
+    UINT bw = 0U;
+    DeviceInfoBinHeader hdr;
+    uint32_t crc32;
+
+    if (info == NULL)
+    {
+        return RET_ERROR;
+    }
+
+    crc32 = (uint32_t)make_crc32((unsigned char *)info, (unsigned int)sizeof(DeviceInfo));
+    hdr.magic = DEVICE_INFO_BIN_MAGIC;
+    hdr.version = DEVICE_INFO_BIN_VERSION;
+    hdr.reserved = 0U;
+    hdr.payload_len = sizeof(DeviceInfo);
+    hdr.payload_crc32 = crc32;
+
+    res = f_open(&fil, DEVICE_INFO_BIN_PATH, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK)
+    {
+        return RET_ERROR;
+    }
+
+    res = f_write(&fil, &hdr, sizeof(hdr), &bw);
+    if ((res == FR_OK) && (bw != (UINT)sizeof(hdr)))
+    {
+        res = FR_DISK_ERR;
+    }
+    if (res == FR_OK)
+    {
+        res = f_write(&fil, info, sizeof(DeviceInfo), &bw);
+    }
+    if ((res == FR_OK) && (bw != (UINT)sizeof(DeviceInfo)))
+    {
+        res = FR_DISK_ERR;
+    }
+    if (res == FR_OK)
+    {
+        (void)f_sync(&fil);
+    }
+    (void)f_close(&fil);
+    return (res == FR_OK) ? RET_OK : RET_ERROR;
+}
+
+static int8_t device_info_load_from_bin(DeviceInfo *info)
+{
+    FIL fil;
+    FRESULT res;
+    UINT br = 0U;
+    DeviceInfoBinHeader hdr;
+    uint32_t crc32;
+
+    if (info == NULL)
+    {
+        return RET_ERROR;
+    }
+
+    res = f_open(&fil, DEVICE_INFO_BIN_PATH, FA_READ);
+    if (res != FR_OK)
+    {
+        return RET_ERROR;
+    }
+
+    if (f_size(&fil) == sizeof(DeviceInfo))
+    {
+        /* Legacy format: payload only */
+        res = f_read(&fil, info, sizeof(DeviceInfo), &br);
+        (void)f_close(&fil);
+        if ((res != FR_OK) || (br != (UINT)sizeof(DeviceInfo)))
+        {
+            return RET_ERROR;
+        }
+    }
+    else
+    {
+        res = f_read(&fil, &hdr, sizeof(hdr), &br);
+        if ((res != FR_OK) || (br != (UINT)sizeof(hdr)))
+        {
+            (void)f_close(&fil);
+            return RET_ERROR;
+        }
+        if ((hdr.magic != DEVICE_INFO_BIN_MAGIC) ||
+            (hdr.version != DEVICE_INFO_BIN_VERSION) ||
+            (hdr.payload_len != sizeof(DeviceInfo)))
+        {
+            (void)f_close(&fil);
+            return RET_ERROR;
+        }
+
+        res = f_read(&fil, info, sizeof(DeviceInfo), &br);
+        (void)f_close(&fil);
+        if ((res != FR_OK) || (br != (UINT)sizeof(DeviceInfo)))
+        {
+            return RET_ERROR;
+        }
+
+        crc32 = (uint32_t)make_crc32((unsigned char *)info, (unsigned int)sizeof(DeviceInfo));
+        if (crc32 != hdr.payload_crc32)
+        {
+            return RET_ERROR;
+        }
+    }
+
+    info->Version[STR_32 - 1] = '\0';
+    info->DeviceName[STR_32 - 1] = '\0';
+    info->AccessCode[STR_32 - 1] = '\0';
+    info->SerialNumber[STR_32 - 1] = '\0';
+    return RET_OK;
+}
+
+void usb_device_info_reload_from_file(void)
+{
+    if (device_info_load_from_bin(&g_dev_info) != RET_OK)
+    {
+        device_info_set_defaults();
+        (void)device_info_save_to_bin(&g_dev_info);
+    }
+}
+
+static void device_info_update_from_detail(const DeviceDetailInfo *dev_detail)
+{
+    if (dev_detail == NULL)
+    {
+        return;
+    }
+
+    copy_text_field((char *)g_dev_info.Version, STR_32, dev_detail->SoftwareVersion, STR_32);
+    copy_text_field((char *)g_dev_info.DeviceName, STR_32, dev_detail->DeviceName, STR_32);
+    copy_text_field((char *)g_dev_info.AccessCode, STR_32, dev_detail->AccessCode, STR_32);
+    copy_text_field((char *)g_dev_info.SerialNumber, STR_32, dev_detail->SerialNumber, STR_32);
+    g_dev_info.DeviceType = dev_detail->DeviceType;
+}
+
+static void device_info_update_disk_space(void)
+{
+    FATFS *fs = NULL;
+    DWORD fre_clust = 0U;
+    DWORD fre_sect;
+    DWORD tot_sect;
+    FRESULT res;
+    uint32_t sector_size;
+
+    res = f_getfree("0:", &fre_clust, &fs);
+    if ((res != FR_OK) || (fs == NULL) || (fs->n_fatent <= 2U))
+    {
+        g_dev_info.fTotalDiskSapce = 0.0f;
+        g_dev_info.fFreeDiskSpace = 0.0f;
+        return;
+    }
+
+#if FF_MAX_SS != FF_MIN_SS
+    sector_size = (uint32_t)fs->ssize;
+#else
+    sector_size = (uint32_t)FF_MAX_SS;
+#endif
+
+    tot_sect = (DWORD)(fs->n_fatent - 2U) * (DWORD)fs->csize;
+    fre_sect = fre_clust * (DWORD)fs->csize;
+
+    g_dev_info.fTotalDiskSapce = ((float)((uint64_t)tot_sect * (uint64_t)sector_size)) / 1024.0f;
+    g_dev_info.fFreeDiskSpace = ((float)((uint64_t)fre_sect * (uint64_t)sector_size)) / 1024.0f;
+}
+
 void usb_init(void)
 {
+    device_info_set_defaults();
 
 #if UPGRADE_ON
     // ────────────────────────────────────────────────
@@ -224,13 +435,9 @@ static uint8_t build_device_report_payload(uint8_t *send_frame, uint32_t *send_l
         subdev_count = 1U;
     }
 
-    strcpy((char *)&g_dev_info.Version[0], "1.0.0.0_20260114");
-    strcpy((char *)&g_dev_info.DeviceName[0], Name_Mini_SliceMicro);
-    strcpy((char *)&g_dev_info.AccessCode[0], "NTS2026");
-    strcpy((char *)&g_dev_info.SerialNumber[0], "MISMB102501001");
-    g_dev_info.DeviceType = Mini_SliceMicro;
     g_dev_info.IsConnected = (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED) ? 1 : 0;
     g_dev_info.SubDeviceNum = subdev_count;
+    device_info_update_disk_space();
 
     memcpy(send_frame, &g_dev_info, sizeof(DeviceInfo));
     *send_len = sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * subdev_count;
@@ -311,17 +518,10 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHea
         return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
     }
     DeviceDetailInfo *dev_detail = (DeviceDetailInfo *)data_in;
-    DeviceInfo dev_info;
     // 拷贝对应字段
-    strcpy((char *)g_dev_info.Version, (const char *)dev_detail->SoftwareVersion);
-    strcpy((char *)g_dev_info.DeviceName, (const char *)dev_detail->DeviceName);
-    strcpy((char *)g_dev_info.AccessCode, (const char *)dev_detail->AccessCode);
-    strcpy((char *)g_dev_info.SerialNumber, (const char *)dev_detail->SerialNumber);
-    g_dev_info.DeviceType = dev_detail->DeviceType;
-
-    // 更新设备信息文件
-    // write_device_info_file(g_dev_info);
-
+    device_info_update_from_detail(dev_detail);
+    (void)device_info_save_to_bin(&g_dev_info);
+ 
     return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
 }
 

@@ -92,6 +92,7 @@ extern DeviceInfo g_dev_info;
 extern SubDevicelnfo g_SubDevicelnfo[SUBDEV_NUM_MAX];
 /*******************************************************************************/
 void usb_init(void);
+void usb_device_info_reload_from_file(void);
 
 void SystemStatusInit(void);
 
