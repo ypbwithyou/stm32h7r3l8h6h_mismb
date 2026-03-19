@@ -1622,6 +1622,7 @@ int read_device_info_file(DeviceInfo *dev_info_data)
     usb_printf("get device information OK!", NULL);
     return RET_OK;
 }
+
 /* write device_info_file */
 int write_device_info_file(DeviceInfo dev_data)
 {

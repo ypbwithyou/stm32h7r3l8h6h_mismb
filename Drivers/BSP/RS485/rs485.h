@@ -36,6 +36,9 @@
 /* Protocol delimiters */
 #define RS485_FRAME_HEAD 0x3CU
 #define RS485_FRAME_END  0x3EU
+#define RS485_MASTER_ADDR 0U
+#define RS485_SLAVE_ADDR_MIN 1U
+#define RS485_SLAVE_ADDR_MAX 8U
 
 /* Buffers/timeout */
 #define RS485_RX_BUF_LEN        256U

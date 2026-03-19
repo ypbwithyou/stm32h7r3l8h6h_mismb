@@ -2,6 +2,7 @@
 #include "./BSP/RS485/rs485.h"
 #include "usb_processor.h"
 #include <string.h>
+#include "usbd_cdc_if.h"
 
 static uint8_t rs485_xor_u8(const uint8_t *data, uint16_t len)
 {
@@ -42,8 +43,9 @@ int8_t rs485_build_frame(const rs485_packet_t *packet, uint8_t *out, uint16_t ou
     out[0] = RS485_FRAME_HEAD;
     out[1] = packet->address;
     out[2] = packet->function;
-    out[3] = (uint8_t)(packet->data_len >> 8);
-    out[4] = (uint8_t)(packet->data_len & 0xFFU);
+    /* little-endian length: low byte first, then high byte */
+    out[3] = (uint8_t)(packet->data_len & 0xFFU);
+    out[4] = (uint8_t)(packet->data_len >> 8);
 
     if ((packet->data_len > 0U) && (packet->data != NULL))
     {
@@ -77,7 +79,8 @@ int8_t rs485_parse_packet(const uint8_t *frame, uint16_t frame_len, rs485_packet
         return -1;
     }
 
-    data_len = (uint16_t)(((uint16_t)frame[3] << 8) | frame[4]);
+    /* little-endian length: low byte first, then high byte */
+    data_len = (uint16_t)(((uint16_t)frame[4] << 8) | frame[3]);
     if (data_len > RS485_PROTO_MAX_PAYLOAD)
     {
         return -1;
@@ -110,7 +113,7 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
         return;
     }
 
-    if ((pkt.address == 0U) || (pkt.address > SUBDEV_NUM_MAX))
+    if ((pkt.address < RS485_SLAVE_ADDR_MIN) || (pkt.address > RS485_SLAVE_ADDR_MAX))
     {
         return;
     }
@@ -118,6 +121,9 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
     switch (pkt.function)
     {
     case DEVINFO_READ_REQ_ACK:
+
+        usb_printf("rs485_parse_frame DEVINFO_READ_REQ_ACK %d \n", pkt.address);
+        
         if (pkt.data_len == sizeof(SubDevicelnfo))
         {
             memcpy(&g_SubDevicelnfo[pkt.address - 1U], pkt.data, pkt.data_len);
@@ -140,6 +146,10 @@ int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, const uint8_t *data, uint1
     {
         return -1;
     }
+    if ((dev_num < RS485_SLAVE_ADDR_MIN) || (dev_num > RS485_SLAVE_ADDR_MAX))
+    {
+        return -1;
+    }
 
     pkt.address = dev_num;
     pkt.function = cmd;
@@ -156,8 +166,23 @@ int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, const uint8_t *data, uint1
 
 void rs485_processor_poll(void)
 {
+    static uint32_t s_last_scan_tick = 0U;
+    static uint8_t s_next_scan_addr = RS485_SLAVE_ADDR_MIN;
     uint8_t frame[RS485_RX_BUF_LEN];
     uint16_t frame_len = 0U;
+
+    if ((HAL_GetTick() - s_last_scan_tick) >= RS485_SCAN_INTERVAL_MS)
+    {
+        usb_printf("rs485_send_frame DEVINFO_READ_REQ %d \n", s_next_scan_addr);
+        (void)rs485_send_frame(s_next_scan_addr, DEVINFO_READ_REQ, NULL, 0U);
+        s_next_scan_addr++;
+        if (s_next_scan_addr > RS485_SLAVE_ADDR_MAX)
+        {
+            s_next_scan_addr = RS485_SLAVE_ADDR_MIN;
+        }
+        s_last_scan_tick = HAL_GetTick();
+    }
+
     if (rs485_recv_frame_poll(frame, sizeof(frame), &frame_len, 1U) == 0)
     {
         rs485_parse_frame(frame, frame_len);

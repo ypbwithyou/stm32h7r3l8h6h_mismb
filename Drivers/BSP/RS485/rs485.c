@@ -14,6 +14,7 @@ static uint32_t s_last_rx_tick = 0U;
 static uint8_t s_ready_buf[RS485_RX_BUF_LEN];
 static uint16_t s_ready_len = 0U;
 static uint8_t s_ready_flag = 0U;
+static volatile uint32_t s_ready_seq = 0U; /* even: stable, odd: writing */
 
 static void rs485_reset_parser(void)
 {
@@ -29,11 +30,13 @@ static void rs485_publish_frame(const uint8_t *data, uint16_t len)
         return;
     }
 
-    __disable_irq();
+    s_ready_seq++;
+    __DMB();
     memcpy(s_ready_buf, data, len);
     s_ready_len = len;
     s_ready_flag = 1U; /* overwrite old frame if not consumed */
-    __enable_irq();
+    __DMB();
+    s_ready_seq++;
 }
 
 void rs485_init(uint32_t baudrate)
@@ -135,7 +138,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
         if ((s_rx_len >= 5U) && (s_expected_len == 0U))
         {
-            uint16_t payload_len = (uint16_t)(((uint16_t)s_rx_buf[3] << 8) | s_rx_buf[4]);
+            uint16_t payload_len = (uint16_t)(((uint16_t)s_rx_buf[4] << 8) | s_rx_buf[3]);
             s_expected_len = (uint16_t)(7U + payload_len);
             if ((s_expected_len < 7U) || (s_expected_len > RS485_RX_BUF_LEN))
             {
@@ -197,43 +200,61 @@ int8_t rs485_recv_frame_poll(uint8_t *buf, uint16_t buf_size, uint16_t *out_len,
 
 int8_t rs485_read_raw_frame(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
 {
+    uint32_t seq1;
+    uint32_t seq2;
+    uint16_t len;
+
     if ((buf == NULL) || (out_len == NULL))
     {
         return -1;
     }
 
-    __disable_irq();
-    if ((s_ready_flag == 0U) || (s_ready_len == 0U) || (s_ready_len > buf_size))
+    if (s_ready_flag == 0U)
     {
-        __enable_irq();
         *out_len = 0U;
         return -1;
     }
 
-    memcpy(buf, s_ready_buf, s_ready_len);
-    *out_len = s_ready_len;
+    while (1)
+    {
+        seq1 = s_ready_seq;
+        if (seq1 & 1U)
+        {
+            continue;
+        }
+
+        __DMB();
+        len = s_ready_len;
+        if ((len == 0U) || (len > buf_size))
+        {
+            *out_len = 0U;
+            return -1;
+        }
+        memcpy(buf, s_ready_buf, len);
+        __DMB();
+        seq2 = s_ready_seq;
+        if (seq1 == seq2)
+        {
+            break;
+        }
+    }
+
+    *out_len = len;
     s_ready_flag = 0U;
     s_ready_len = 0U;
-    __enable_irq();
 
     return 0;
 }
 
 uint8_t rs485_get_pending_frames(void)
 {
-    uint8_t flag;
-    __disable_irq();
-    flag = s_ready_flag;
-    __enable_irq();
-    return flag ? 1U : 0U;
+    return s_ready_flag ? 1U : 0U;
 }
 
 void rs485_clear_pending_frames(void)
 {
-    __disable_irq();
     s_ready_flag = 0U;
     s_ready_len = 0U;
-    __enable_irq();
 }
 
 void rs485_send_data(uint8_t *buf, uint8_t len)

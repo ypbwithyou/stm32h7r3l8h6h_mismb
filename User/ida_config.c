@@ -1156,6 +1156,7 @@ int8_t app_processor(void)
         }
 
         ExternalIO_Process();
+        
         rs485_processor_poll();
 
         offline_processor(g_offline_mode);
