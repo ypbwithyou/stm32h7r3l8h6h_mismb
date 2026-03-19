@@ -136,6 +136,21 @@ static void device_info_set_defaults(void)
     g_dev_info.DeviceType = DEFAULT_DEVICETYPE;
 }
 
+static void device_info_print_detail(const char *tag)
+{
+    const char *name = (tag == NULL) ? "g_dev_info" : tag;
+
+    usb_printf("[%s] Version      : %s\r\n", name, g_dev_info.Version);
+    usb_printf("[%s] DeviceName   : %s\r\n", name, g_dev_info.DeviceName);
+    usb_printf("[%s] AccessCode   : %s\r\n", name, g_dev_info.AccessCode);
+    usb_printf("[%s] SerialNumber : %s\r\n", name, g_dev_info.SerialNumber);
+    usb_printf("[%s] DeviceType   : %ld\r\n", name, (long)g_dev_info.DeviceType);
+    usb_printf("[%s] IsConnected  : %ld\r\n", name, (long)g_dev_info.IsConnected);
+    usb_printf("[%s] SubDeviceNum : %u\r\n", name, (unsigned int)g_dev_info.SubDeviceNum);
+    usb_printf("[%s] TotalDiskKB  : %.1f\r\n", name, g_dev_info.fTotalDiskSapce);
+    usb_printf("[%s] FreeDiskKB   : %.1f\r\n", name, g_dev_info.fFreeDiskSpace);
+}
+
 static int8_t device_info_save_to_bin(const DeviceInfo *info)
 {
     FIL fil;
@@ -255,6 +270,11 @@ void usb_device_info_reload_from_file(void)
     {
         device_info_set_defaults();
         (void)device_info_save_to_bin(&g_dev_info);
+        device_info_print_detail("DeviceInfo-Default");
+    }
+    else
+    {
+        device_info_print_detail("DeviceInfo-Load");
     }
 }
 
@@ -487,6 +507,9 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHea
     // 拷贝对应字段
     device_info_update_from_detail(dev_detail);
     (void)device_info_save_to_bin(&g_dev_info);
+    device_info_print_detail("DeviceInfo-Update");
+
+    
 
     return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
 }
