@@ -79,7 +79,7 @@ void rs485_subdev_scan_once(void)
         start_tick = HAL_GetTick();
         while ((HAL_GetTick() - start_tick) < RS485_STARTUP_SCAN_INTERVAL_MS)
         {
-            if (rs485_recv_frame_poll(frame, sizeof(frame), &frame_len, 1U) == 0)
+            if (rs485_read_raw_frame(frame, sizeof(frame), &frame_len) == 0)
             {
                 rs485_parse_frame(frame, frame_len);
             }
@@ -241,7 +241,7 @@ void rs485_processor_poll(void)
     uint8_t frame[RS485_RX_BUF_LEN];
     uint16_t frame_len = 0U;
 
-    if (rs485_recv_frame_poll(frame, sizeof(frame), &frame_len, 1U) == 0)
+    if (rs485_read_raw_frame(frame, sizeof(frame), &frame_len) == 0)
     {
         rs485_parse_frame(frame, frame_len);
     }
