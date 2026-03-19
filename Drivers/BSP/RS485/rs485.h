@@ -3,6 +3,7 @@
 
 #include "./SYSTEM/sys/sys.h"
 #include <stdint.h>
+#include "dataType.h"
 
 /* GPIO/UART mapping */
 #define RS485_RE_GPIO_PORT                  GPIOF

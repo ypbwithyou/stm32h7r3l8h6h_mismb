@@ -437,7 +437,7 @@ static void CheckMcuPwrStatus(void);
 static void CheckMcuRunStatus(void);
 
 static int8_t format_emmc(void);
-static int8_t test_filesystem(void);
+ 
 
 FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retries);
 int8_t check_filesystem_status(const TCHAR *drive);
@@ -608,7 +608,7 @@ int8_t IdaDeviceInit(void)
     test_filesystem();
 
     rs485_subdev_scan_once();
-
+    // IdaGetDiskSpaceKB(&g_dev_info.fTotalDiskSapce, &g_dev_info.fFreeDiskSpace);
     return RET_OK;
 }
 
@@ -719,7 +719,7 @@ static int8_t format_emmc(void)
 /**
  * @brief 创建测试文件和目录，验证文件系统功能
  */
-static int8_t test_filesystem(void)
+  int8_t test_filesystem(void)
 {
     FRESULT fres; /* FatFs function result */
     FIL fil;
@@ -859,6 +859,10 @@ static int8_t test_filesystem(void)
         usb_printf("  Used clusters:  %lu\n", total_clusters - free_clusters);
         usb_printf("  Total capacity: %llu MB\n", total_mb);
         usb_printf("  Free space:     %llu MB\n", free_mb);
+
+        g_dev_info.fTotalDiskSapce = total_mb * 1024.0;
+        g_dev_info.fFreeDiskSpace = free_mb * 1024.0;
+
         if (total_clusters > 0)
         {
             usb_printf("  Usage:          %.1f%%\n",

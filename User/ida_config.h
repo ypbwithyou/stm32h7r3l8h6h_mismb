@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // 文件路径定义
- 
+
 #define OFFLINE_SCHEDULE_FILE "0:/OfflineCfgSchedule.txt"
 #define RECORD_FILE_PATH "0:/RecordDataFiles"
 
@@ -68,6 +68,7 @@ int8_t app_processor(void);
 int8_t SoftTimeSyncFromNanoSecond(int64_t nano_second);
 uint32_t SoftTimeGetEpochSecond(void);
 uint64_t SoftTimeGetEpochNanosecond(void);
-int8_t IdaGetDiskSpaceKB(float *total_kb, float *free_kb);
+ 
+int8_t test_filesystem(void);
 
 #endif /* __IDA_CONFIG_H */

@@ -87,11 +87,6 @@ static const USB_ProtocoItems protocol_getdata[] =
 
 USBD_HandleTypeDef g_usbd_handle = {0};
 
-// 主卡设备信息
-DeviceInfo g_dev_info;
-// 子卡设备信息
-SubDevicelnfo g_SubDevicelnfo[SUBDEV_NUM_MAX];
-
 uint64_t g_reset_time = 0;
 
 struct UserData *g_user_data;
@@ -407,7 +402,6 @@ static uint8_t build_device_report_payload(uint8_t *send_frame, uint32_t *send_l
 
     g_dev_info.IsConnected = (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED) ? 1 : 0;
     g_dev_info.SubDeviceNum = subdev_count;
-    // device_info_update_disk_space();
 
     memcpy(send_frame, &g_dev_info, sizeof(DeviceInfo));
     *send_len = sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * subdev_count;
@@ -453,12 +447,8 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     uint32_t send_len = 0;
 
     // 发送数据
-    // device_info_update_disk_space();
     // IdaGetDiskSpaceKB(&g_dev_info.fTotalDiskSapce, &g_dev_info.fFreeDiskSpace);
-    // float total_kb;
-    // float free_kb;
-    // IdaGetDiskSpaceKB(&total_kb, &free_kb);
-
+    test_filesystem();
     build_device_report_payload(send_frame, &send_len);
     FrameHeadInfo frame_head = create_default_frame_head(serial_num);
     UserDataHeadInfo user_head = create_user_data_head(DVS_INIT_CONNECT_OK,
