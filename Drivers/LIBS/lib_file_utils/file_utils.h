@@ -75,4 +75,6 @@ char *format_date_time(DWORD date, DWORD time, char *buf, uint32_t buf_size);
 
 int32_t f_write_dma_safe(FIL *fil, const uint8_t *src, uint32_t len, UINT *bw_total);
 
+int8_t IdaGetDiskSpaceKB(float *total_kb, float *free_kb);
+
 #endif /* __FILE_UTILS_H__ */

@@ -68,5 +68,6 @@ int8_t app_processor(void);
 int8_t SoftTimeSyncFromNanoSecond(int64_t nano_second);
 uint32_t SoftTimeGetEpochSecond(void);
 uint64_t SoftTimeGetEpochNanosecond(void);
+int8_t IdaGetDiskSpaceKB(float *total_kb, float *free_kb);
 
 #endif /* __IDA_CONFIG_H */

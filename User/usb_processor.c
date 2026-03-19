@@ -277,36 +277,6 @@ static void device_info_update_from_detail(const DeviceDetailInfo *dev_detail)
     g_dev_info.DeviceType = dev_detail->DeviceType;
 }
 
-static void device_info_update_disk_space(void)
-{
-    FATFS *fs = NULL;
-    DWORD fre_clust = 0U;
-    DWORD fre_sect;
-    DWORD tot_sect;
-    FRESULT res;
-    uint32_t sector_size;
-
-    res = f_getfree("0:", &fre_clust, &fs);
-    if ((res != FR_OK) || (fs == NULL) || (fs->n_fatent <= 2U))
-    {
-        g_dev_info.fTotalDiskSapce = 0.0f;
-        g_dev_info.fFreeDiskSpace = 0.0f;
-        return;
-    }
-
-#if FF_MAX_SS != FF_MIN_SS
-    sector_size = (uint32_t)fs->ssize;
-#else
-    sector_size = (uint32_t)FF_MAX_SS;
-#endif
-
-    tot_sect = (DWORD)(fs->n_fatent - 2U) * (DWORD)fs->csize;
-    fre_sect = fre_clust * (DWORD)fs->csize;
-
-    g_dev_info.fTotalDiskSapce = ((float)((uint64_t)tot_sect * (uint64_t)sector_size)) / 1024.0f;
-    g_dev_info.fFreeDiskSpace = ((float)((uint64_t)fre_sect * (uint64_t)sector_size)) / 1024.0f;
-}
-
 void usb_init(void)
 {
     device_info_set_defaults();
@@ -450,7 +420,7 @@ static uint32_t USB_DetectPeriod(void)
     uint8_t send_frame[sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * SUBDEV_NUM_MAX];
     uint32_t send_len = 0;
 
-      // 发送数据
+    // 发送数据
     build_device_report_payload(send_frame, &send_len);
     FrameHeadInfo frame_head = create_default_frame_head(serial_num);
     UserDataHeadInfo user_head = create_user_data_head(DVS_INIT_DETECT,
@@ -483,7 +453,12 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     uint32_t send_len = 0;
 
     // 发送数据
-    device_info_update_disk_space();
+    // device_info_update_disk_space();
+    // IdaGetDiskSpaceKB(&g_dev_info.fTotalDiskSapce, &g_dev_info.fFreeDiskSpace);
+    // float total_kb;
+    // float free_kb;
+    // IdaGetDiskSpaceKB(&total_kb, &free_kb);
+
     build_device_report_payload(send_frame, &send_len);
     FrameHeadInfo frame_head = create_default_frame_head(serial_num);
     UserDataHeadInfo user_head = create_user_data_head(DVS_INIT_CONNECT_OK,
@@ -522,7 +497,7 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHea
     // 拷贝对应字段
     device_info_update_from_detail(dev_detail);
     (void)device_info_save_to_bin(&g_dev_info);
- 
+
     return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
 }
 
@@ -1625,5 +1600,3 @@ FRESULT clear_file_content(const char *path)
     res = ((res == FR_NO_FILE) || (res == FR_OK)) ? FR_OK : res;
     return res;
 }
- 
- 

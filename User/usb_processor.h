@@ -101,5 +101,6 @@ void USB_Display_All(uint32_t run_flag);
 void IdaProcessor(void);
 
 void on_frame(uint8_t *frame, uint32_t frame_len);
- 
+
+
 #endif /* __USB_PROCESSOR_H */
