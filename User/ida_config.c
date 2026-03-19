@@ -681,116 +681,7 @@ static int8_t format_emmc(void)
     usb_printf("[FatFs] === Format complete ===\r\n");
     return 0;
 }
-
-// /**
-//  *
-//  * @warning 这会删除所有数据！
-//  */
-// static int8_t format_sd_card(void)
-// {
-//     FRESULT fres;  /* FatFs函数返回结果 */
-//     MKFS_PARM opt; /* 格式化参数 */
-//     const uint8_t work_buffer[512];
-
-//     printf("\n=== 格式化SD卡 ===\n");
-//     printf("警告：这将删除所有数据！\n");
-
-//     /* 配置格式化参数 */
-//     memset(&opt, 0, sizeof(opt));
-//     opt.fmt = FM_FAT32; /* 文件系统类型：FAT32 */
-//     opt.n_fat = 1;      /* FAT表数量：1 */
-//     opt.align = 0;      /* 对齐：自动 */
-//     opt.n_root = 0;     /* 根目录条目数：0（FAT32自动计算） */
-
-//     /* 获取SD卡信息 */
-//     DSTATUS status = disk_initialize(0);
-//     if (status != 0)
-//     {
-//         printf("磁盘初始化失败\n");
-//         return -1;
-//     }
-
-//     DWORD sector_count = 0;
-//     DRESULT res = disk_ioctl(0, GET_SECTOR_COUNT, &sector_count);
-//     if (res != RES_OK)
-//     {
-//         printf("获取扇区数量失败\n");
-//         return -1;
-//     }
-
-//     printf("SD卡总扇区数: %u\n", sector_count);
-//     printf("总容量: %.2f GB\n", (float)sector_count * 512.0f / 1024.0f / 1024.0f / 1024.0f);
-
-//     /* 自动选择簇大小 */
-//     if (sector_count > 66600)
-//     {                       /* > 32MB */
-//         opt.au_size = 4096; /* 4KB簇大小 */
-//     }
-//     if (sector_count > 532480)
-//     {                       /* > 260MB */
-//         opt.au_size = 8192; /* 8KB簇大小 */
-//     }
-//     if (sector_count > 16777216)
-//     {                        /* > 8GB */
-//         opt.au_size = 16384; /* 16KB簇大小 */
-//     }
-
-//     printf("使用簇大小: %u 字节\n", opt.au_size);
-
-//     /* 执行格式化 */
-//     printf("正在格式化...\n");
-//     fres = f_mkfs("0:", &opt, (void *)work_buffer, sizeof(work_buffer));
-//     //    fres = f_mkfs("0:", &opt, NULL, 0);
-
-//     if (fres == FR_OK)
-//     {
-//         printf("格式化成功！\n");
-
-//         /* 重新挂载 */
-//         f_mount(NULL, "0:", 0); // 卸载
-//         HAL_Delay(100);
-//         fres = f_mount(fs[0], "0:", 1);
-
-//         if (fres == FR_OK)
-//         {
-//             printf("格式化后重新挂载成功！\n");
-//             return 0;
-//         }
-//         else
-//         {
-//             printf("重新挂载失败: %d\n", fres);
-//             return -1;
-//         }
-//     }
-//     else
-//     {
-//         printf("格式化失败: %d\n", fres);
-
-//         if (fres == FR_DISK_ERR)
-//         {
-//             printf("磁盘错误\n");
-//         }
-//         else if (fres == FR_NOT_READY)
-//         {
-//             printf("磁盘未准备好\n");
-//         }
-//         else if (fres == FR_WRITE_PROTECTED)
-//         {
-//             printf("磁盘写保护\n");
-//         }
-//         else if (fres == FR_INVALID_DRIVE)
-//         {
-//             printf("无效驱动器\n");
-//         }
-//         else if (fres == FR_MKFS_ABORTED)
-//         {
-//             printf("格式化被中止\n");
-//         }
-
-//         return -1;
-//     }
-// }
-
+ 
 /**
  * @brief 创建测试文件和目录，验证文件系统功能
  */
@@ -1020,79 +911,7 @@ FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retrie
                max_retries, res);
     return res;
 }
-
-// /**
-//  * @brief 安全挂载文件系统
-//  * @param drive 驱动器号
-//  * @param fs 文件系统对象
-//  * @param max_retries 最大重试次数
-//  * @return FRESULT 结果
-//  */
-// FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retries)
-// {
-//     FRESULT res;
-//     uint8_t retry = 0;
-
-//     while (retry < max_retries)
-//     {
-//         printf("第 %d 次尝试挂载文件系统...\n", retry + 1);
-
-//         // 检查SD卡状态
-//         printf("挂载前SD卡状态: ");
-//         sd_get_status();
-
-//         res = f_mount(fs, drive, opt);
-//         if (res == FR_OK)
-//         {
-//             return res;
-//         }
-
-//         retry++;
-//         printf("挂载文件系统失败: %d, 重试 %d/%d\n", res, retry, max_retries);
-
-//         // 重新初始化SD卡
-//         if (mmc_init() != 0)
-//         {
-//             printf("SD卡重新初始化失败\n");
-//         }
-//         else
-//         {
-//             printf("SD卡重新初始化成功\n");
-//             // 检查初始化后的SD卡状态
-//             printf("重新初始化后SD卡状态: ");
-//             sd_get_status();
-//         }
-
-//         HAL_Delay(100);
-//     }
-
-//     return res;
-// }
-
-// /**
-//  * @brief 检查文件系统状态
-//  * @param drive 驱动器号
-//  * @return 0 正常, -1 异常
-//  */
-// int8_t check_filesystem_status(const TCHAR *drive)
-// {
-//     FRESULT res;
-//     DWORD free_clusters, total_clusters;
-//     FATFS *fs_ptr;
-
-//     res = f_getfree(drive, &free_clusters, &fs_ptr);
-//     if (res != FR_OK)
-//     {
-//         printf("检查文件系统失败: %d\n", res);
-//         return -1;
-//     }
-
-//     total_clusters = fs_ptr->n_fatent - 2;
-//     printf("文件系统状态: 总簇数=%u, 空闲簇数=%u\n", total_clusters, free_clusters);
-
-//     return 0;
-// }
-
+ 
 /**
  * @brief  Check filesystem status and print capacity info
  * @param  drive  Drive path e.g. "0:"
@@ -1163,12 +982,7 @@ static void CheckMcuPwrStatus(void)
 {
     SysPwrLED_Output();
 }
-
-/**
- * @brief   系统运行指示灯输出控制
- * @param   无
- * @retval  无
- */
+ 
 /**
  * @brief   系统运行指示灯输出控制
  * @param   无
