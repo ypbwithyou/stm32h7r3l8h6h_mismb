@@ -24,12 +24,248 @@
 #include "collector_processor.h"
 
 #include "usbd_cdc_if.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #define TEST_FILE_NAME "speed_test.bin"
 #define TEST_FILE_SIZE (4 * 1024 * 1024) // 4MB
 #define TEST_BLOCK_SIZE (16 * 1024)      // 16KB
+#define SOFT_TIME_FILE_PATH "0:/.sys_time.dat"
+#define SOFT_TIME_SYNC_INTERVAL_MS 10000U
+#define SOFT_TIME_DEFAULT_EPOCH 1767225600UL /* 2026-01-01 00:00:00 */
 
 uint8_t offline_mode;
+
+static uint32_t g_soft_time_base_epoch = SOFT_TIME_DEFAULT_EPOCH;
+static uint32_t g_soft_time_base_tick = 0U;
+static uint32_t g_soft_time_last_sync_tick = 0U;
+static uint8_t g_soft_time_inited = 0U;
+
+static uint8_t soft_time_is_leap_year(uint16_t year)
+{
+    return ((year % 4U == 0U && year % 100U != 0U) || (year % 400U == 0U)) ? 1U : 0U;
+}
+
+static uint8_t soft_time_days_in_month(uint16_t year, uint8_t month)
+{
+    static const uint8_t days_tbl[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    uint8_t days = days_tbl[month - 1U];
+
+    if ((month == 2U) && soft_time_is_leap_year(year))
+    {
+        days = 29U;
+    }
+
+    return days;
+}
+
+static void soft_time_set_epoch(uint32_t epoch_s)
+{
+    g_soft_time_base_epoch = epoch_s;
+    g_soft_time_base_tick = HAL_GetTick();
+    g_soft_time_inited = 1U;
+}
+
+static uint32_t soft_time_get_epoch(void)
+{
+    uint32_t now_tick;
+    uint32_t elapsed_ms;
+
+    if (g_soft_time_inited == 0U)
+    {
+        soft_time_set_epoch(SOFT_TIME_DEFAULT_EPOCH);
+    }
+
+    now_tick = HAL_GetTick();
+    elapsed_ms = now_tick - g_soft_time_base_tick;
+
+    return g_soft_time_base_epoch + (elapsed_ms / 1000U);
+}
+
+static void soft_time_epoch_to_calendar(uint32_t epoch_s,
+                                        uint16_t *year,
+                                        uint8_t *month,
+                                        uint8_t *day,
+                                        uint8_t *hour,
+                                        uint8_t *minute,
+                                        uint8_t *second)
+{
+    uint32_t days;
+    uint32_t rem;
+    uint16_t y;
+    uint8_t m;
+    uint32_t dim;
+
+    days = epoch_s / 86400UL;
+    rem = epoch_s % 86400UL;
+
+    *hour = (uint8_t)(rem / 3600UL);
+    rem %= 3600UL;
+    *minute = (uint8_t)(rem / 60UL);
+    *second = (uint8_t)(rem % 60UL);
+
+    y = 1970U;
+    while (1)
+    {
+        dim = soft_time_is_leap_year(y) ? 366UL : 365UL;
+        if (days < dim)
+        {
+            break;
+        }
+        days -= dim;
+        y++;
+    }
+
+    m = 1U;
+    while (1)
+    {
+        dim = soft_time_days_in_month(y, m);
+        if (days < dim)
+        {
+            break;
+        }
+        days -= dim;
+        m++;
+    }
+
+    *year = y;
+    *month = m;
+    *day = (uint8_t)(days + 1UL);
+}
+
+static FRESULT soft_time_save_to_file(void)
+{
+    FIL fil;
+    FRESULT res;
+    UINT bw;
+    char buf[24];
+    int len;
+    uint32_t epoch_s = soft_time_get_epoch();
+
+    len = snprintf(buf, sizeof(buf), "%lu\n", (unsigned long)epoch_s);
+    if (len <= 0)
+    {
+        return FR_INT_ERR;
+    }
+
+    res = f_open(&fil, SOFT_TIME_FILE_PATH, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK)
+    {
+        return res;
+    }
+
+    res = f_write(&fil, buf, (UINT)len, &bw);
+    if ((res == FR_OK) && (bw != (UINT)len))
+    {
+        res = FR_DISK_ERR;
+    }
+
+    if (res == FR_OK)
+    {
+        res = f_sync(&fil);
+    }
+
+    f_close(&fil);
+    return res;
+}
+
+static uint8_t soft_time_load_from_file(void)
+{
+    FIL fil;
+    FRESULT res;
+    UINT br;
+    char buf[24];
+    uint32_t epoch_s;
+    char *endptr = NULL;
+
+    res = f_open(&fil, SOFT_TIME_FILE_PATH, FA_READ);
+    if (res != FR_OK)
+    {
+        return 0U;
+    }
+
+    res = f_read(&fil, buf, (UINT)(sizeof(buf) - 1U), &br);
+    f_close(&fil);
+    if (res != FR_OK)
+    {
+        return 0U;
+    }
+
+    buf[br] = '\0';
+    epoch_s = (uint32_t)strtoul(buf, &endptr, 10);
+
+    if (endptr == buf)
+    {
+        return 0U;
+    }
+
+    if (epoch_s < 315532800UL) /* 1980-01-01 */
+    {
+        return 0U;
+    }
+
+    soft_time_set_epoch(epoch_s);
+    return 1U;
+}
+
+static void soft_time_init_after_mount(void)
+{
+    if (soft_time_load_from_file() == 0U)
+    {
+        soft_time_set_epoch(SOFT_TIME_DEFAULT_EPOCH);
+        (void)soft_time_save_to_file();
+    }
+
+    g_soft_time_last_sync_tick = HAL_GetTick();
+}
+
+static void soft_time_periodic_sync(void)
+{
+    uint32_t now_tick = HAL_GetTick();
+    if ((now_tick - g_soft_time_last_sync_tick) >= SOFT_TIME_SYNC_INTERVAL_MS)
+    {
+        (void)soft_time_save_to_file();
+        g_soft_time_last_sync_tick = now_tick;
+    }
+}
+
+DWORD get_fattime(void)
+{
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+
+    soft_time_epoch_to_calendar(soft_time_get_epoch(), &year, &month, &day, &hour, &minute, &second);
+
+    if (year < 1980U)
+    {
+        year = 1980U;
+        month = 1U;
+        day = 1U;
+        hour = 0U;
+        minute = 0U;
+        second = 0U;
+    }
+    else if (year > 2107U)
+    {
+        year = 2107U;
+        month = 12U;
+        day = 31U;
+        hour = 23U;
+        minute = 59U;
+        second = 58U;
+    }
+
+    return ((DWORD)(year - 1980U) << 25) |
+           ((DWORD)month << 21) |
+           ((DWORD)day << 16) |
+           ((DWORD)hour << 11) |
+           ((DWORD)minute << 5) |
+           ((DWORD)second >> 1);
+}
 
 void sd_file_speed_test(void)
 {
@@ -304,6 +540,7 @@ int8_t IdaDeviceInit(void)
         usb_printf("[FatFs] Mount OK\r\n");
     }
 
+    soft_time_init_after_mount();
     check_filesystem_status("0:");
 
     OfflineRecordInit();
@@ -1088,6 +1325,8 @@ int8_t app_processor(void)
             CheckMcuRunStatus();
             LED0_TOGGLE();
         }
+
+        soft_time_periodic_sync();
 
         // ---------------------------emmc--------------------
         MmcAsyncState st = sd_disk_poll();
