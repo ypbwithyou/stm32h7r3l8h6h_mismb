@@ -284,6 +284,13 @@ static uint32_t USB_Connect_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     (void)userHead; // 未使用用户头
 
     g_IdaSystemStatus.st_dev_link.link_status = USB_CONNECTED;
+    if (userHead != NULL)
+    {
+        if (SoftTimeSyncFromNanoSecond(userHead->nNanoSecond) == RET_OK)
+        {
+            usb_printf("[Time] Synced from USB_Connect_Reply, ns=%lld\r\n", userHead->nNanoSecond);
+        }
+    }
 
     uint8_t serial_num = 0;
     uint8_t send_frame[sizeof(DeviceInfo) + sizeof(SubDevicelnfo) * SUBDEV_NUM_MAX];

@@ -65,5 +65,6 @@ extern volatile SystemStatus g_IdaSystemStatus;
 
 int8_t IdaDeviceInit(void);
 int8_t app_processor(void);
+int8_t SoftTimeSyncFromNanoSecond(int64_t nano_second);
 
 #endif /* __IDA_CONFIG_H */

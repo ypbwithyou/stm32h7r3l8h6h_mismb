@@ -267,6 +267,34 @@ DWORD get_fattime(void)
            ((DWORD)second >> 1);
 }
 
+int8_t SoftTimeSyncFromNanoSecond(int64_t nano_second)
+{
+    uint64_t epoch_s;
+    FRESULT res;
+
+    if (nano_second <= 0)
+    {
+        return RET_ERROR;
+    }
+
+    epoch_s = (uint64_t)nano_second / 1000000000ULL;
+    if (epoch_s < 315532800ULL) /* 1980-01-01 */
+    {
+        return RET_ERROR;
+    }
+
+    if (epoch_s > 0xFFFFFFFFULL)
+    {
+        epoch_s = 0xFFFFFFFFULL;
+    }
+
+    soft_time_set_epoch((uint32_t)epoch_s);
+    g_soft_time_last_sync_tick = HAL_GetTick();
+
+    res = soft_time_save_to_file();
+    return (res == FR_OK) ? RET_OK : RET_ERROR;
+}
+
 void sd_file_speed_test(void)
 {
     FIL file;
