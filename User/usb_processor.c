@@ -541,7 +541,7 @@ static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len,
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
-    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
     reply_user_head.nParameters0 = (ret != RET_OK) ? -1 : RET_OK;
 
     uint32_t packet_len = 0;
@@ -564,13 +564,13 @@ static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadI
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
-    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
     reply_user_head.nParameters0 = 1;
 
     uint32_t packet_len = 0;
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
     g_IdaSystemStatus.st_dev_mode.reset_all_flag = 1; // ready to restart
-    g_reset_time = dwt_get_ns();
+    g_reset_time = SoftTimeGetEpochNanosecond();
 
     NVIC_SystemReset();
 
@@ -666,7 +666,7 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     user_data->data_head.nFrameChCount = g_enabled_ch_cnt; // 固定值
     user_data->data_head.nFrameLen = BLOCK_LEN;
     user_data->data_head.nTotalFrameNum = frame_num;
-    user_data->data_head.nCurNs = dwt_get_ns();
+    user_data->data_head.nCurNs = SoftTimeGetEpochNanosecond();
 
     // cb_read 之前加
     // usb_printf("frame=%lu cb0_size=%d overflow=%lu\n",
@@ -907,7 +907,7 @@ static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len, FrameHeadInf
         goto send_reply;
     }
 
-    op_time_start = dwt_get_ns();
+    op_time_start = SoftTimeGetEpochNanosecond();
     usb_printf("[DeleteFile] START: path=%s\r\n", file_path);
 
     // 验证文件存在（删除前检查）
@@ -954,7 +954,7 @@ static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len, FrameHeadInf
 
         if (verify_res == FR_NO_FILE)
         {
-            uint64_t op_time_end = dwt_get_ns();
+            uint64_t op_time_end = SoftTimeGetEpochNanosecond();
             usb_printf("[DeleteFile] SUCCESS: File deleted (path=%s, size=%u bytes, time=%llu ns)\r\n",
                        file_path, file_size, op_time_end - op_time_start);
             ret = RET_OK;
@@ -986,7 +986,7 @@ send_reply:
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
-    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
     reply_user_head.nParameters0 = ret; // 删除结果：0=成功, <0=错误码
 
     delay_ms(100);
@@ -1186,7 +1186,7 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, Frame
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
-    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
     reply_user_head.nParameters0 = ret; /* 0=成功, 负数=错误码 */
 
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
@@ -1204,7 +1204,7 @@ send_start_reply:;
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
-    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
     reply_user_head.nParameters0 = ret; /* 0=成功, 负数=错误码 */
 
     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
@@ -1300,7 +1300,7 @@ static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameH
     reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
     reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
     reply_user_head.nDataLength = 0;
-    reply_user_head.nNanoSecond = dwt_get_ns();
+    reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
     reply_user_head.nParameters0 = ret; /* 0=成功, 负数=错误码 */
 
     uint32_t packet_len = 0;

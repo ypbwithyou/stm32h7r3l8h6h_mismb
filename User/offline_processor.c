@@ -228,7 +228,7 @@ static void HandleRecordStart(uint8_t idx)
     record_frame_num = 0;
 
     g_recorde_file_head.nVersion = 16002;
-    g_recorde_file_head.nCreateTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+    g_recorde_file_head.nCreateTime = SoftTimeGetEpochNanosecond() / NANOSECONDS_PER_SECOND;
     g_recorde_file_head.nDeviceChNum = g_offline_chCfgHeader.nTotalChannelNum;
     g_recorde_file_head.nRecordNum = g_enabled_ch_cnt;
     g_recorde_file_head.nFrameNum = 0;
@@ -993,7 +993,7 @@ static void OfflineDatasRecord(void)
         // memset(&rec_hdr, 0, sizeof(rec_hdr));
         memcpy(&rec_hdr, &g_offline_signal_source[ch].localColumnX, sizeof(AoLocalColumn));
 
-        rec_hdr.RecLocalColumn.nNanoSec = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        rec_hdr.RecLocalColumn.nNanoSec = SoftTimeGetEpochNanosecond() / NANOSECONDS_PER_SECOND;
         rec_hdr.RecLocalColumn.gp0 = rec_hdr.RecLocalColumn.nNanoSec;
         rec_hdr.RecLocalColumn.gp10 = BLOCK_LEN;
         rec_hdr.RecLocalColumn.gp11 = ch;
@@ -1073,7 +1073,7 @@ static void OfflineDatasRecord(void)
     {
     do_finalize:
         g_recorde_file_head.nFrameNum = record_frame_num;
-        g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
+        g_recorde_file_head.dRecValidEndTime = SoftTimeGetEpochNanosecond() / NANOSECONDS_PER_SECOND;
 
         // ★ 先把缓冲区刷完
         cache_flush(&g_offline_record_fil);

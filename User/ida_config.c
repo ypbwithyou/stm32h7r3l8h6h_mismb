@@ -40,6 +40,11 @@ static uint32_t g_soft_time_base_epoch = SOFT_TIME_DEFAULT_EPOCH;
 static uint32_t g_soft_time_base_tick = 0U;
 static uint32_t g_soft_time_last_sync_tick = 0U;
 static uint8_t g_soft_time_inited = 0U;
+static uint64_t g_soft_time_abs_base_epoch_ns = 0ULL;
+static uint64_t g_soft_time_abs_base_dwt_ns = 0ULL;
+static uint8_t g_soft_time_abs_base_inited = 0U;
+
+static uint32_t soft_time_get_epoch(void);
 
 static uint8_t soft_time_is_leap_year(uint16_t year)
 {
@@ -64,6 +69,13 @@ static void soft_time_set_epoch(uint32_t epoch_s)
     g_soft_time_base_epoch = epoch_s;
     g_soft_time_base_tick = HAL_GetTick();
     g_soft_time_inited = 1U;
+}
+
+static void soft_time_refresh_abs_ns_base(void)
+{
+    g_soft_time_abs_base_epoch_ns = (uint64_t)soft_time_get_epoch() * 1000000000ULL;
+    g_soft_time_abs_base_dwt_ns = dwt_get_ns();
+    g_soft_time_abs_base_inited = 1U;
 }
 
 static uint32_t soft_time_get_epoch(void)
@@ -217,6 +229,7 @@ static void soft_time_init_after_mount(void)
     }
 
     g_soft_time_last_sync_tick = HAL_GetTick();
+    soft_time_refresh_abs_ns_base();
 }
 
 static void soft_time_periodic_sync(void)
@@ -290,9 +303,27 @@ int8_t SoftTimeSyncFromNanoSecond(int64_t nano_second)
 
     soft_time_set_epoch((uint32_t)epoch_s);
     g_soft_time_last_sync_tick = HAL_GetTick();
+    soft_time_refresh_abs_ns_base();
 
     res = soft_time_save_to_file();
     return (res == FR_OK) ? RET_OK : RET_ERROR;
+}
+
+uint32_t SoftTimeGetEpochSecond(void)
+{
+    return soft_time_get_epoch();
+}
+
+uint64_t SoftTimeGetEpochNanosecond(void)
+{
+    uint64_t now_dwt_ns;
+    if (g_soft_time_abs_base_inited == 0U)
+    {
+        soft_time_refresh_abs_ns_base();
+    }
+
+    now_dwt_ns = dwt_get_ns();
+    return g_soft_time_abs_base_epoch_ns + (now_dwt_ns - g_soft_time_abs_base_dwt_ns);
 }
 
 void sd_file_speed_test(void)

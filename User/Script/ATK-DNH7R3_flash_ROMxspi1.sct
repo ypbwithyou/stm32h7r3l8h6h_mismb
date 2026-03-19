@@ -41,8 +41,7 @@ LR_IROM1 0x08005000 0x0000B000 {
         stm32h7rsxx_hal_xspi.o
         stm32h7rsxx_hal_gpio.o
         stm32h7rsxx_hal_rcc_ex.o
-        
-        usb_processor.o
+ 
     }
     RW_IRAM1 0x24000000 0x00072000 {
         .ANY (+RW +ZI)
