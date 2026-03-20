@@ -43,9 +43,9 @@ const Dev_ch_cfg_index g_ida_ch_rate[] =
         {51200.0f, SAMPLE_RATE_INDEX_51200HZ},
         {65536.0f, SAMPLE_RATE_INDEX_65536HZ},
         {102400.0f, SAMPLE_RATE_INDEX_102400HZ},
-        {131072.0f, SAMPLE_RATE_INDEX_131072HZ},
-        {204800.0f, SAMPLE_RATE_INDEX_204800HZ},
-        {256000.0f, SAMPLE_RATE_INDEX_256000HZ},
+        // {131072.0f, SAMPLE_RATE_INDEX_131072HZ},
+        // {204800.0f, SAMPLE_RATE_INDEX_204800HZ},
+        // {256000.0f, SAMPLE_RATE_INDEX_256000HZ},
 };
 const uint32_t g_ida_ch_rate_count = ARRAY_SIZE(g_ida_ch_rate);
 
