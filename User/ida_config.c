@@ -608,7 +608,7 @@ int8_t IdaDeviceInit(void)
     test_filesystem();
 
     rs485_subdev_scan_once();
-    // IdaGetDiskSpaceKB(&g_dev_info.fTotalDiskSapce, &g_dev_info.fFreeDiskSpace);
+ 
     return RET_OK;
 }
 
@@ -1147,13 +1147,7 @@ int8_t app_processor(void)
 
     // 离线初始化
     SysRunStatusInit();
-
-    //    // 写子卡设备信息测试
-    //    WriteSubDevicelnfo_test();
-    //
-    //    // 获取BASE卡设备信息（设备信息预期不符则使用默认设备信息）
-    //    GetDeviceInfo(&g_dev_info);
-
+ 
     uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMEX, SWR_BUFFER_SIZE);
     if (!frame_copy)
     {
