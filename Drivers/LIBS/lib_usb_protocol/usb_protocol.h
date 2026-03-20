@@ -182,11 +182,11 @@ enum EventsId
     DVS_INIT_SUB_DEVCONFIG_UPDATE_Done = (EVTSEG_INIT + 0x80),    // 配置子板设备信息
     DVS_INIT_SUB_DEVCONFIG_UPDATE_Done_OK = (EVTSEG_INIT + 0x81), // 配置子板设备信息 OK
 
-    DVS_INIT_SUB_DEVCONFIG_READ_Done = (EVTSEG_INIT + 0x80),    // 读取子板设备信息
-    DVS_INIT_SUB_DEVCONFIG_READ_Done_OK = (EVTSEG_INIT + 0x81), // 读取子板设备信息 OK
+    DVS_INIT_SUB_DEVCONFIG_READ_Done = (EVTSEG_INIT + 0x82),    // 读取子板设备信息
+    DVS_INIT_SUB_DEVCONFIG_READ_Done_OK = (EVTSEG_INIT + 0x83), // 读取子板设备信息 OK
 
-    DVS_INIT_SUB_ID_UPDATE_Done = (EVTSEG_INIT + 0x82),    // 配置子板设备ID
-    DVS_INIT_SUB_ID_UPDATE_Done_OK = (EVTSEG_INIT + 0x83), // 配置子板设备ID OK
+    DVS_INIT_SUB_ID_UPDATE_Done = (EVTSEG_INIT + 0x84),    // 配置子板设备ID
+    DVS_INIT_SUB_ID_UPDATE_Done_OK = (EVTSEG_INIT + 0x85), // 配置子板设备ID OK
 
     DVS_RUN_ERROR_OK = (EVTSEG_RUN + 10),      // 0x0a：
     DVS_READ_TEDS_INFO_OK = (EVTSEG_RUN + 12), // 0x0c：
