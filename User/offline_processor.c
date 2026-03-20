@@ -12,7 +12,7 @@
 #include "usbd_cdc_if.h"
 #include "./LIBS/lib_file_utils/file_utils.h"
 #include "dataType.h"
- 
+
 #define OFFLINE_SCHEDULE_ITEM_MAX 32
 typedef enum ScheduleItemRunStatus
 {
@@ -228,7 +228,7 @@ static void HandleRecordStart(uint8_t idx)
     record_frame_num = 0;
 
     g_recorde_file_head.nVersion = 16002;
-    g_recorde_file_head.nCreateTime = SoftTimeGetEpochNanosecond() / NANOSECONDS_PER_SECOND;
+    g_recorde_file_head.nCreateTime = SoftTimeGetEpochNanosecond();
     g_recorde_file_head.nDeviceChNum = g_offline_chCfgHeader.nTotalChannelNum;
     g_recorde_file_head.nRecordNum = g_enabled_ch_cnt;
     g_recorde_file_head.nFrameNum = 0;
