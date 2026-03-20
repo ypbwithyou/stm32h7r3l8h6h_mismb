@@ -21,7 +21,7 @@
 #include "offline_processor.h"
 #include "./BSP/MMC/mmc_sdcard.h"
 #include "./FATFS/source/ff.h"
-
+#include "./BSP/RS485/rs485.h"
 #include "dataType.h"
 
 /*********************************************************************************/
@@ -39,6 +39,8 @@ static uint32_t USB_Stop_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInf
 static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 static uint32_t USB_Upgrad_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 static uint32_t USB_OfflineCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+
+static uint32_t USB_SubDevConfig_Update(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
 static uint32_t USB_GetFilelist(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
@@ -69,6 +71,7 @@ static const USB_ProtocoItems protocol_getdata[] =
         {DVS_INIT_CONNECT, USB_Connect_Reply},
         {DVS_INIT_DISCONNECT, USB_Disconnect_Reply},
         {DVS_INIT_DEVCONFIG_UPDATE_Done, USB_DevConfig_Done},
+        {DVS_INIT_SUB_DEVCONFIG_UPDATE_Done, USB_SubDevConfig_Update},
         {DVSARM_CSP_START, USB_CollectChCfg_Reply},
         {DVSARM_RUN, USB_Run_Reply},
         {DVSARM_STOP, USB_Stop_Reply},
@@ -512,6 +515,93 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHea
     
 
     return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
+}
+
+static uint32_t USB_SubDevConfig_Update(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+{
+    (void)frame_head;
+
+    uint8_t addr;
+    uint32_t start_tick;
+    uint8_t frame[RS485_RX_BUF_LEN];
+    uint16_t frame_len;
+    int8_t ret;
+    int32_t result_code = -1;
+
+    if (data_len != sizeof(SubDevicelnfo))
+    {
+        usb_printf("USB_SubDevConfig_Update err: data_len=%lu, expected=%lu\n", (unsigned long)data_len, (unsigned long)sizeof(SubDevicelnfo));
+        FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+        UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_UPDATE_Done_OK,
+                                                                  SOURCE_TYPE_NO_DATA,
+                                                                  DESTINATION_ARM_TO_PC,
+                                                                  0);
+        reply_user_head.nParameters0 = -1;
+
+        uint32_t packet_len = 0;
+        pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+        return packet_len;
+    }
+
+    addr = (uint8_t)user_head->nParameters0;
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    {
+        usb_printf("USB_SubDevConfig_Update err: invalid addr=%d\n", addr);
+        FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+        UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_UPDATE_Done_OK,
+                                                                  SOURCE_TYPE_NO_DATA,
+                                                                  DESTINATION_ARM_TO_PC,
+                                                                  0);
+        reply_user_head.nParameters0 = -1;
+
+        uint32_t packet_len = 0;
+        pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+        return packet_len;
+    }
+
+    const SubDevicelnfo *sub_info = (const SubDevicelnfo *)data_in;
+
+    usb_printf("USB_SubDevConfig_Update addr:%d \n", addr);
+    rs485_subdev_clear_write_ack(addr);
+    ret = rs485_send_frame(addr, DEVINFO_WRITE_REQ, (const uint8_t *)sub_info, sizeof(SubDevicelnfo));
+    if (ret != 0)
+    {
+        usb_printf("USB_SubDevConfig_Update err: rs485_send_frame failed, ret=%d\n", ret);
+        result_code = -1;
+    }
+    else
+    {
+        start_tick = HAL_GetTick();
+        while ((HAL_GetTick() - start_tick) < RS485_STARTUP_SCAN_INTERVAL_MS)
+        {
+            if (rs485_read_raw_frame(frame, sizeof(frame), &frame_len) == 0)
+            {
+                rs485_parse_frame(frame, frame_len);
+            }
+            if (rs485_subdev_get_write_ack(addr) != 0U)
+            {
+                usb_printf("USB_SubDevConfig_Update ok: write ack received, addr=%d\n", addr);
+                result_code = 0;
+                break;
+            }
+        }
+        if (result_code != 0)
+        {
+            usb_printf("USB_SubDevConfig_Update err: timeout, no write ack, addr=%d\n", addr);
+            result_code = -2;
+        }
+    }
+
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_UPDATE_Done_OK,
+                                                              SOURCE_TYPE_NO_DATA,
+                                                              DESTINATION_ARM_TO_PC,
+                                                              0);
+    reply_user_head.nParameters0 = result_code;
+
+    uint32_t packet_len = 0;
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+    return packet_len;
 }
 
 // 处理PC->ARM的DVSARM_CSP_START事件

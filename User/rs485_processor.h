@@ -34,7 +34,10 @@ void rs485_processor_poll(void);
 /* sub-device validity state by slave address 1..8 => index 0..7 */
 extern uint8_t g_subdev_valid[RS485_SUBDEV_MAX];
 extern uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX];
+extern uint8_t g_subdev_write_ack[RS485_SUBDEV_MAX];
 uint8_t rs485_subdev_is_valid(uint8_t addr);
+uint8_t rs485_subdev_get_write_ack(uint8_t addr);
+void rs485_subdev_clear_write_ack(uint8_t addr);
 void rs485_subdev_scan_reset(void);
 void rs485_subdev_scan_once(void);
 

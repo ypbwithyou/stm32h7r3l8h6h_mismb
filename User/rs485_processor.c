@@ -6,6 +6,7 @@
 
 uint8_t g_subdev_valid[RS485_SUBDEV_MAX] = {0};
 uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX] = {0};
+uint8_t g_subdev_write_ack[RS485_SUBDEV_MAX] = {0};
 
 static uint8_t rs485_xor_u8(const uint8_t *data, uint16_t len)
 {
@@ -50,6 +51,24 @@ uint8_t rs485_subdev_is_valid(uint8_t addr)
     return g_subdev_valid[addr - 1U];
 }
 
+uint8_t rs485_subdev_get_write_ack(uint8_t addr)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    {
+        return 0U;
+    }
+    return g_subdev_write_ack[addr - 1U];
+}
+
+void rs485_subdev_clear_write_ack(uint8_t addr)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    {
+        return;
+    }
+    g_subdev_write_ack[addr - 1U] = 0U;
+}
+
 void rs485_subdev_scan_reset(void)
 {
     uint8_t i;
@@ -58,6 +77,7 @@ void rs485_subdev_scan_reset(void)
     {
         g_subdev_valid[i] = 0U;
         g_subdev_last_tick[i] = 0U;
+        g_subdev_write_ack[i] = 0U;
         memset(&g_SubDevicelnfo[i], 0, sizeof(SubDevicelnfo));
     }
 }
@@ -202,6 +222,11 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
         }
         break;
     case DEVINFO_WRITE_REQ_ACK:
+        usb_printf("rs485_parse_frame DEVINFO_WRITE_REQ_ACK %d \n", pkt.address);
+        if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
+        {
+            g_subdev_write_ack[pkt.address - 1U] = 1U;
+        }
         break;
     default:
         break;
