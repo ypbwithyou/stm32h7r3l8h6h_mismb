@@ -1858,19 +1858,19 @@ void IdaProcessor(void)
             PackReplyWithoutDatas(DVS_INIT_CONNECT_DETECT_OK);
         }
     }
-    if ((g_IdaSystemStatus.st_dev_link.link_status != USB_IDLE) &&
-        (g_IdaSystemStatus.st_dev_link.link_status != USB_DISCONNECTED))
-    {
-        time_off = (time_n - heart_recv_time) / 1000;
-        if (time_off >= TIMEOUT_30000)
-        {
-            // disconnect
+    // if ((g_IdaSystemStatus.st_dev_link.link_status != USB_IDLE) &&
+    //     (g_IdaSystemStatus.st_dev_link.link_status != USB_DISCONNECTED))
+    // {
+    //     time_off = (time_n - heart_recv_time) / 1000;
+    //     if (time_off >= TIMEOUT_30000)
+    //     {
+    //         // disconnect
 
-            SystemStatusInit();
-            AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
-            AdcCbClear();
-        }
-    }
+    //         SystemStatusInit();
+    //         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+    //         AdcCbClear();
+    //     }
+    // }
     if (g_IdaSystemStatus.st_dev_mode.reset_all_flag == 1)
     {
         time_off = (time_n - g_reset_time) / 1000;
