@@ -1,6 +1,10 @@
 #include "collector_processor.h"
 #include "./BSP/TIMER/gtim.h"
 
+#ifdef USE_DMA_MULTI_SPI
+#include "./BSP/DMA_LIST/dma_multi_spi.h"
+#endif
+
 #include "usbd_cdc_if.h"
 
 CircularBuffer *g_cb_ch[ADC_CH_TOTAL]; // 24通道环形缓冲区
@@ -133,10 +137,43 @@ void AdcCollectorContrl(uint8_t run_status)
 {
     if (run_status)
     {
+#ifdef USE_DMA_MULTI_SPI
+        dma_multi_spi_init();
+        dma_multi_spi_start();
+#endif
         gtim_timx_start();
     }
     else
     {
         gtim_timx_stop();
+#ifdef USE_DMA_MULTI_SPI
+        dma_multi_spi_stop();
+#endif
     }
+}
+
+/**
+ * @brief  动态配置通道使能
+ * @param  ch_mask: 通道使能掩码 (bit0-ch0, bit1-ch1, ... bit23-ch23)
+ * @retval 无
+ */
+void CfgAdcChannelEnable(uint32_t ch_mask)
+{
+    g_ch_enable_mask = ch_mask & 0xFFFFFF;
+
+    /* 计算每个SPI上使能的ADC数量 */
+    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    {
+        uint8_t cnt = 0;
+        for (uint8_t adc = 0; adc < SPI_CH_NUM; adc++)
+        {
+            uint8_t ch = adc * SPI_NUM + spi; /* 交错映射 */
+            if (ch < ADC_CH_TOTAL && (g_ch_enable_mask & (1u << ch)))
+                cnt++;
+        }
+        g_spi_adc_cnt[spi] = cnt;
+    }
+
+    usb_printf("Channel mask: 0x%06lX, SPI ADC count: [%d, %d, %d]",
+               g_ch_enable_mask, g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2]);
 }

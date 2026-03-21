@@ -55,8 +55,12 @@ void AdcCbClear(void);
 
 void AdcCollectorContrl(uint8_t run_status);
 void CfgAdcSampleRate(uint32_t sample_rate);
+void CfgAdcChannelEnable(uint32_t ch_mask);
 
 void adc_write_spi_channels(uint8_t spi_idx, const uint16_t adc_data[SPI_CH_NUM],
                             uint32_t timestamp);
+
+/* DMA多SPI采集宏定义 */
+#define USE_DMA_MULTI_SPI  /* 启用DMA多SPI采集模式 */
 
 #endif // __COLLECTOR_PROCESSOR_H

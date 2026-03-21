@@ -8,6 +8,10 @@
 #include "usbd_cdc_if.h"
 #include "collector_processor.h"
 
+#ifdef USE_DMA_MULTI_SPI
+#include "./BSP/DMA_LIST/dma_multi_spi.h"
+#endif
+
 /* TIM句柄 */
 TIM_HandleTypeDef g_gtimx_handle = {0};
 TIM_HandleTypeDef g_timx_ticks_handle = {0};
@@ -114,6 +118,37 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         return;
     g_gtim_it_counts++;
 
+#ifdef USE_DMA_MULTI_SPI
+    /* DMA模式：处理上一次DMA接收的数据，然后启动下一次采集 */
+    dma_multi_spi_process_data();
+
+    /* 启动下一次DMA采集 */
+    ads8319_start_convst();
+
+    /* 同时启动3路SPI DMA接收 */
+    for (uint8_t spi = 0; spi < DMA_SPI_NUM; spi++) {
+        if (g_spi_adc_cnt[spi] == 0)
+            continue;
+
+        /* 清除SPI标志 */
+        __HAL_SPI_CLEAR_EOTFLAG(&g_spi_handle[spi]);
+        __HAL_SPI_CLEAR_TXTFFLAG(&g_spi_handle[spi]);
+
+        /* 使能SPI DMA */
+        ATOMIC_SET_BIT(g_spi_handle[spi].Instance->CFG1, SPI_CFG1_RXDMAEN | SPI_CFG1_TXDMAEN);
+
+        /* 使能SPI */
+        SET_BIT(g_spi_handle[spi].Instance->CR1, SPI_CR1_SPE);
+
+        /* 启动DMA传输 */
+        HAL_DMAEx_List_Start_IT(&g_dma_spi[spi].hdma_rx);
+        HAL_DMAEx_List_Start_IT(&g_dma_spi[spi].hdma_tx);
+
+        /* 启动SPI传输 */
+        SET_BIT(g_spi_handle[spi].Instance->CR1, SPI_CR1_CSTART);
+    }
+#else
+    /* 轮询模式：原有代码 */
     uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
 
     ads8319_start_convst();
@@ -143,6 +178,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
             cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
         }
     }
+#endif
 }
 
 /**
