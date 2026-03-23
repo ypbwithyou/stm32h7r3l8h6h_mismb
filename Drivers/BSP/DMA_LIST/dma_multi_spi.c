@@ -70,7 +70,7 @@ static void dma_spi_rx_config(uint8_t spi_idx)
     dma_node_conf.Init.DestInc = DMA_DINC_INCREMENTED;
     dma_node_conf.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
     dma_node_conf.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
-    dma_node_conf.Init.Priority = DMA_HIGH_PRIORITY_HIGH_WEIGHT;
+    dma_node_conf.Init.Priority = DMA_HIGH_PRIORITY;
     dma_node_conf.Init.SrcBurstLength = 1;
     dma_node_conf.Init.DestBurstLength = 1;
     dma_node_conf.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
@@ -85,7 +85,7 @@ static void dma_spi_rx_config(uint8_t spi_idx)
 
     /* 初始化DMA句柄 */
     ch->hdma_rx.Instance = dma_rx_channel[spi_idx];
-    ch->hdma_rx.InitLinkedList.Priority = DMA_HIGH_PRIORITY_HIGH_WEIGHT;
+    ch->hdma_rx.InitLinkedList.Priority = DMA_HIGH_PRIORITY;
     ch->hdma_rx.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
     ch->hdma_rx.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
     ch->hdma_rx.InitLinkedList.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
@@ -98,7 +98,7 @@ static void dma_spi_rx_config(uint8_t spi_idx)
     __HAL_LINKDMA(&g_spi_handle[spi_idx], hdmarx, ch->hdma_rx);
 
     /* 配置中断 */
-    HAL_NVIC_SetPriority(dma_rx_irq[spi_idx], 0, 0);
+    HAL_NVIC_SetPriority(dma_rx_irq[spi_idx], 2, 0);
     HAL_NVIC_EnableIRQ(dma_rx_irq[spi_idx]);
 }
 
@@ -123,7 +123,7 @@ static void dma_spi_tx_config(uint8_t spi_idx)
     dma_node_conf.Init.DestInc = DMA_DINC_FIXED;
     dma_node_conf.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
     dma_node_conf.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
-    dma_node_conf.Init.Priority = DMA_HIGH_PRIORITY_HIGH_WEIGHT;
+    dma_node_conf.Init.Priority = DMA_HIGH_PRIORITY;
     dma_node_conf.Init.SrcBurstLength = 1;
     dma_node_conf.Init.DestBurstLength = 1;
     dma_node_conf.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT1 | DMA_DEST_ALLOCATED_PORT0;
@@ -138,7 +138,7 @@ static void dma_spi_tx_config(uint8_t spi_idx)
 
     /* 初始化DMA句柄 */
     ch->hdma_tx.Instance = dma_tx_channel[spi_idx];
-    ch->hdma_tx.InitLinkedList.Priority = DMA_HIGH_PRIORITY_HIGH_WEIGHT;
+    ch->hdma_tx.InitLinkedList.Priority = DMA_HIGH_PRIORITY;
     ch->hdma_tx.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
     ch->hdma_tx.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
     ch->hdma_tx.InitLinkedList.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
