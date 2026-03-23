@@ -16,6 +16,8 @@ TIM_HandleTypeDef g_timx_ticks_handle = {0};
 /* 缁熻鍙橀噺 */
 volatile uint32_t g_gtim_it_counts = 0;
 volatile uint32_t g_isr_overrun_count = 0;
+static uint8_t g_use_dma_path = 1U;
+static uint16_t g_dma_fail_streak = 0U;
 
 /**
  * @brief  閫氱敤瀹氭椂鍣ㄥ垵濮嬪寲
@@ -37,6 +39,8 @@ void gtim_timx_int_init(unsigned short arr, unsigned short psc)
 
     g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
+    g_use_dma_path = 1U;
+    g_dma_fail_streak = 0U;
 }
 
 /**
@@ -55,7 +59,8 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    static uint32_t last_overrun_log = 0;
+    uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
+
     if (htim->Instance != GTIM_TIMX)
     {
         return;
@@ -63,26 +68,63 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     g_gtim_it_counts++;
 
-    if (dma_ads8319_frame_busy() != 0U)
+    if (g_use_dma_path != 0U)
     {
-        g_isr_overrun_count++;
-        if ((g_gtim_it_counts - last_overrun_log) >= 1024U)
+        dma_ads8319_watchdog_kick();
+
+        if (dma_ads8319_frame_busy() != 0U)
         {
-            last_overrun_log = g_gtim_it_counts;
-            usb_printf("[TIM2] dma busy, overrun=%lu it=%lu\r\n",
-                       g_isr_overrun_count, g_gtim_it_counts);
+            g_isr_overrun_count++;
+            return;
         }
-        return;
-    }
 
-    ads8319_start_convst();
+        ads8319_start_convst();
 
-    if (dma_ads8319_start_frame() != HAL_OK)
-    {
+        if (dma_ads8319_start_frame() == HAL_OK)
+        {
+            g_dma_fail_streak = 0U;
+            return;
+        }
+
         ads8319_stop_transfer();
         g_isr_overrun_count++;
-        usb_printf("[TIM2] dma start failed, overrun=%lu it=%lu\r\n",
-                   g_isr_overrun_count, g_gtim_it_counts);
+        if (g_dma_fail_streak < 0xFFFFU)
+        {
+            g_dma_fail_streak++;
+        }
+        if (g_dma_fail_streak > 256U)
+        {
+            g_use_dma_path = 0U;
+        }
+    }
+
+    /* Fallback path: keep acquisition alive even if DMA path is unhealthy. */
+    ads8319_start_convst();
+    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    {
+        if (g_spi_adc_cnt[spi] == 0U)
+        {
+            continue;
+        }
+        ads8319_read_daisy_chain_fast(spi + 1U, g_spi_adc_cnt[spi], adc_buf[spi]);
+    }
+    ads8319_stop_transfer();
+
+    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    {
+        for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
+        {
+            uint8_t ch = pos * SPI_NUM + spi;
+            if (ch >= ADC_CH_TOTAL)
+            {
+                continue;
+            }
+            if ((g_ch_enable_mask & (1u << ch)) == 0U)
+            {
+                continue;
+            }
+            cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
+        }
     }
 }
 

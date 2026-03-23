@@ -119,7 +119,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 
         /* ����SPI3��ʱ��Դ */
         rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI45;     /* ����SPI3ʱ��Դ */
-        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q; /* SPI3ʱ��Դʹ��PLL1Q */
+        rcc_periph_clk_init.Spi45ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q; /* SPI3ʱ��Դʹ��PLL2Q */
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
         gpio_init_struct.Pin = SPI3_SCK_GPIO_PIN;

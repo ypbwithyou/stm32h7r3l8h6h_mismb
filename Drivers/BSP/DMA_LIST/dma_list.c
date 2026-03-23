@@ -2,7 +2,6 @@
 
 #include "./BSP/ADS8319/ads8319.h"
 #include "collector_processor.h"
-#include "usbd_cdc_if.h"
 #include <string.h>
 
 #define DMA_SPI_CHANNELS 3U
@@ -31,6 +30,15 @@ static volatile uint8_t g_dma_frame_active_mask = 0U;
 static volatile uint8_t g_dma_frame_error = 0U;
 static volatile uint8_t g_dma_frame_bytes[DMA_SPI_CHANNELS] = {0U};
 static volatile uint32_t g_dma_frame_seq = 0U;
+static volatile uint32_t g_dma_frame_start_tick = 0U;
+static volatile uint32_t g_dma_stat_start_req = 0U;
+static volatile uint32_t g_dma_stat_start_ok = 0U;
+static volatile uint32_t g_dma_stat_start_fail = 0U;
+static volatile uint32_t g_dma_stat_cplt_irq = 0U;
+static volatile uint32_t g_dma_stat_timeout = 0U;
+static volatile uint32_t g_dma_stat_error = 0U;
+static volatile uint32_t g_dma_stat_start_busy = 0U;
+static volatile int32_t g_dma_last_start_status = 0;
 
 __ALIGNED(32) static uint8_t g_spi_dma_tx_buf[DMA_SPI_CACHE_LINE_BYTES];
 __ALIGNED(32) static uint8_t g_spi_dma_rx_buf[DMA_SPI_CHANNELS][DMA_SPI_CACHE_LINE_BYTES];
@@ -57,6 +65,20 @@ static void dma_spi_config_channel(DMA_HandleTypeDef *hdma,
 
     HAL_DMA_Init(hdma);
     HAL_DMA_ConfigChannelAttributes(hdma, DMA_CHANNEL_NPRIV);
+}
+
+static void dma_spi_force_recover(uint8_t spi)
+{
+    SPI_HandleTypeDef *hspi = &g_spi_handle[spi];
+
+    /* Stop SPI DMA request path and clear sticky flags/state so next frame can restart cleanly. */
+    (void)HAL_SPI_DMAStop(hspi);
+    __HAL_SPI_DISABLE(hspi);
+    __HAL_SPI_CLEAR_EOTFLAG(hspi);
+    __HAL_SPI_CLEAR_TXTFFLAG(hspi);
+    hspi->ErrorCode = HAL_SPI_ERROR_NONE;
+    hspi->State = HAL_SPI_STATE_READY;
+    __HAL_UNLOCK(hspi);
 }
 
 static void dma_spi_finish_frame_if_ready(void)
@@ -162,6 +184,15 @@ void dma_list_rtx_init(void)
     g_dma_frame_active_mask = 0U;
     g_dma_frame_error = 0U;
     g_dma_frame_seq = 0U;
+    g_dma_frame_start_tick = 0U;
+    g_dma_stat_start_req = 0U;
+    g_dma_stat_start_ok = 0U;
+    g_dma_stat_start_fail = 0U;
+    g_dma_stat_cplt_irq = 0U;
+    g_dma_stat_timeout = 0U;
+    g_dma_stat_error = 0U;
+    g_dma_stat_start_busy = 0U;
+    g_dma_last_start_status = 0;
 }
 
 uint8_t dma_ads8319_frame_busy(void)
@@ -173,9 +204,12 @@ HAL_StatusTypeDef dma_ads8319_start_frame(void)
 {
     HAL_StatusTypeDef status = HAL_OK;
     uint8_t active_mask = 0U;
+    g_dma_stat_start_req++;
 
     if (g_dma_frame_busy != 0U)
     {
+        g_dma_stat_start_busy++;
+        g_dma_last_start_status = HAL_BUSY;
         return HAL_BUSY;
     }
 
@@ -198,6 +232,7 @@ HAL_StatusTypeDef dma_ads8319_start_frame(void)
 
     if (active_mask == 0U)
     {
+        g_dma_last_start_status = HAL_ERROR;
         return HAL_ERROR;
     }
 
@@ -208,16 +243,7 @@ HAL_StatusTypeDef dma_ads8319_start_frame(void)
     g_dma_frame_active_mask = active_mask;
     g_dma_frame_error = 0U;
     g_dma_frame_seq++;
-
-    if ((g_dma_frame_seq & 0x3FFU) == 1U)
-    {
-        usb_printf("[DMA] start frame=%lu mask=0x%02X bytes=[%u,%u,%u]\r\n",
-                   g_dma_frame_seq,
-                   active_mask,
-                   g_dma_frame_bytes[0],
-                   g_dma_frame_bytes[1],
-                   g_dma_frame_bytes[2]);
-    }
+    g_dma_frame_start_tick = HAL_GetTick();
 
     for (uint8_t spi = 0U; spi < DMA_SPI_CHANNELS; spi++)
     {
@@ -230,18 +256,20 @@ HAL_StatusTypeDef dma_ads8319_start_frame(void)
                                              g_spi_dma_tx_buf,
                                              g_spi_dma_rx_buf[spi],
                                              g_dma_frame_bytes[spi]);
-    if (status != HAL_OK)
-    {
-        g_dma_frame_busy = 0U;
-        g_dma_frame_active_mask = 0U;
-        g_dma_frame_done_mask = 0U;
-        g_dma_frame_error = 1U;
-        usb_printf("[DMA] start failed spi=%u status=%d frame=%lu\r\n",
-                   spi + 1U, (int)status, g_dma_frame_seq);
-        return status;
-    }
+        if (status != HAL_OK)
+        {
+            g_dma_frame_busy = 0U;
+            g_dma_frame_active_mask = 0U;
+            g_dma_frame_done_mask = 0U;
+            g_dma_frame_error = 1U;
+            g_dma_stat_start_fail++;
+            g_dma_last_start_status = status;
+            return status;
+        }
     }
 
+    g_dma_stat_start_ok++;
+    g_dma_last_start_status = HAL_OK;
     return HAL_OK;
 }
 
@@ -270,6 +298,8 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
     }
 
     g_dma_frame_done_mask |= (uint8_t)(1U << spi);
+    g_dma_stat_cplt_irq++;
+
     dma_spi_finish_frame_if_ready();
 }
 
@@ -287,8 +317,84 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
     g_dma_frame_busy = 0U;
     g_dma_frame_active_mask = 0U;
     g_dma_frame_done_mask = 0U;
-    usb_printf("[DMA] spi error spi=%u err=0x%08lX frame=%lu\r\n",
-               spi + 1U, hspi->ErrorCode, g_dma_frame_seq);
+    g_dma_stat_error++;
+}
+
+void dma_ads8319_watchdog_kick(void)
+{
+    uint32_t now;
+    const uint32_t timeout_ms = 2U;
+
+    if (g_dma_frame_busy == 0U)
+    {
+        return;
+    }
+
+    now = HAL_GetTick();
+    if ((now - g_dma_frame_start_tick) < timeout_ms)
+    {
+        return;
+    }
+    g_dma_stat_timeout++;
+
+    for (uint8_t spi = 0U; spi < DMA_SPI_CHANNELS; spi++)
+    {
+        if ((g_dma_frame_active_mask & (1U << spi)) == 0U)
+        {
+            continue;
+        }
+
+        dma_spi_force_recover(spi);
+    }
+
+    ads8319_stop_transfer();
+    g_dma_frame_busy = 0U;
+    g_dma_frame_active_mask = 0U;
+    g_dma_frame_done_mask = 0U;
+    g_dma_frame_error = 1U;
+}
+
+void dma_ads8319_get_stats(uint32_t *start_req,
+                           uint32_t *start_ok,
+                           uint32_t *start_fail,
+                           uint32_t *cplt_irq,
+                           uint32_t *timeouts,
+                           uint32_t *errors)
+{
+    if (start_req)
+    {
+        *start_req = g_dma_stat_start_req;
+    }
+    if (start_ok)
+    {
+        *start_ok = g_dma_stat_start_ok;
+    }
+    if (start_fail)
+    {
+        *start_fail = g_dma_stat_start_fail;
+    }
+    if (cplt_irq)
+    {
+        *cplt_irq = g_dma_stat_cplt_irq;
+    }
+    if (timeouts)
+    {
+        *timeouts = g_dma_stat_timeout;
+    }
+    if (errors)
+    {
+        *errors = g_dma_stat_error;
+    }
+}
+
+int32_t dma_ads8319_get_last_start_status(void)
+{
+    return g_dma_last_start_status;
+}
+
+uint32_t dma_ads8319_get_start_busy_count(void)
+{
+    return g_dma_stat_start_busy;
 }
 
 void GPDMA1_Channel0_IRQHandler(void)

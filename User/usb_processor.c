@@ -20,6 +20,7 @@
 #include "./FATFS/exfuns/fattester.h"
 #include "offline_processor.h"
 #include "./BSP/MMC/mmc_sdcard.h"
+#include "./BSP/DMA_LIST/dma_list.h"
 #include "./FATFS/source/ff.h"
 #include "./BSP/RS485/rs485.h"
 #include "dataType.h"
@@ -1225,12 +1226,25 @@ void USB_Display_All(uint32_t run_flag)
         uint32_t now = HAL_GetTick();
         if ((now - last_display_poll_log) >= 1000U)
         {
+            uint32_t d_start_req = 0;
+            uint32_t d_start_ok = 0;
+            uint32_t d_start_fail = 0;
+            uint32_t d_cplt = 0;
+            uint32_t d_timeout = 0;
+            uint32_t d_err = 0;
+            uint32_t d_busy_reject = 0;
+            int32_t d_last_status = 0;
             last_display_poll_log = now;
-            usb_printf("[DisplayAll] poll run=%lu enabled=%u first_ch=%u cb=%d\r\n",
+            dma_ads8319_get_stats(&d_start_req, &d_start_ok, &d_start_fail, &d_cplt, &d_timeout, &d_err);
+            d_busy_reject = dma_ads8319_get_start_busy_count();
+            d_last_status = dma_ads8319_get_last_start_status();
+            usb_printf("[DisplayAll] poll run=%lu enabled=%u first_ch=%u cb=%d dma{req=%lu ok=%lu fail=%lu cplt=%lu to=%lu err=%lu brej=%lu lstat=%ld busy=%u}\r\n",
                        run_flag,
                        g_enabled_ch_cnt,
                        (g_enabled_ch_cnt > 0) ? g_enabled_chs[0] : 0,
-                       (g_enabled_ch_cnt > 0 && g_cb_ch[g_enabled_chs[0]]) ? cb_size(g_cb_ch[g_enabled_chs[0]]) : -1);
+                       (g_enabled_ch_cnt > 0 && g_cb_ch[g_enabled_chs[0]]) ? cb_size(g_cb_ch[g_enabled_chs[0]]) : -1,
+                       d_start_req, d_start_ok, d_start_fail, d_cplt, d_timeout, d_err, d_busy_reject, d_last_status,
+                       dma_ads8319_frame_busy());
         }
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = {0};
