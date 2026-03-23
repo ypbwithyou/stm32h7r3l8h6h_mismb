@@ -51,6 +51,8 @@ static uint32_t USB_DeleteFile(uint8_t *data_in, uint32_t data_len, FrameHeadInf
 static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_CalibrationRead(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
 static uint32_t PackReplyWithoutDatas(uint32_t event_id);
 
@@ -90,6 +92,8 @@ static const USB_ProtocoItems protocol_getdata[] =
         {DVS_FILE_DOWNLOAD_START, USB_DownloadFileStart},
         {DVS_FILE_DOWNLOAD_STOP, USB_DownloadFileStop},
         {DVS_FILE_DOWNLOAD_DATA_ACK, USB_DownloadFileDataAck},
+        {DVS_FILE_CALIBRATION_READ, USB_CalibrationRead},
+        {DVS_FILE_CALIBRATION_WRITE, USB_CalibrationWrite},
 };
 
 /*********************************************************************************/
@@ -1889,4 +1893,199 @@ FRESULT clear_file_content(const char *path)
     res = f_unlink(path);
     res = ((res == FR_NO_FILE) || (res == FR_OK)) ? FR_OK : res;
     return res;
+}
+
+// 处理PC->ARM的DVS_FILE_CALIBRATION_READ事件
+static uint32_t USB_CalibrationRead(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+{
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+    (void)user_head;
+
+    FIL fil;
+    FRESULT fres;
+    uint8_t *calib_data = NULL;
+    uint32_t file_size = 0;
+    UINT br;
+    int32_t ret = RET_OK;
+
+    usb_printf("[CalibrationRead] Reading calibration file: %s\r\n", CALIBRATION_FILE_PATH);
+
+    // 打开校准文件
+    fres = f_open(&fil, CALIBRATION_FILE_PATH, FA_READ);
+    if (fres != FR_OK)
+    {
+        if (fres == FR_NO_FILE)
+        {
+            usb_printf("[CalibrationRead] Calibration file not found\r\n");
+        }
+        else
+        {
+            usb_printf("[CalibrationRead] f_open failed: %d\r\n", fres);
+        }
+        ret = -1;
+        goto send_reply;
+    }
+
+    // 获取文件大小
+    file_size = f_size(&fil);
+    if (file_size == 0)
+    {
+        usb_printf("[CalibrationRead] Calibration file is empty\r\n");
+        f_close(&fil);
+        ret = -2;
+        goto send_reply;
+    }
+
+    // 限制最大文件大小（防止内存溢出）
+    if (file_size > 64 * 1024) // 最大64KB
+    {
+        usb_printf("[CalibrationRead] File too large: %u bytes\r\n", file_size);
+        f_close(&fil);
+        ret = -3;
+        goto send_reply;
+    }
+
+    // 分配内存
+    calib_data = (uint8_t *)mymalloc(SRAMEX, file_size);
+    if (calib_data == NULL)
+    {
+        usb_printf("[CalibrationRead] Memory allocation failed\r\n");
+        f_close(&fil);
+        ret = -4;
+        goto send_reply;
+    }
+
+    // 读取文件内容
+    fres = f_read(&fil, calib_data, file_size, &br);
+    f_close(&fil);
+
+    if (fres != FR_OK || br != file_size)
+    {
+        usb_printf("[CalibrationRead] f_read failed: res=%d br=%u expected=%u\r\n", fres, br, file_size);
+        myfree(SRAMEX, calib_data);
+        ret = -5;
+        goto send_reply;
+    }
+
+    usb_printf("[CalibrationRead] Success: read %u bytes\r\n", file_size);
+
+    // 发送数据
+    {
+        FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+        UserDataHeadInfo reply_user_head = create_user_data_head(
+            DVS_FILE_CALIBRATION_READ_OK,
+            SOURCE_TYPE_WITH_DATAS,
+            DESTINATION_ARM_TO_PC,
+            file_size);
+        reply_user_head.nParameters0 = RET_OK;
+
+        uint32_t packet_len = 0;
+        pack_data(calib_data, file_size, &reply_user_head, &reply_frame_head, &packet_len);
+
+        myfree(SRAMEX, calib_data);
+        return packet_len;
+    }
+
+send_reply:
+    // 发送错误回复
+    {
+        FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+        UserDataHeadInfo reply_user_head = {0};
+        reply_user_head.nIsValidFlag = 0x12345678;
+        reply_user_head.nEventID = DVS_FILE_CALIBRATION_READ_OK;
+        reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+        reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+        reply_user_head.nDataLength = 0;
+        reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
+        reply_user_head.nParameters0 = ret;
+
+        uint32_t packet_len = 0;
+        pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+        return packet_len;
+    }
+}
+
+// 处理PC->ARM的DVS_FILE_CALIBRATION_WRITE事件
+static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+{
+    (void)frame_head;
+    (void)user_head;
+
+    int32_t ret = RET_OK;
+    FRESULT fres;
+    FIL fil;
+    UINT bw;
+
+    usb_printf("[CalibrationWrite] Writing calibration file: %s, size=%u bytes\r\n", 
+               CALIBRATION_FILE_PATH, data_len);
+
+    // 确保目录存在
+    fres = f_mkdir(CALIBRATION_DIR_PATH);
+    // 忽略目录已存在的错误（FR_EXIST）
+    if (fres != FR_OK && fres != FR_EXIST)
+    {
+        usb_printf("[CalibrationWrite] f_mkdir failed: %d\r\n", fres);
+        ret = -1;
+        goto send_reply;
+    }
+
+    if (data_len == 0)
+    {
+        // 数据长度为0时删除文件
+        usb_printf("[CalibrationWrite] Clearing calibration file\r\n");
+        ret = clear_file_content(CALIBRATION_FILE_PATH);
+        if (ret != RET_OK)
+        {
+            usb_printf("[CalibrationWrite] Failed to clear file\r\n");
+        }
+    }
+    else
+    {
+        // 写入文件
+        fres = f_open(&fil, CALIBRATION_FILE_PATH, FA_CREATE_ALWAYS | FA_WRITE);
+        if (fres != FR_OK)
+        {
+            usb_printf("[CalibrationWrite] f_open failed: %d\r\n", fres);
+            ret = -2;
+            goto send_reply;
+        }
+
+        fres = f_write_dma_safe(&fil, data_in, data_len, &bw);
+        if (fres != FR_OK || bw != data_len)
+        {
+            usb_printf("[CalibrationWrite] f_write failed: res=%d written=%u expected=%u\r\n",
+                       fres, bw, data_len);
+            f_close(&fil);
+            ret = -3;
+            goto send_reply;
+        }
+
+        fres = f_close(&fil);
+        if (fres != FR_OK)
+        {
+            usb_printf("[CalibrationWrite] f_close failed: %d\r\n", fres);
+            ret = -4;
+            goto send_reply;
+        }
+
+        usb_printf("[CalibrationWrite] Success: wrote %u bytes\r\n", bw);
+    }
+
+send_reply:
+    // 构造应答帧
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = {0};
+    reply_user_head.nIsValidFlag = 0x12345678;
+    reply_user_head.nEventID = DVS_FILE_CALIBRATION_WRITE_OK;
+    reply_user_head.nSourceType = SOURCE_TYPE_NO_DATA;
+    reply_user_head.nDestinationID = DESTINATION_ARM_TO_PC;
+    reply_user_head.nDataLength = 0;
+    reply_user_head.nNanoSecond = SoftTimeGetEpochNanosecond();
+    reply_user_head.nParameters0 = (ret != RET_OK) ? -1 : RET_OK;
+
+    uint32_t packet_len = 0;
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+    return packet_len;
 }

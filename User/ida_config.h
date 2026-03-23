@@ -7,6 +7,8 @@
 
 #define OFFLINE_SCHEDULE_FILE "0:/OfflineCfgSchedule.txt"
 #define RECORD_FILE_PATH "0:/RecordDataFiles"
+#define CALIBRATION_DIR_PATH "0:/Calibration"
+#define CALIBRATION_FILE_PATH "0:/Calibration/calib.dat"
 
 // 设备工作模式定义
 #define WORKMODE_ONLINE (0)
