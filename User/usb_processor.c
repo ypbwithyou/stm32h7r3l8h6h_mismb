@@ -2075,6 +2075,7 @@ static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameH
 
 send_reply:
     // 构造应答帧
+		;
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
     UserDataHeadInfo reply_user_head = {0};
     reply_user_head.nIsValidFlag = 0x12345678;
