@@ -860,9 +860,19 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
     g_spi_adc_cnt[1] = 1;
     g_spi_adc_cnt[2] = 1;
 
+    usb_printf("[CollectCfg] enabled_ch_cnt=%u\r\n", g_enabled_ch_cnt);
     usb_printf("spi_adc_cnt: [%d, %d, %d]  mask=0x%06lX\n",
                g_spi_adc_cnt[0], g_spi_adc_cnt[1], g_spi_adc_cnt[2],
                g_ch_enable_mask);
+    if (g_enabled_ch_cnt > 0)
+    {
+        usb_printf("[CollectCfg] first_enabled:");
+        for (uint8_t i = 0; i < g_enabled_ch_cnt && i < 8; i++)
+        {
+            usb_printf(" %u", g_enabled_chs[i]);
+        }
+        usb_printf("\r\n");
+    }
 
     // // ---------------------设备详细信息----------------------------
     // if (data_len < userDataLoc + sizeof(DeviceDetailInfo))
@@ -915,7 +925,13 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
         CfgAdcSampleRate(sample_rate);
 
         g_IdaSystemStatus.st_dev_run.run_flag = 1;
+        usb_printf("[CollectCfg] start collector run_flag=%d\r\n",
+                   g_IdaSystemStatus.st_dev_run.run_flag);
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+    }
+    else
+    {
+        usb_printf("[CollectCfg] invalid sample_rate=%lu\r\n", sample_rate);
     }
 
     return PackReplyWithoutDatas(DVSARM_CSP_START_OK);
@@ -1110,10 +1126,19 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
 
     static uint32_t frame_num = 0;
     const uint32_t cb_needed = BLOCK_LEN * ADC_DATA_LEN;
+    static uint32_t last_wait_log_tick = 0;
 
     // 没有配置通道则直接返回
     if (g_enabled_ch_cnt == 0)
+    {
+        uint32_t now = HAL_GetTick();
+        if ((now - last_wait_log_tick) >= 1000U)
+        {
+            last_wait_log_tick = now;
+            usb_printf("[Display] waiting no enabled channel\r\n");
+        }
         return 0;
+    }
 
     // 所有配置通道必须全部就绪，否则等下一次
     for (uint8_t i = 0; i < g_enabled_ch_cnt; i++)
@@ -1178,6 +1203,7 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
 // 处理PC->ARM的DVSARM_DISPNEXT_OK事件，循环发送数据
 void USB_Display_All(uint32_t run_flag)
 {
+    static uint32_t last_display_poll_log = 0;
     // usb_printf("DisplayAll: run=%lu offline=%d record=%d\n",
     //            run_flag,
     //            g_IdaSystemStatus.st_dev_offline.start_flag,
@@ -1196,6 +1222,16 @@ void USB_Display_All(uint32_t run_flag)
 
     if (run_flag)
     {
+        uint32_t now = HAL_GetTick();
+        if ((now - last_display_poll_log) >= 1000U)
+        {
+            last_display_poll_log = now;
+            usb_printf("[DisplayAll] poll run=%lu enabled=%u first_ch=%u cb=%d\r\n",
+                       run_flag,
+                       g_enabled_ch_cnt,
+                       (g_enabled_ch_cnt > 0) ? g_enabled_chs[0] : 0,
+                       (g_enabled_ch_cnt > 0 && g_cb_ch[g_enabled_chs[0]]) ? cb_size(g_cb_ch[g_enabled_chs[0]]) : -1);
+        }
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = {0};
         USB_Display_Reply(NULL, 0, &reply_frame_head, &reply_user_head);

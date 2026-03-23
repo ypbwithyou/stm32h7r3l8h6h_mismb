@@ -5,6 +5,7 @@
 #include "./BSP/TIMER/gtim.h"
 #include "./BSP/ADS8319/ads8319.h"
 #include "./BSP/SPI/spi.h"
+#include "./BSP/DMA_LIST/dma_list.h"
 #include "./BSP/LED/led.h"
 #include "./BSP/HYPERRAM/hyperram.h"
 #include "./BSP/MMC/mmc_sdcard.h"
@@ -493,6 +494,7 @@ int8_t IdaDeviceInit(void)
     ads8319_spi_gpio_init(SPI1_SPI);
     ads8319_spi_gpio_init(SPI2_SPI);
     ads8319_spi_gpio_init(SPI3_SPI);
+    dma_list_rtx_init();
     ads8319_common_gpio_init();
 
     usb_init();
