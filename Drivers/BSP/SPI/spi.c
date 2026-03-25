@@ -48,7 +48,7 @@ void spi_init(unsigned int spi_periph)
     HAL_SPI_Init(&g_spi_handle[i]);
 
     // 屏蔽使能SPI传输，等DMA准备好后再使能，确保SPI传输与DMA传输之间的同步问题
-    __HAL_SPI_ENABLE(&g_spi_handle[i]); /* ʹ��SPI2 */
+    __HAL_SPI_ENABLE(&g_spi_handle[i]); /* 使能SPI */
 }
  
 void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
@@ -58,99 +58,99 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 
     if (hspi->Instance == SPI1_SPIx)
     {
-        SPI1_SPI_CLK_ENABLE();       /* SPI1ʱ��ʹ�� */
-        SPI1_SCK_GPIO_CLK_ENABLE();  /* SPI1_SCK��ʱ��ʹ�� */
-        SPI1_MISO_GPIO_CLK_ENABLE(); /* SPI1_MISO��ʱ��ʹ�� */
-        SPI1_MOSI_GPIO_CLK_ENABLE(); /* SPI1_MOSI��ʱ��ʹ�� */
+        SPI1_SPI_CLK_ENABLE();       /* SPI1时钟使能 */
+        SPI1_SCK_GPIO_CLK_ENABLE();  /* SPI1_SCK时钟使能 */
+        SPI1_MISO_GPIO_CLK_ENABLE(); /* SPI1_MISO时钟使能 */
+        SPI1_MOSI_GPIO_CLK_ENABLE(); /* SPI1_MOSI时钟使能 */
 
-        /* ����SPI1��ʱ��Դ */
-        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI1;    /* ����SPI1ʱ��Դ */
-        rcc_periph_clk_init.Spi1ClockSelection = RCC_SPI1CLKSOURCE_PLL1Q; /* SPI1ʱ��Դʹ��PLL1Q */
+        /* 配置SPI1的时钟源 */
+        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI1;    /* 配置SPI1时钟源 */
+        rcc_periph_clk_init.Spi1ClockSelection = RCC_SPI1CLKSOURCE_PLL1Q; /* SPI1时钟源使用PLL1Q */
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
         gpio_init_struct.Pin = SPI1_SCK_GPIO_PIN;
-        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* ����������� */
-        gpio_init_struct.Pull = GPIO_PULLUP;                  /* ���� */
-        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* ���� */
-        gpio_init_struct.Alternate = SPI1_SCK_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI1_SCK_GPIO_PORT, &gpio_init_struct); /* ��ʼ��SCK���� */
+        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* 复用推挽输出 */
+        gpio_init_struct.Pull = GPIO_PULLUP;                  /* 上拉 */
+        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* 超高速 */
+        gpio_init_struct.Alternate = SPI1_SCK_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI1_SCK_GPIO_PORT, &gpio_init_struct); /* 初始化SCK引脚 */
 
         gpio_init_struct.Pin = SPI1_MISO_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI1_MISO_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI1_MISO_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MISO���� */
+        gpio_init_struct.Alternate = SPI1_MISO_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI1_MISO_GPIO_PORT, &gpio_init_struct); /* 初始化MISO引脚 */
 
         gpio_init_struct.Pin = SPI1_MOSI_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI1_MOSI_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI1_MOSI_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MOSI���� */
+        gpio_init_struct.Alternate = SPI1_MOSI_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI1_MOSI_GPIO_PORT, &gpio_init_struct); /* 初始化MOSI引脚 */
     }
     else if (hspi->Instance == SPI2_SPIx)
     {
-        SPI2_SPI_CLK_ENABLE();       /* SPI2ʱ��ʹ�� */
-        SPI2_SCK_GPIO_CLK_ENABLE();  /* SPI2_SCK��ʱ��ʹ�� */
-        SPI2_MISO_GPIO_CLK_ENABLE(); /* SPI2_MISO��ʱ��ʹ�� */
-        SPI2_MOSI_GPIO_CLK_ENABLE(); /* SPI2_MOSI��ʱ��ʹ�� */
+        SPI2_SPI_CLK_ENABLE();       /* SPI2时钟使能 */
+        SPI2_SCK_GPIO_CLK_ENABLE();  /* SPI2_SCK时钟使能 */
+        SPI2_MISO_GPIO_CLK_ENABLE(); /* SPI2_MISO时钟使能 */
+        SPI2_MOSI_GPIO_CLK_ENABLE(); /* SPI2_MOSI时钟使能 */
 
-        /* ����SPI2��ʱ��Դ */
-        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI23;     /* ����SPI2ʱ��Դ */
-        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI23CLKSOURCE_PLL1Q; /* SPI2ʱ��Դʹ��PLL1Q */
+        /* 配置SPI2的时钟源 */
+        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI23;     /* 配置SPI2时钟源 */
+        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI23CLKSOURCE_PLL1Q; /* SPI2时钟源使用PLL1Q */
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
         gpio_init_struct.Pin = SPI2_SCK_GPIO_PIN;
-        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* ����������� */
-        gpio_init_struct.Pull = GPIO_PULLUP;                  /* ���� */
-        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* ���� */
-        gpio_init_struct.Alternate = SPI2_SCK_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI2_SCK_GPIO_PORT, &gpio_init_struct); /* ��ʼ��SCK���� */
+        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* 复用推挽输出 */
+        gpio_init_struct.Pull = GPIO_PULLUP;                  /* 上拉 */
+        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* 超高速 */
+        gpio_init_struct.Alternate = SPI2_SCK_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI2_SCK_GPIO_PORT, &gpio_init_struct); /* 初始化SCK引脚 */
 
         gpio_init_struct.Pin = SPI2_MISO_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI2_MISO_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI2_MISO_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MISO���� */
+        gpio_init_struct.Alternate = SPI2_MISO_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI2_MISO_GPIO_PORT, &gpio_init_struct); /* 初始化MISO引脚 */
 
         gpio_init_struct.Pin = SPI2_MOSI_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI2_MOSI_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI2_MOSI_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MOSI���� */
+        gpio_init_struct.Alternate = SPI2_MOSI_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI2_MOSI_GPIO_PORT, &gpio_init_struct); /* 初始化MOSI引脚 */
     }
     else if (hspi->Instance == SPI3_SPIx)
     {
-        SPI3_SPI_CLK_ENABLE();       /* SPI3ʱ��ʹ�� */
-        SPI3_SCK_GPIO_CLK_ENABLE();  /* SPI3_SCK��ʱ��ʹ�� */
-        SPI3_MISO_GPIO_CLK_ENABLE(); /* SPI3_MISO��ʱ��ʹ�� */
-        SPI3_MOSI_GPIO_CLK_ENABLE(); /* SPI3_MOSI��ʱ��ʹ�� */
+        SPI3_SPI_CLK_ENABLE();       /* SPI3时钟使能 */
+        SPI3_SCK_GPIO_CLK_ENABLE();  /* SPI3_SCK时钟使能 */
+        SPI3_MISO_GPIO_CLK_ENABLE(); /* SPI3_MISO时钟使能 */
+        SPI3_MOSI_GPIO_CLK_ENABLE(); /* SPI3_MOSI时钟使能 */
 
-        /* ����SPI3��ʱ��Դ */
-        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI45;     /* ����SPI3ʱ��Դ */
-        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q; /* SPI3ʱ��Դʹ��PLL1Q */
+        /* 配置SPI3的时钟源 */
+        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI45;     /* 配置SPI3时钟源 */
+        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q; /* SPI3时钟源使用PLL2Q */
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
         gpio_init_struct.Pin = SPI3_SCK_GPIO_PIN;
-        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* ����������� */
-        gpio_init_struct.Pull = GPIO_PULLUP;                  /* ���� */
-        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* ���� */
-        gpio_init_struct.Alternate = SPI3_SCK_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI3_SCK_GPIO_PORT, &gpio_init_struct); /* ��ʼ��SCK���� */
+        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* 复用推挽输出 */
+        gpio_init_struct.Pull = GPIO_PULLUP;                  /* 上拉 */
+        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* 超高速 */
+        gpio_init_struct.Alternate = SPI3_SCK_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI3_SCK_GPIO_PORT, &gpio_init_struct); /* 初始化SCK引脚 */
 
         gpio_init_struct.Pin = SPI3_MISO_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI3_MISO_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI3_MISO_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MISO���� */
+        gpio_init_struct.Alternate = SPI3_MISO_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI3_MISO_GPIO_PORT, &gpio_init_struct); /* 初始化MISO引脚 */
 
         gpio_init_struct.Pin = SPI3_MOSI_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI3_MOSI_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI3_MOSI_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MOSI���� */
+        gpio_init_struct.Alternate = SPI3_MOSI_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI3_MOSI_GPIO_PORT, &gpio_init_struct); /* 初始化MOSI引脚 */
     }
     else if (hspi->Instance == SDNAND_SPI)
     {
-        /* ����ʱ��Դ */
+        /* 配置时钟源 */
         rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI45;
         rcc_periph_clk_init.Xspi1ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q;
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
-        /* ʹ��ʱ�� */
+        /* 使能时钟 */
         SDNAND_SPI_CLK_ENABLE();
         SDNAND_SPI_SCK_GPIO_CLK_ENABLE();
         SDNAND_SPI_MOSI_GPIO_CLK_ENABLE();
         SDNAND_SPI_MISO_GPIO_CLK_ENABLE();
 
-        /* ��ʼ��ͨѶ���� */
+        /* 初始化通信引脚 */
         gpio_init_struct.Pin = SDNAND_SPI_SCK_GPIO_PIN;
         gpio_init_struct.Mode = GPIO_MODE_AF_PP;
         gpio_init_struct.Pull = GPIO_PULLUP;
@@ -173,11 +173,11 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 }
 
 /**
- * @brief       SPI�ٶ����ú���
- *   @note      SPIʱ��ѡ������pll1_q_ck, Ϊ250Mhz
- *              SPI�ٶ� = spi_ker_ck / 2^(speed + 1)
- * @param       speed: SPI2ʱ�ӷ�Ƶϵ��,SPI_BAUDRATEPRESCALER_2~SPI_BAUDRATEPRESCALER_256
- * @retval      ��
+ * @brief       SPI速度配置函数
+ *   @note      SPI时钟选择来源为pll1_q_ck, 为250Mhz
+ *              SPI速度 = spi_ker_ck / 2^(speed + 1)
+ * @param       speed: SPI2时钟分频系数,SPI_BAUDRATEPRESCALER_2~SPI_BAUDRATEPRESCALER_256
+ * @retval      无
  */
 void spi_set_speed(unsigned int spi_periph, unsigned int speed)
 {
@@ -196,17 +196,17 @@ void spi_set_speed(unsigned int spi_periph, unsigned int speed)
     default:
         break;
     }
-    assert_param(IS_SPI_BAUDRATE_PRESCALER(speed)); /* �ж���Ч�� */
-    __HAL_SPI_DISABLE(&g_spi_handle[i]);            /* �ر�SPI */
-    g_spi_handle[i].Instance->CFG1 &= ~(0X7 << 28); /* λ30-28���㣬�������ò����� */
-    g_spi_handle[i].Instance->CFG1 |= speed;        /* ����SPI�ٶ� */
-    __HAL_SPI_ENABLE(&g_spi_handle[i]);             /* ʹ��SPI */
+    assert_param(IS_SPI_BAUDRATE_PRESCALER(speed)); /* 判断有效性 */
+    __HAL_SPI_DISABLE(&g_spi_handle[i]);            /* 关闭SPI */
+    g_spi_handle[i].Instance->CFG1 &= ~(0X7 << 28); /* 清零设置波特率位 */
+    g_spi_handle[i].Instance->CFG1 |= speed;        /* 设置SPI速度 */
+    __HAL_SPI_ENABLE(&g_spi_handle[i]);             /* 使能SPI */
 }
 
 /**
- * @brief       SPI2��дһ���ֽ�����
- * @param       txdata: Ҫ���͵�����(1�ֽ�)
- * @retval      ���յ�������(1�ֽ�)
+ * @brief       SPI2读写一个字节数据
+ * @param       txdata: 要发送的数据(1字节)
+ * @retval      接收到的数据(1字节)
  */
 unsigned char spi_read_write_byte(unsigned int spi_periph, unsigned char *txdata, unsigned char *rxdata, unsigned char size)
 {
@@ -227,7 +227,7 @@ unsigned char spi_read_write_byte(unsigned int spi_periph, unsigned char *txdata
         break;
     }
     HAL_SPI_TransmitReceive(&g_spi_handle[i], txdata, rxdata, size, 1000);
-    return size; /* �����յ������� */
+    return size; /* 返回接收到的数据 */
 }
  
  unsigned char spi_read_write_byte_fast(unsigned int spi_periph,
