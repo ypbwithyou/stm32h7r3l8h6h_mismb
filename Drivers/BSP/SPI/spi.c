@@ -2,6 +2,7 @@
 #include "./BSP/SDNAND/spi_sdnand.h"
 #include "./BSP/TIMER/gtim.h"
 #include "./BSP/DMA_LIST/dma_list.h"
+#include "./BSP/ADS8319/ads8319.h"
 
 SPI_HandleTypeDef g_spi_handle[3];  
  
