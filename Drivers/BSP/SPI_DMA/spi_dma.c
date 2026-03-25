@@ -18,8 +18,9 @@ void spi_dma_init(void)
     /* 使能GPDMA1时钟 */
     __HAL_RCC_GPDMA1_CLK_ENABLE();
     
-    /* 初始化SPI1 DMA RX通道 */
-    g_spi_dma_handle[0].hdma_rx.Instance = GPDMA1_Channel0;
+    /* ========== SPI1 DMA通道 ========== */
+    /* RX通道: GPDMA1_Channel6 (避免与dma_list.c的Channel0冲突) */
+    g_spi_dma_handle[0].hdma_rx.Instance = GPDMA1_Channel6;
     g_spi_dma_handle[0].hdma_rx.Init.Request = GPDMA1_REQUEST_SPI1_RX;
     g_spi_dma_handle[0].hdma_rx.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
     g_spi_dma_handle[0].hdma_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
@@ -35,16 +36,33 @@ void spi_dma_init(void)
     g_spi_dma_handle[0].hdma_rx.Init.Mode = DMA_NORMAL;
     HAL_DMA_Init(&g_spi_dma_handle[0].hdma_rx);
     HAL_DMA_ConfigChannelAttributes(&g_spi_dma_handle[0].hdma_rx, DMA_CHANNEL_NPRIV);
-    
-    /* 注册SPI1 DMA完成回调 */
     HAL_DMA_RegisterCallback(&g_spi_dma_handle[0].hdma_rx, HAL_DMA_XFER_CPLT_CB_ID, spi_dma_rx_cplt_callback);
+    HAL_NVIC_SetPriority(GPDMA1_Channel6_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel6_IRQn);
     
-    /* 配置SPI1 DMA中断 */
-    HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 1, 0);
-    HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+    /* TX通道: GPDMA1_Channel3 */
+    g_spi_dma_handle[0].hdma_tx.Instance = GPDMA1_Channel3;
+    g_spi_dma_handle[0].hdma_tx.Init.Request = GPDMA1_REQUEST_SPI1_TX;
+    g_spi_dma_handle[0].hdma_tx.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
+    g_spi_dma_handle[0].hdma_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    g_spi_dma_handle[0].hdma_tx.Init.SrcInc = DMA_SINC_INCREMENTED;
+    g_spi_dma_handle[0].hdma_tx.Init.DestInc = DMA_DINC_FIXED;
+    g_spi_dma_handle[0].hdma_tx.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
+    g_spi_dma_handle[0].hdma_tx.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
+    g_spi_dma_handle[0].hdma_tx.Init.Priority = DMA_HIGH_PRIORITY;
+    g_spi_dma_handle[0].hdma_tx.Init.SrcBurstLength = 1;
+    g_spi_dma_handle[0].hdma_tx.Init.DestBurstLength = 1;
+    g_spi_dma_handle[0].hdma_tx.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+    g_spi_dma_handle[0].hdma_tx.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+    g_spi_dma_handle[0].hdma_tx.Init.Mode = DMA_NORMAL;
+    HAL_DMA_Init(&g_spi_dma_handle[0].hdma_tx);
+    HAL_DMA_ConfigChannelAttributes(&g_spi_dma_handle[0].hdma_tx, DMA_CHANNEL_NPRIV);
+    HAL_NVIC_SetPriority(GPDMA1_Channel3_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel3_IRQn);
     
-    /* 初始化SPI2 DMA RX通道 */
-    g_spi_dma_handle[1].hdma_rx.Instance = GPDMA1_Channel1;
+    /* ========== SPI2 DMA通道 ========== */
+    /* RX通道: GPDMA1_Channel7 */
+    g_spi_dma_handle[1].hdma_rx.Instance = GPDMA1_Channel7;
     g_spi_dma_handle[1].hdma_rx.Init.Request = GPDMA1_REQUEST_SPI2_RX;
     g_spi_dma_handle[1].hdma_rx.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
     g_spi_dma_handle[1].hdma_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
@@ -60,16 +78,33 @@ void spi_dma_init(void)
     g_spi_dma_handle[1].hdma_rx.Init.Mode = DMA_NORMAL;
     HAL_DMA_Init(&g_spi_dma_handle[1].hdma_rx);
     HAL_DMA_ConfigChannelAttributes(&g_spi_dma_handle[1].hdma_rx, DMA_CHANNEL_NPRIV);
-    
-    /* 注册SPI2 DMA完成回调 */
     HAL_DMA_RegisterCallback(&g_spi_dma_handle[1].hdma_rx, HAL_DMA_XFER_CPLT_CB_ID, spi_dma_rx_cplt_callback);
+    HAL_NVIC_SetPriority(GPDMA1_Channel7_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel7_IRQn);
     
-    /* 配置SPI2 DMA中断 */
-    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 1, 0);
-    HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
+    /* TX通道: GPDMA1_Channel4 */
+    g_spi_dma_handle[1].hdma_tx.Instance = GPDMA1_Channel4;
+    g_spi_dma_handle[1].hdma_tx.Init.Request = GPDMA1_REQUEST_SPI2_TX;
+    g_spi_dma_handle[1].hdma_tx.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
+    g_spi_dma_handle[1].hdma_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    g_spi_dma_handle[1].hdma_tx.Init.SrcInc = DMA_SINC_INCREMENTED;
+    g_spi_dma_handle[1].hdma_tx.Init.DestInc = DMA_DINC_FIXED;
+    g_spi_dma_handle[1].hdma_tx.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
+    g_spi_dma_handle[1].hdma_tx.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
+    g_spi_dma_handle[1].hdma_tx.Init.Priority = DMA_HIGH_PRIORITY;
+    g_spi_dma_handle[1].hdma_tx.Init.SrcBurstLength = 1;
+    g_spi_dma_handle[1].hdma_tx.Init.DestBurstLength = 1;
+    g_spi_dma_handle[1].hdma_tx.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+    g_spi_dma_handle[1].hdma_tx.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+    g_spi_dma_handle[1].hdma_tx.Init.Mode = DMA_NORMAL;
+    HAL_DMA_Init(&g_spi_dma_handle[1].hdma_tx);
+    HAL_DMA_ConfigChannelAttributes(&g_spi_dma_handle[1].hdma_tx, DMA_CHANNEL_NPRIV);
+    HAL_NVIC_SetPriority(GPDMA1_Channel4_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel4_IRQn);
     
-    /* 初始化SPI3 (SPI4) DMA RX通道 */
-    g_spi_dma_handle[2].hdma_rx.Instance = GPDMA1_Channel2;
+    /* ========== SPI3 (SPI4) DMA通道 ========== */
+    /* RX通道: GPDMA1_Channel8 */
+    g_spi_dma_handle[2].hdma_rx.Instance = GPDMA1_Channel8;
     g_spi_dma_handle[2].hdma_rx.Init.Request = GPDMA1_REQUEST_SPI4_RX;
     g_spi_dma_handle[2].hdma_rx.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
     g_spi_dma_handle[2].hdma_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
@@ -85,13 +120,29 @@ void spi_dma_init(void)
     g_spi_dma_handle[2].hdma_rx.Init.Mode = DMA_NORMAL;
     HAL_DMA_Init(&g_spi_dma_handle[2].hdma_rx);
     HAL_DMA_ConfigChannelAttributes(&g_spi_dma_handle[2].hdma_rx, DMA_CHANNEL_NPRIV);
-    
-    /* 注册SPI3 DMA完成回调 */
     HAL_DMA_RegisterCallback(&g_spi_dma_handle[2].hdma_rx, HAL_DMA_XFER_CPLT_CB_ID, spi_dma_rx_cplt_callback);
+    HAL_NVIC_SetPriority(GPDMA1_Channel8_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel8_IRQn);
     
-    /* 配置SPI3 DMA中断 */
-    HAL_NVIC_SetPriority(GPDMA1_Channel2_IRQn, 1, 0);
-    HAL_NVIC_EnableIRQ(GPDMA1_Channel2_IRQn);
+    /* TX通道: GPDMA1_Channel5 */
+    g_spi_dma_handle[2].hdma_tx.Instance = GPDMA1_Channel5;
+    g_spi_dma_handle[2].hdma_tx.Init.Request = GPDMA1_REQUEST_SPI4_TX;
+    g_spi_dma_handle[2].hdma_tx.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
+    g_spi_dma_handle[2].hdma_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    g_spi_dma_handle[2].hdma_tx.Init.SrcInc = DMA_SINC_INCREMENTED;
+    g_spi_dma_handle[2].hdma_tx.Init.DestInc = DMA_DINC_FIXED;
+    g_spi_dma_handle[2].hdma_tx.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
+    g_spi_dma_handle[2].hdma_tx.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
+    g_spi_dma_handle[2].hdma_tx.Init.Priority = DMA_HIGH_PRIORITY;
+    g_spi_dma_handle[2].hdma_tx.Init.SrcBurstLength = 1;
+    g_spi_dma_handle[2].hdma_tx.Init.DestBurstLength = 1;
+    g_spi_dma_handle[2].hdma_tx.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;
+    g_spi_dma_handle[2].hdma_tx.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+    g_spi_dma_handle[2].hdma_tx.Init.Mode = DMA_NORMAL;
+    HAL_DMA_Init(&g_spi_dma_handle[2].hdma_tx);
+    HAL_DMA_ConfigChannelAttributes(&g_spi_dma_handle[2].hdma_tx, DMA_CHANNEL_NPRIV);
+    HAL_NVIC_SetPriority(GPDMA1_Channel5_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel5_IRQn);
     
     /* 初始化状态 */
     for (uint8_t i = 0; i < 3; i++)
@@ -112,6 +163,7 @@ void spi_dma_start_transfer(uint8_t spi_idx, uint8_t *tx_data, uint8_t *rx_data,
 {
     SPI_TypeDef *SPIx;
     SPI_HandleTypeDef *hspi;
+    uint8_t *tx_ptr;
     
     if (spi_idx > 2 || size == 0 || size > SPI_DMA_MAX_TRANSFER_SIZE)
         return;
@@ -126,11 +178,14 @@ void spi_dma_start_transfer(uint8_t spi_idx, uint8_t *tx_data, uint8_t *rx_data,
     /* 清除状态标志 */
     SPIx->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC;
     
-    /* 配置DMA */
+    /* 配置DMA状态 */
     g_spi_dma_handle[spi_idx].state = SPI_DMA_BUSY;
     g_spi_dma_handle[spi_idx].rx_buffer = rx_data;
     g_spi_dma_handle[spi_idx].tx_buffer = tx_data ? tx_data : g_default_tx_data;
     g_spi_dma_handle[spi_idx].transfer_size = size;
+    
+    /* 选择TX数据源 */
+    tx_ptr = tx_data ? tx_data : g_default_tx_data;
     
     /* 启用SPI DMA */
     SET_BIT(SPIx->CFG1, SPI_CFG1_RXDMAEN | SPI_CFG1_TXDMAEN);
@@ -139,10 +194,16 @@ void spi_dma_start_transfer(uint8_t spi_idx, uint8_t *tx_data, uint8_t *rx_data,
     __HAL_SPI_ENABLE(hspi);
     SET_BIT(SPIx->CR1, SPI_CR1_CSTART);
     
-    /* 启动DMA传输 */
+    /* 启动RX DMA传输 */
     HAL_DMA_Start_IT(&g_spi_dma_handle[spi_idx].hdma_rx, 
                      (uint32_t)&SPIx->RXDR, 
                      (uint32_t)rx_data, 
+                     size);
+    
+    /* 启动TX DMA传输 */
+    HAL_DMA_Start_IT(&g_spi_dma_handle[spi_idx].hdma_tx,
+                     (uint32_t)tx_ptr,
+                     (uint32_t)&SPIx->TXDR,
                      size);
 }
 
@@ -223,7 +284,7 @@ void spi_dma_start_all(uint8_t tx_data[3][SPI_DMA_MAX_TRANSFER_SIZE],
  */
 uint8_t spi_dma_wait_all_complete(void)
 {
-    uint32_t timeout = 10000;
+    uint32_t timeout = 100000;
     
     while (timeout--)
     {
@@ -257,8 +318,9 @@ void spi_dma_rx_cplt_callback(DMA_HandleTypeDef *hdma)
             SPI_HandleTypeDef *hspi = &g_spi_handle[i];
             SPI_TypeDef *SPIx = hspi->Instance;
             
-            /* 等待传输完成 */
-            while (!(SPIx->SR & SPI_SR_EOT))
+            /* 等待SPI传输完成，带超时 */
+            uint32_t timeout = 10000;
+            while (!(SPIx->SR & SPI_SR_EOT) && --timeout)
                 ;
             
             /* 清除状态标志 */
@@ -267,27 +329,50 @@ void spi_dma_rx_cplt_callback(DMA_HandleTypeDef *hdma)
             /* 禁用DMA */
             CLEAR_BIT(SPIx->CFG1, SPI_CFG1_RXDMAEN | SPI_CFG1_TXDMAEN);
             
+            /* 停止SPI */
+            __HAL_SPI_DISABLE(hspi);
+            
             /* 更新状态 */
             g_spi_dma_handle[i].state = SPI_DMA_COMPLETE;
             
-            /* 调用用户回调（如果需要） */
             break;
         }
     }
 }
 
 /* DMA中断处理函数 */
-void GPDMA1_Channel0_IRQHandler(void)
+/* GPDMA1_Channel0: UART DMA (dma_list.c) */
+/* GPDMA1_Channel1: 未使用 */
+/* GPDMA1_Channel2: 未使用 */
+
+/* TX DMA中断处理函数 */
+void GPDMA1_Channel3_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&g_spi_dma_handle[0].hdma_tx);
+}
+
+void GPDMA1_Channel4_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&g_spi_dma_handle[1].hdma_tx);
+}
+
+void GPDMA1_Channel5_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(&g_spi_dma_handle[2].hdma_tx);
+}
+
+/* RX DMA中断处理函数 */
+void GPDMA1_Channel6_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&g_spi_dma_handle[0].hdma_rx);
 }
 
-void GPDMA1_Channel1_IRQHandler(void)
+void GPDMA1_Channel7_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&g_spi_dma_handle[1].hdma_rx);
 }
 
-void GPDMA1_Channel2_IRQHandler(void)
+void GPDMA1_Channel8_IRQHandler(void)
 {
     HAL_DMA_IRQHandler(&g_spi_dma_handle[2].hdma_rx);
 }

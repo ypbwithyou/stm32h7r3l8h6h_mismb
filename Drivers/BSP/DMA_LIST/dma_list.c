@@ -1,33 +1,33 @@
  
 #include "./BSP/DMA/dma.h"
 
-/* DMA¾ä±ú */
+/* DMAï¿½ï¿½ï¿½ */
 DMA_HandleTypeDef g_dma_handle = {0};
 
-/* DMAÁ´±í */
+/* DMAï¿½ï¿½ï¿½ï¿½ */
 DMA_QListTypeDef g_dma_qlist_struct = {0};
 
-/* DMAÁ´±í½Úµã */
+/* DMAï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½ */
 DMA_NodeTypeDef g_dma_node_struct[DMA_MAX_NODE] = {0};
 
-/* DMAÁ´±í½ÚµãÊ¹ÓÃÁ¿ */
+/* DMAï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½Ê¹ï¿½ï¿½ï¿½ï¿½ */
 uint32_t node_used = 0;
 
-/* DMA¾ÍĞ÷×´Ì¬ */
+/* DMAï¿½ï¿½ï¿½ï¿½×´Ì¬ */
 uint8_t dma_ready = 1;
 
-/* UART¾ä±ú */
+/* UARTï¿½ï¿½ï¿½ */
 extern UART_HandleTypeDef g_uart1_handle;
 
-/* DMA´«ÊäÍê³É»Øµ÷º¯Êı */
+/* DMAï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É»Øµï¿½ï¿½ï¿½ï¿½ï¿½ */
 static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma);
 
 /**
- * @brief   ³õÊ¼»¯DMA
- * @param   bufaddr: »º³åÇøµØÖ·»º³åÇøµÄÖ¸Õë
- * @param   bufsize: »º³åÇø´óĞ¡»º³åÇøµÄÖ¸Õë
- * @param   bufnum: »º³åÇøÊıÁ¿
- * @retval  ÎŞ
+ * @brief   ï¿½ï¿½Ê¼ï¿½ï¿½DMA
+ * @param   bufaddr: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @param   bufsize: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @param   bufnum: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void dma_init(uint32_t *bufaddr, uint32_t *bufsize, uint32_t bufnum)
 {
@@ -43,73 +43,73 @@ void dma_init(uint32_t *bufaddr, uint32_t *bufsize, uint32_t bufnum)
         node_used = bufnum;
     }
     
-    /* Ê¹ÄÜÊ±ÖÓ */
+    /* Ê¹ï¿½ï¿½Ê±ï¿½ï¿½ */
     __HAL_RCC_GPDMA1_CLK_ENABLE();
     
-    /* ¸´Î»Á´±í */
+    /* ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ */
     HAL_DMAEx_List_ResetQ(&g_dma_qlist_struct);
     
-    /* ÅäÖÃDMAÁ´±í½Úµã */
-    dma_node_conf_struct.NodeType = DMA_GPDMA_LINEAR_NODE;                                                  /* ½ÚµãÀàĞÍ */
-    dma_node_conf_struct.Init.Request = GPDMA1_REQUEST_USART1_TX;                                           /* Í¨µÀÇëÇó */
-    dma_node_conf_struct.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;                                         /* ¿éÓ²¼şÇëÇóÄ£Ê½ */
-    dma_node_conf_struct.Init.Direction = DMA_MEMORY_TO_PERIPH;                                             /* ´«Êä·½Ïò */
-    dma_node_conf_struct.Init.SrcInc = DMA_SINC_INCREMENTED;                                                /* ´«ÊäÔ´µØÖ·ÔöÁ¿Ä£Ê½ */
-    dma_node_conf_struct.Init.DestInc = DMA_DINC_FIXED;                                                     /* ´«ÊäÄ¿±êµØÖ·ÔöÁ¿Ä£Ê½ */
-    dma_node_conf_struct.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;                                        /* ´«ÊäÔ´Êı¾İ¿í¶È */
-    dma_node_conf_struct.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;                                      /* ´«ÊäÄ¿±êÊı¾İ¿í¶È */
-    dma_node_conf_struct.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                       /* ÓÅÏÈ¼¶ */
-    dma_node_conf_struct.Init.SrcBurstLength = 1;                                                           /* ´«ÊäÔ´Í»·¢³¤¶È */ 
-    dma_node_conf_struct.Init.DestBurstLength = 1;                                                          /* ´«ÊäÄ¿±êÍ»·¢³¤¶È */
-    dma_node_conf_struct.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;   /* ´«Êä¶Ë¿Ú·ÖÅä */
-    dma_node_conf_struct.Init.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;                           /* ´«ÊäÊÂ¼şÄ£Ê½ */
-    dma_node_conf_struct.Init.Mode = DMA_NORMAL;                                                            /* ´«ÊäÄ£Ê½ */
-    dma_node_conf_struct.DataHandlingConfig.DataExchange = DMA_EXCHANGE_NONE;                               /* Êı¾İ½»»»Ä£Ê½ */
-    dma_node_conf_struct.DataHandlingConfig.DataAlignment = DMA_DATA_RIGHTALIGN_ZEROPADDED;                 /* Êı¾İÌî³äºÍ¶ÔÆëÄ£Ê½ */
-    dma_node_conf_struct.TriggerConfig.TriggerPolarity = DMA_TRIG_POLARITY_MASKED;                          /* ´¥·¢ÊÂ¼şÓÅÏÈ¼¶ */
-    dma_node_conf_struct.DstAddress = (uint32_t)&g_uart1_handle.Instance->TDR;                              /* Ä¿µÄµØÖ· */
+    /* ï¿½ï¿½ï¿½ï¿½DMAï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½ */
+    dma_node_conf_struct.NodeType = DMA_GPDMA_LINEAR_NODE;                                                  /* ï¿½Úµï¿½ï¿½ï¿½ï¿½ï¿½ */
+    dma_node_conf_struct.Init.Request = GPDMA1_REQUEST_USART1_TX;                                           /* Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
+    dma_node_conf_struct.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;                                         /* ï¿½ï¿½Ó²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£Ê½ */
+    dma_node_conf_struct.Init.Direction = DMA_MEMORY_TO_PERIPH;                                             /* ï¿½ï¿½ï¿½ä·½ï¿½ï¿½ */
+    dma_node_conf_struct.Init.SrcInc = DMA_SINC_INCREMENTED;                                                /* ï¿½ï¿½ï¿½ï¿½Ô´ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ä£Ê½ */
+    dma_node_conf_struct.Init.DestInc = DMA_DINC_FIXED;                                                     /* ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ä£Ê½ */
+    dma_node_conf_struct.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;                                        /* ï¿½ï¿½ï¿½ï¿½Ô´ï¿½ï¿½ï¿½İ¿ï¿½ï¿½ï¿½ */
+    dma_node_conf_struct.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;                                      /* ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½İ¿ï¿½ï¿½ï¿½ */
+    dma_node_conf_struct.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                       /* ï¿½ï¿½ï¿½È¼ï¿½ */
+    dma_node_conf_struct.Init.SrcBurstLength = 1;                                                           /* ï¿½ï¿½ï¿½ï¿½Ô´Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */ 
+    dma_node_conf_struct.Init.DestBurstLength = 1;                                                          /* ï¿½ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½Í»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
+    dma_node_conf_struct.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT0;   /* ï¿½ï¿½ï¿½ï¿½Ë¿Ú·ï¿½ï¿½ï¿½ */
+    dma_node_conf_struct.Init.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;                           /* ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½Ä£Ê½ */
+    dma_node_conf_struct.Init.Mode = DMA_NORMAL;                                                            /* ï¿½ï¿½ï¿½ï¿½Ä£Ê½ */
+    dma_node_conf_struct.DataHandlingConfig.DataExchange = DMA_EXCHANGE_NONE;                               /* ï¿½ï¿½ï¿½İ½ï¿½ï¿½ï¿½Ä£Ê½ */
+    dma_node_conf_struct.DataHandlingConfig.DataAlignment = DMA_DATA_RIGHTALIGN_ZEROPADDED;                 /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¶ï¿½ï¿½ï¿½Ä£Ê½ */
+    dma_node_conf_struct.TriggerConfig.TriggerPolarity = DMA_TRIG_POLARITY_MASKED;                          /* ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½È¼ï¿½ */
+    dma_node_conf_struct.DstAddress = (uint32_t)&g_uart1_handle.Instance->TDR;                              /* Ä¿ï¿½Äµï¿½Ö· */
     for (node_index = 0; node_index < node_used; node_index++)
     {
-        dma_node_conf_struct.SrcAddress = bufaddr[node_index];                                              /* Ô´µØÖ· */
-        dma_node_conf_struct.DataSize = bufsize[node_index];                                                /* Êı¾İ´óĞ¡ */
+        dma_node_conf_struct.SrcAddress = bufaddr[node_index];                                              /* Ô´ï¿½ï¿½Ö· */
+        dma_node_conf_struct.DataSize = bufsize[node_index];                                                /* ï¿½ï¿½ï¿½İ´ï¿½Ğ¡ */
         
-        /* ¹¹½¨DMAÁ´±í½Úµã */
+        /* ï¿½ï¿½ï¿½ï¿½DMAï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½ */
         HAL_DMAEx_List_BuildNode(&dma_node_conf_struct, &g_dma_node_struct[node_index]);
         
-        /* DMAÁ´±í½Úµã²åÈëÁ´±í */
+        /* DMAï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
         HAL_DMAEx_List_InsertNode_Tail(&g_dma_qlist_struct, &g_dma_node_struct[node_index]);
     }
     
-    /* ³õÊ¼»¯Á´±íÄ£Ê½DMA */
+    /* ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£Ê½DMA */
     g_dma_handle.Instance = GPDMA1_Channel0;
-    g_dma_handle.InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                     /* ÓÅÏÈ¼¶ */
-    g_dma_handle.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;                                      /* ²½½øÄ£Ê½ */
-    g_dma_handle.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;                               /* ¶Ë¿Ú·ÖÅä */
-    g_dma_handle.InitLinkedList.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;                         /* ´¥·¢ÊÂ¼şÄ£Ê½ */
-    g_dma_handle.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_NORMAL;                                     /* Á´±í´«ÊäÄ£Ê½ */
+    g_dma_handle.InitLinkedList.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;                                     /* ï¿½ï¿½ï¿½È¼ï¿½ */
+    g_dma_handle.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;                                      /* ï¿½ï¿½ï¿½ï¿½Ä£Ê½ */
+    g_dma_handle.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;                               /* ï¿½Ë¿Ú·ï¿½ï¿½ï¿½ */
+    g_dma_handle.InitLinkedList.TransferEventMode = DMA_TCEM_LAST_LL_ITEM_TRANSFER;                         /* ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½Ä£Ê½ */
+    g_dma_handle.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_NORMAL;                                     /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£Ê½ */
     HAL_DMAEx_List_Init(&g_dma_handle);
     
-    /* ¹ØÁªDMAÓëDMAÁ´±í */
+    /* ï¿½ï¿½ï¿½ï¿½DMAï¿½ï¿½DMAï¿½ï¿½ï¿½ï¿½ */
     HAL_DMAEx_List_LinkQ(&g_dma_handle, &g_dma_qlist_struct);
     
-    /* ¹ØÁªÍâÉèÓëDMA */
+    /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½DMA */
     __HAL_LINKDMA(&g_uart1_handle, hdmatx, g_dma_handle);
     
-    /* ÅäÖÃÍ¨µÀÊôĞÔ */
+    /* ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
     HAL_DMA_ConfigChannelAttributes(&g_dma_handle, DMA_CHANNEL_NPRIV);
     
-    /* ×¢²áDMA´«ÊäÍê³É»Øµ÷º¯Êı */
+    /* ×¢ï¿½ï¿½DMAï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É»Øµï¿½ï¿½ï¿½ï¿½ï¿½ */
     HAL_DMA_RegisterCallback(&g_dma_handle, HAL_DMA_XFER_CPLT_CB_ID, dma_transfer_complete_cb);
     
-    /* ÅäÖÃÖĞ¶ÏÓÅÏÈ¼¶²¢Ê¹ÄÜÖĞ¶Ï */
+    /* ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¶ï¿½ï¿½ï¿½ï¿½È¼ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½ï¿½Ğ¶ï¿½ */
     HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
 }
 
 /**
- * @brief   DMA´«ÊäÍê³É»Øµ÷º¯Êı
- * @param   ÎŞ
- * @retval  ÎŞ
+ * @brief   DMAï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É»Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void dma_start_transfer(void)
 {
@@ -117,18 +117,18 @@ void dma_start_transfer(void)
     {
         dma_ready = 0;
         
-        /* ¿ªÆôÖĞ¶ÏÄ£Ê½µÄDMAÁ´±í´«Êä */
+        /* ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¶ï¿½Ä£Ê½ï¿½ï¿½DMAï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
         HAL_DMAEx_List_Start_IT(&g_dma_handle);
         
-        /* Ê¹ÄÜUARTµÄDMA·¢ËÍ */
+        /* Ê¹ï¿½ï¿½UARTï¿½ï¿½DMAï¿½ï¿½ï¿½ï¿½ */
         ATOMIC_SET_BIT(g_uart1_handle.Instance->CR3, USART_CR3_DMAT);
     }
 }
 
 /**
- * @brief   DMA´«ÊäÍê³É»Øµ÷º¯Êı
- * @param   hdma: DMA¾ä±úÖ¸Õë
- * @retval  ÎŞ
+ * @brief   DMAï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É»Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hdma: DMAï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma)
 {
@@ -139,9 +139,9 @@ static void dma_transfer_complete_cb(DMA_HandleTypeDef *const hdma)
 }
 
 /**
- * @brief   GPDMA1 Channel0ÖĞ¶Ï·şÎñº¯Êı
- * @param   ÎŞ
- * @retval  ÎŞ
+ * @brief   GPDMA1 Channel0ä¸­æ–­å¤„ç†å‡½æ•° (UART DMA)
+ * @param   æ— 
+ * @retval  æ— 
  */
 void GPDMA1_Channel0_IRQHandler(void)
 {

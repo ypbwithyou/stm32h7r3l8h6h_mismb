@@ -143,7 +143,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     spi_dma_start_all(g_spi_tx_buf, g_spi_rx_buf, g_spi_dma_size);
     
     /* 等待所有DMA传输完成 */
-    spi_dma_wait_all_complete();
+    if (spi_dma_wait_all_complete() == 0)
+    {
+        /* 超时处理：强制停止SPI DMA */
+        for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+        {
+            if (g_spi_dma_size[spi] > 0)
+            {
+                spi_dma_abort(spi);
+                g_spi_dma_handle[spi].state = SPI_DMA_COMPLETE;
+            }
+        }
+    }
     
     /* 停止ADC转换 */
     ads8319_stop_transfer();

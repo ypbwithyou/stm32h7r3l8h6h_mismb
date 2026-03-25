@@ -444,6 +444,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\Drivers\LIBS\lib_file_utils\file_utils_disk.c</FilePath>
             </File>
+            <File>
+              <FileName>spi_dma.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Drivers\BSP\SPI_DMA\spi_dma.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
