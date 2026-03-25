@@ -98,6 +98,8 @@ uint8_t PCA9554_Get(uint8_t *led_mask);
 void SysPwrLED_Output(void);
 void SysStsLED_Output(void);
 
+void ExternalIO_Process(void);
+
 void external_io_init(void);
 
 #endif /* __PCA9554A_H */

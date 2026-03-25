@@ -1,54 +1,95 @@
-/**
- ****************************************************************************************************
- * @file        gtim.c
- * @brief       通用定时器驱动（已适配三路SPI并行DMA采样）
- *
- * 修改说明：
- *   原方案：TIM中断 → CONVST → 串行读SPI1/SPI2/SPI4（轮询） → 写CircularBuffer
- *   新方案：TIM中断 → CONVST → 等待转换完成 → dma_start_transfer_all()
- *           三路DMA并行传输 → 全部完成后在DMA回调中写CircularBuffer
- *
- *   TIM中断函数本身执行时间极短（仅CONVST+等待+启动DMA），
- *   数据处理完全移至DMA RX回调，彻底解放TIM ISR。
- ****************************************************************************************************
- */
 
 #include "./BSP/TIMER/gtim.h"
 #include "./BSP/LED/led.h"
 #include "./BSP/ADS8319/ads8319.h"
 #include "./BSP/SPI/spi.h"
-#include "./BSP/DMA_LIST/dma_list.h"
 #include "collector_processor.h"
 
+#include "usbd_cdc_if.h"
+#include <string.h>
+
 /* TIM句柄 */
-TIM_HandleTypeDef g_gtimx_handle      = {0};
+TIM_HandleTypeDef g_gtimx_handle = {0};
 TIM_HandleTypeDef g_timx_ticks_handle = {0};
 
 /* 统计变量 */
-volatile uint32_t g_gtim_it_counts    = 0;
+volatile uint32_t g_gtim_it_counts = 0;
 volatile uint32_t g_isr_overrun_count = 0;
+static uint16_t g_adc_buf[SPI_NUM][SPI_CH_NUM];
+static uint8_t g_write_spi[ADC_CH_TOTAL];
+static uint8_t g_write_pos[ADC_CH_TOTAL];
+static uint8_t g_write_ch[ADC_CH_TOTAL];
+static uint8_t g_write_cnt = 0U;
+static uint32_t g_map_cached_mask = 0xFFFFFFFFUL;
+static uint8_t g_map_cached_spi_cnt[SPI_NUM] = {0xFFU, 0xFFU, 0xFFU};
+
+static void gtim_rebuild_write_map_if_needed(void)
+{
+    if ((g_map_cached_mask == g_ch_enable_mask) &&
+        (memcmp(g_map_cached_spi_cnt, g_spi_adc_cnt, sizeof(g_map_cached_spi_cnt)) == 0))
+    {
+        return;
+    }
+
+    g_write_cnt = 0U;
+    for (uint8_t spi = 0U; spi < SPI_NUM; spi++)
+    {
+        for (uint8_t pos = 0U; pos < g_spi_adc_cnt[spi]; pos++)
+        {
+            uint8_t ch = (uint8_t)(pos * SPI_NUM + spi);
+            if (ch >= ADC_CH_TOTAL)
+            {
+                continue;
+            }
+            if ((g_ch_enable_mask & (1UL << ch)) == 0U)
+            {
+                continue;
+            }
+            g_write_spi[g_write_cnt] = spi;
+            g_write_pos[g_write_cnt] = pos;
+            g_write_ch[g_write_cnt] = ch;
+            g_write_cnt++;
+        }
+    }
+
+    g_map_cached_mask = g_ch_enable_mask;
+    memcpy(g_map_cached_spi_cnt, g_spi_adc_cnt, sizeof(g_map_cached_spi_cnt));
+}
+
+uint8_t gtim_dma_path_enabled(void)
+{
+    return 0U;
+}
+
+uint16_t gtim_dma_fail_streak_get(void)
+{
+    return 0U;
+}
 
 /**
  * @brief  通用定时器初始化
  */
 void gtim_timx_int_init(unsigned short arr, unsigned short psc)
 {
-    g_gtimx_handle.Instance                    = GTIM_TIMX;
-    g_gtimx_handle.Init.Prescaler              = psc;
-    g_gtimx_handle.Init.CounterMode            = TIM_COUNTERMODE_UP;
-    g_gtimx_handle.Init.Period                 = arr;
-    g_gtimx_handle.Init.ClockDivision          = TIM_CLOCKDIVISION_DIV1;
-    g_gtimx_handle.Init.AutoReloadPreload       = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    /* 先停止并反初始化，强制状态回到 RESET */
+    HAL_TIM_Base_Stop_IT(&g_gtimx_handle);
+    HAL_TIM_Base_DeInit(&g_gtimx_handle); // ← State 复位为 HAL_TIM_STATE_RESET
+
+    g_gtimx_handle.Instance = GTIM_TIMX;
+    g_gtimx_handle.Init.Prescaler = psc;
+    g_gtimx_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
+    g_gtimx_handle.Init.Period = arr;
+    g_gtimx_handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    g_gtimx_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     HAL_TIM_Base_Init(&g_gtimx_handle);
 
-    g_gtim_it_counts    = 0;
+    g_gtim_it_counts = 0;
     g_isr_overrun_count = 0;
 }
 
 /**
  * @brief  HAL库TIM中断优先级配置
- *         提升至优先级5，减少调度抖动对采样时序的影响
  */
 void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
 {
@@ -56,65 +97,95 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
     {
         GTIM_TIMX_CLK_ENABLE();
 
-        /* 优先级5：高于DMA(2)外的其他任务，保证采样时序精准 */
-        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 5, 0);
+        // 降低中断优先级，避免影响任务调度
+        // 优先级10（数字越大优先级越低）
+        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 1, 0);
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
-
-/**
- * @brief  HAL库TIM周期性回调函数（并行DMA版本）
- *
- * 执行流程：
- *   1. CONVST 拉高，启动三路ADC同步转换
- *   2. 等待转换完成（用IRQ引脚检测，替代固定NOP延迟）
- *   3. 调用 dma_start_transfer_all() 同时启动三路SPI DMA
- *   4. 数据处理移至 DMA RX完成回调中进行
- *
- * 本函数执行时间目标：< 1μs
- */
+ 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Instance != GTIM_TIMX) return;
 
+    // if (htim->Instance != GTIM_TIMX)
+    //     return;
+    // g_gtim_it_counts++;
+
+    // static uint8_t first_frame = 1;
+    // uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
+
+    // // 第1步：先读上一次转换结果（第1帧跳过）
+    // if (!first_frame)
+    // {
+    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    //     {
+    //         if (g_spi_adc_cnt[spi] == 0)
+    //             continue;
+    //         ads8319_read_daisy_chain_fast(spi + 1, g_spi_adc_cnt[spi], adc_buf[spi]);
+    //     }
+    //     ADS8319_CONVST_LOW(); // 结束上次转换周期
+
+    //     // for (volatile uint16_t i = 0; i < 100; i++)
+    //     // {
+    //     //     __NOP();
+    //     // } // 等待1.2μs转换完成
+    // }
+    // else
+    // {
+    //     first_frame = 0;
+    //     ADS8319_CONVST_LOW();
+    // }
+
+    // // 第2步：启动本次转换
+    // ADS8319_CONVST_HIGH();
+    // // for (volatile uint16_t i = 0; i < 300; i++)
+    // // {
+    // //     __NOP();
+    // // } // 等待1.2μs转换完成
+
+    // // 第3步：写入缓冲区（使用刚读到的上帧数据）
+    // if (g_gtim_it_counts > 1)
+    // {
+    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    //     {
+    //         for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
+    //         {
+    //             uint8_t ch = pos * SPI_NUM + spi;
+    //             if (ch >= ADC_CH_TOTAL)
+    //                 continue;
+    //             if (!(g_ch_enable_mask & (1u << ch)))
+    //                 continue;
+    //             cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
+    //         }
+    //     }
+    // }
+
+    if (htim->Instance != GTIM_TIMX)
+        return;
     g_gtim_it_counts++;
 
-    /* ── 检查上一轮DMA是否已全部完成（overrun检测） ─────────────── */
-    if (g_spi_rx_done_flags != 0 && g_spi_rx_done_flags != SPI_RX_DONE_ALL) {
-        /* 上一轮未完成就来了新的中断，记录overrun */
-        g_isr_overrun_count++;
-        /* 可选：直接返回跳过本轮，保护数据完整性 */
-        /* return; */
-    }
+    gtim_rebuild_write_map_if_needed();
 
-    /* ── 启动ADC转换 ─────────────────────────────────────────────── */
-    ADS8319_CONVST_HIGH();
+    ads8319_start_convst();
 
-    /*
-     * 等待转换完成：
-     * 优先用IRQ引脚检测（精确），加超时保护防止硬件异常死锁。
-     * ADS8319 tCONV 典型值 700ns，最大值由数据手册确认。
-     *
-     * 注意：IRQ在转换完成后拉低。三路共用同一CONVST，
-     * 等待任意一路IRQ拉低即可（三路转换时间一致）。
-     */
-    uint32_t timeout = 2000;  /* 足够覆盖tCONV最大值 */
-    while (HAL_GPIO_ReadPin(ADS8319_1_IRQ_GPIO, ADS8319_1_IRQ_PIN) == GPIO_PIN_SET
-           && --timeout)
+    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
     {
-        __NOP();
+        if (g_spi_adc_cnt[spi] == 0)
+            continue;
+        ads8319_read_daisy_chain_fast(spi + 1, // SPI编号1-based
+                                      g_spi_adc_cnt[spi],
+                                      g_adc_buf[spi]);
     }
-    /* timeout==0 说明IRQ未响应，可在此记录硬件异常 */
 
-    /* ── 同时启动三路SPI DMA传输 ─────────────────────────────────── */
-    dma_start_transfer_all();
+    ads8319_stop_transfer();
 
-    /*
-     * 从这里退出TIM ISR。
-     * SPI数据传输由DMA独立完成，完成后进入 spi_dma_rx_complete_cb()，
-     * 在三路全部完成时统一写CircularBuffer。
-     * TIM ISR本身不再做任何轮询等待。
-     */
+    for (uint8_t i = 0U; i < g_write_cnt; i++)
+    {
+        uint8_t spi = g_write_spi[i];
+        uint8_t pos = g_write_pos[i];
+        uint8_t ch = g_write_ch[i];
+        cb_write(g_cb_ch[ch], (const char *)&g_adc_buf[spi][pos], ADC_DATA_LEN);
+    }
 }
 
 /**
@@ -126,11 +197,36 @@ void GTIM_TIMX_IRQHandler(void)
 }
 
 /**
- * @brief  配置定时器参数
+ * @brief  启动定时器
  */
 void gtim_timx_cfg(uint16_t arr, uint16_t psc)
 {
-    gtim_timx_int_init(arr, psc);
+
+    if (g_gtimx_handle.State == HAL_TIM_STATE_RESET)
+    {
+        /* 首次初始化走完整 HAL 流程 */
+        g_gtimx_handle.Instance = GTIM_TIMX;
+        g_gtimx_handle.Init.Prescaler = psc;
+        g_gtimx_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
+        g_gtimx_handle.Init.Period = arr;
+        g_gtimx_handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+        g_gtimx_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+        HAL_TIM_Base_Init(&g_gtimx_handle);
+    }
+    else
+    {
+        /* 后续重配：直接操作寄存器 */
+        gtim_timx_stop(); // ← 用新的stop
+
+        __HAL_TIM_SET_PRESCALER(&g_gtimx_handle, psc);
+        __HAL_TIM_SET_AUTORELOAD(&g_gtimx_handle, arr);
+        __HAL_TIM_SET_COUNTER(&g_gtimx_handle, 0);
+        g_gtimx_handle.Instance->EGR = TIM_EGR_UG; // 强制装载影子寄存器
+        __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
+    }
+
+    g_gtim_it_counts = 0;
+    g_isr_overrun_count = 0;
 }
 
 /**
@@ -138,7 +234,14 @@ void gtim_timx_cfg(uint16_t arr, uint16_t psc)
  */
 void gtim_timx_start(void)
 {
-    HAL_TIM_Base_Start_IT(&g_gtimx_handle);
+    /* 清除上次可能残留的更新中断标志，防止启动后立即误触发 */
+    __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
+
+    /* 使能更新中断 */
+    __HAL_TIM_ENABLE_IT(&g_gtimx_handle, TIM_IT_UPDATE);
+
+    /* 启动计数器 */
+    __HAL_TIM_ENABLE(&g_gtimx_handle);
 }
 
 /**
@@ -146,7 +249,14 @@ void gtim_timx_start(void)
  */
 void gtim_timx_stop(void)
 {
-    HAL_TIM_Base_Stop_IT(&g_gtimx_handle);
+    /* 停止计数器 */
+    __HAL_TIM_DISABLE(&g_gtimx_handle);
+
+    /* 关闭更新中断 */
+    __HAL_TIM_DISABLE_IT(&g_gtimx_handle, TIM_IT_UPDATE);
+
+    /* 清除中断标志，防止下次启动时立即触发 */
+    __HAL_TIM_CLEAR_FLAG(&g_gtimx_handle, TIM_FLAG_UPDATE);
 }
 
 /**
@@ -157,28 +267,32 @@ uint32_t get_gtim_interrupt_count(void)
     return g_gtim_it_counts;
 }
 
-/*===========================================================================*/
-/* 滴答定时器（调试用性能计时）                                               */
-/*===========================================================================*/
+/*****************************************滴答定时器**********************************************/
 
+/**
+ * @brief  滴答定时器初始化
+ */
 static void ticks_timx_int_init(void)
 {
     TIM_ClockConfigTypeDef sClockSourceConfig = {0};
 
     TICKS_TIMX_CLK_ENABLE();
 
-    g_timx_ticks_handle.Instance                    = TICKS_TIMX;
-    g_timx_ticks_handle.Init.Prescaler              = TICKS_TIMX_PRESCALER - 1;
-    g_timx_ticks_handle.Init.CounterMode            = TIM_COUNTERMODE_UP;
-    g_timx_ticks_handle.Init.Period                 = TICKS_TIMX_PERIOD;
-    g_timx_ticks_handle.Init.ClockDivision          = TIM_CLOCKDIVISION_DIV1;
-    g_timx_ticks_handle.Init.AutoReloadPreload       = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    g_timx_ticks_handle.Instance = TICKS_TIMX;
+    g_timx_ticks_handle.Init.Prescaler = TICKS_TIMX_PRESCALER - 1;
+    g_timx_ticks_handle.Init.CounterMode = TIM_COUNTERMODE_UP;
+    g_timx_ticks_handle.Init.Period = TICKS_TIMX_PERIOD;
+    g_timx_ticks_handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    g_timx_ticks_handle.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     HAL_TIM_Base_Init(&g_timx_ticks_handle);
     sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
     HAL_TIM_ConfigClockSource(&g_timx_ticks_handle, &sClockSourceConfig);
 }
 
+/**
+ * @brief  启动滴答定时器
+ */
 void ticks_timx_start(void)
 {
     ticks_timx_int_init();
@@ -186,11 +300,17 @@ void ticks_timx_start(void)
     HAL_TIM_Base_Start(&g_timx_ticks_handle);
 }
 
+/**
+ * @brief  获取滴答定时器计数值
+ */
 uint32_t ticks_timx_get_counter(void)
 {
     return __HAL_TIM_GET_COUNTER(&g_timx_ticks_handle);
 }
 
+/**
+ * @brief  重置滴答定时器
+ */
 void ticks_timx_reset_counter(void)
 {
     __HAL_TIM_SET_COUNTER(&g_timx_ticks_handle, 0);

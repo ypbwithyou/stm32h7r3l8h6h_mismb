@@ -41,11 +41,7 @@ LR_IROM1 0x08005000 0x0000B000 {
         stm32h7rsxx_hal_xspi.o
         stm32h7rsxx_hal_gpio.o
         stm32h7rsxx_hal_rcc_ex.o
-        
-        norflash.o
-        norflash_mx25um25645g.o
-        norflash_w25q128_dual.o
-        norflash_ex.o
+ 
     }
     RW_IRAM1 0x24000000 0x00072000 {
         .ANY (+RW +ZI)
@@ -55,5 +51,10 @@ LR_IROM1 0x08005000 0x0000B000 {
 LR_ROM1 0x90100000 0x1F000000 {
     ER_ROM1 0x90100000 0x1F000000 {
         .ANY (+RO)
+		
+		norflash.o
+        norflash_mx25um25645g.o
+        norflash_w25q128_dual.o
+        norflash_ex.o
     }
 }

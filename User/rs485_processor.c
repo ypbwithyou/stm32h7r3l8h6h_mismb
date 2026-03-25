@@ -1,171 +1,273 @@
 #include "rs485_processor.h"
 #include "./BSP/RS485/rs485.h"
-#include "string.h"
 #include "usb_processor.h"
-#include "./LIBS/lib_usb_protocol/usb_protocol.h"
+#include <string.h>
+#include "usbd_cdc_if.h"
 
-static uint8_t rs485_calculate_checksum(uint8_t *data, uint8_t len);
-static uint8_t rs485_calculate_checkxor(const uint8_t *data, uint32_t length);
+uint8_t g_subdev_valid[RS485_SUBDEV_MAX] = {0};
+uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX] = {0};
+uint8_t g_subdev_write_ack[RS485_SUBDEV_MAX] = {0};
 
-/**
- * @brief       解析RS485数据帧
- * @param       data: 数据指针（不包括帧头帧尾）
- * @param       len: 数据长度
- * @retval      无
- */
-void rs485_parse_frame(uint8_t *data, uint8_t len)
+static uint8_t rs485_xor_u8(const uint8_t *data, uint16_t len)
 {
-    /* 检查数据有效性 */
-    if (data == NULL || len == 0) {
-        return;
-    }
-    
-    /* 根据协议解析数据
-       示例协议：
-       字节1: 帧头（0x3c）
-       字节2: 设备号（1--8）
-       字节3: 功能码
-       字节4、5: 数据长度N
-       字节5--(5+N-2): 数据N
-       倒数第二字节: 异或校验结果
-       最后一个字节: 帧尾（0x3e）
-    */
-    
-    if (len < 7) { /* 至少帧头+设备号+功能码+长度+校验+帧尾 */
-        return;
-    }
-    uint8_t head = data[0];
-    uint8_t dev_num = data[1];
-    uint8_t command = data[2];
-    uint16_t data_len = data[3];
-    data_len = ((data_len<<8)|data[4]);
-    uint8_t check_received = data[len - 2];
-    uint8_t end = data[len - 1];
-    
-    /* 校验头 */
-    if (head != 0x3c) {
-        return;
-    }
-    
-    /* 校验设备号范围 */
-    if (dev_num<=0 || dev_num>8) {
-        return;
-    }
-    
-    /* 验证数据长度 */
-    if (data_len != (len - 7)) { /* 总长度减去帧头、设备号、命令码、长度字节、校验和帧尾 */
-        /* 长度不匹配，记录错误 */
-        return;
-    }
-    
-    /* 计算异或校验（除校验字节外的所有数据） */
-    uint8_t check = rs485_calculate_checkxor(data, len - 2);
-    
-    if (check != check_received) {
-        /* 校验和错误，记录错误 */
-        return;
-    }
-    
-    /* 校验帧尾*/
-    if (end != 0x3e) {
-        return;
-    }
-    
-    /* 根据命令码处理数据 */
-    switch (command) {
-        case 0x01: /* 读设备信息帧应答 */
-            if (data_len != sizeof(SubDevicelnfo)) return;
-            memcpy(&g_SubDevicelnfo[dev_num-1], &data[5], data_len);
-            break;
-            
-        case 0x03: /* 写设备信息帧应答 */
-            /* 处理写入命令 */
-            break;
-            
-        default:
-            /* 未知命令 */
-            break;
-    }
-    
-    /* 可选：发送响应 */
-    // uint8_t response[] = {command, 0x00, 0xAA}; /* 示例响应 */
-    // rs485_send_data(response, sizeof(response));
-}
-
-/**
- * @brief       计算校验和（简单累加和）
- * @param       data: 数据指针
- * @param       len: 数据长度
- * @retval      校验和
- */
-static uint8_t rs485_calculate_checksum(uint8_t *data, uint8_t len)
-{
-    uint8_t checksum = 0;
-    
-    for (uint8_t i = 0; i < len; i++) {
-        checksum += data[i];
-    }
-    
-    return checksum;
-}
-/**
- * @brief       计算校验异或（简单异或）
- * @param       data: 数据指针
- * @param       len: 数据长度
- * @retval      校验异或值
- */
-static uint8_t rs485_calculate_checkxor(const uint8_t *data, uint32_t length)
-{
-    if (data == NULL || length == 0)
+    uint8_t x = 0U;
+    uint16_t i;
+    if (data == NULL)
     {
-        return 0x00; // 异常情况返回 0，或根据需求返回固定值
+        return 0U;
     }
-
-    uint8_t xor_result = 0;
-
-    for (uint32_t i = 0; i < length; i++)
+    for (i = 0U; i < len; i++)
     {
-        xor_result ^= data[i];
+        x ^= data[i];
     }
-
-    return xor_result;
+    return x;
 }
 
-/**
- * @brief       发送RS485数据（对外接口）
- * @param       dev_num: 设备号（1--8）
- * @param       cmd: 命令码
- * @param       data: 数据
- * @param       len: 数据长度
- * @retval      0:成功, -1:失败
- */
-int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, uint8_t *data, uint16_t len)
+static uint8_t rs485_subdev_payload_is_valid(uint8_t addr, const SubDevicelnfo *info)
 {
-    if (len > (RS485_RX_BUF_LEN - 7)) {
-        return -1; /* 参数无效 */
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX) || (info == NULL))
+    {
+        return 0U;
     }
-    
-    /* 组织待发送数据 */
-    uint8_t tx_buffer[RS485_RX_BUF_LEN];
-    tx_buffer[0] = 0x3c;
-    tx_buffer[1] = dev_num;
-    tx_buffer[2] = cmd;
-    if (len > 0) {
-        tx_buffer[3] = len >> 8;
-        tx_buffer[4] = len;
-        /* 复制数据 */
-        memcpy(&tx_buffer[5], data, len);        
-    } else {
-        tx_buffer[3] = 0;
-        tx_buffer[4] = 0;
+
+    if ((info->SlotId < RS485_SLAVE_ADDR_MIN) || (info->SlotId > RS485_SLAVE_ADDR_MAX))
+    {
+        return 0U;
     }
-    uint8_t checkxor = rs485_calculate_checkxor(tx_buffer, len+5);
-    tx_buffer[5+len] = checkxor;
-    tx_buffer[5+len+1] = 0x3e;
-    
-    /* 发送数据（会自动添加帧头帧尾） */
-    rs485_send_data(tx_buffer, len + 7); /* 数据+校验 */
-    
+    if (info->SerialNumber[0] == 0)
+    {
+        return 0U;
+    }
+
+    return 1U;
+}
+
+uint8_t rs485_subdev_is_valid(uint8_t addr)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    {
+        return 0U;
+    }
+    return g_subdev_valid[addr - 1U];
+}
+
+uint8_t rs485_subdev_get_write_ack(uint8_t addr)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    {
+        return 0U;
+    }
+    return g_subdev_write_ack[addr - 1U];
+}
+
+void rs485_subdev_clear_write_ack(uint8_t addr)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    {
+        return;
+    }
+    g_subdev_write_ack[addr - 1U] = 0U;
+}
+
+void rs485_subdev_scan_reset(void)
+{
+    uint8_t i;
+
+    for (i = 0U; i < RS485_SUBDEV_MAX; i++)
+    {
+        g_subdev_valid[i] = 0U;
+        g_subdev_last_tick[i] = 0U;
+        g_subdev_write_ack[i] = 0U;
+        memset(&g_SubDevicelnfo[i], 0, sizeof(SubDevicelnfo));
+    }
+}
+
+void rs485_subdev_scan_once(void)
+{
+    uint8_t addr;
+    uint32_t start_tick;
+    uint8_t frame[RS485_RX_BUF_LEN];
+    uint16_t frame_len;
+
+    rs485_subdev_scan_reset();
+
+    for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
+    {
+        usb_printf("rs485_send_frame DEVINFO_READ_REQ %d \n", addr);
+        (void)rs485_send_frame(addr, DEVINFO_READ_REQ, NULL, 0U);
+
+        start_tick = HAL_GetTick();
+        while ((HAL_GetTick() - start_tick) < RS485_STARTUP_SCAN_INTERVAL_MS)
+        {
+            if (rs485_read_raw_frame(frame, sizeof(frame), &frame_len) == 0)
+            {
+                rs485_parse_frame(frame, frame_len);
+            }
+        }
+    }
+}
+
+int8_t rs485_build_frame(const rs485_packet_t *packet, uint8_t *out, uint16_t out_size, uint16_t *out_len)
+{
+    uint16_t frame_len;
+    uint8_t xor_v;
+
+    if ((packet == NULL) || (out == NULL) || (out_len == NULL))
+    {
+        return -1;
+    }
+
+    if (packet->data_len > RS485_PROTO_MAX_PAYLOAD)
+    {
+        return -1;
+    }
+
+    frame_len = (uint16_t)(7U + packet->data_len);
+    if ((frame_len > out_size) || (frame_len > RS485_RX_BUF_LEN))
+    {
+        return -1;
+    }
+
+    out[0] = RS485_FRAME_HEAD;
+    out[1] = packet->address;
+    out[2] = packet->function;
+    /* little-endian length: low byte first, then high byte */
+    out[3] = (uint8_t)(packet->data_len & 0xFFU);
+    out[4] = (uint8_t)(packet->data_len >> 8);
+
+    if ((packet->data_len > 0U) && (packet->data != NULL))
+    {
+        memcpy(&out[5], packet->data, packet->data_len);
+    }
+
+    xor_v = rs485_xor_u8(out, (uint16_t)(5U + packet->data_len));
+    out[5U + packet->data_len] = xor_v;
+    out[6U + packet->data_len] = RS485_FRAME_END;
+
+    *out_len = frame_len;
     return 0;
 }
 
+int8_t rs485_parse_packet(const uint8_t *frame, uint16_t frame_len, rs485_packet_t *packet_out)
+{
+    uint16_t data_len;
+    uint8_t xor_expect;
+    uint8_t xor_recv;
+
+    if ((frame == NULL) || (packet_out == NULL))
+    {
+        return -1;
+    }
+    if (frame_len < 7U)
+    {
+        return -1;
+    }
+    if ((frame[0] != RS485_FRAME_HEAD) || (frame[frame_len - 1U] != RS485_FRAME_END))
+    {
+        return -1;
+    }
+
+    /* little-endian length: low byte first, then high byte */
+    data_len = (uint16_t)(((uint16_t)frame[4] << 8) | frame[3]);
+    if (data_len > RS485_PROTO_MAX_PAYLOAD)
+    {
+        return -1;
+    }
+    if (frame_len != (uint16_t)(7U + data_len))
+    {
+        return -1;
+    }
+
+    xor_expect = rs485_xor_u8(frame, (uint16_t)(5U + data_len));
+    xor_recv = frame[5U + data_len];
+    if (xor_expect != xor_recv)
+    {
+        return -1;
+    }
+
+    packet_out->address = frame[1];
+    packet_out->function = frame[2];
+    packet_out->data_len = data_len;
+    packet_out->data = &frame[5];
+    return 0;
+}
+
+void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
+{
+    rs485_packet_t pkt;
+
+    if (rs485_parse_packet(frame, frame_len, &pkt) != 0)
+    {
+        return;
+    }
+
+    if ((pkt.address < RS485_SLAVE_ADDR_MIN) || (pkt.address > RS485_SLAVE_ADDR_MAX))
+    {
+        return;
+    }
+
+    switch (pkt.function)
+    {
+    case DEVINFO_READ_REQ_ACK:
+        usb_printf("rs485_parse_frame DEVINFO_READ_REQ_ACK %d \n", pkt.address);
+        if (pkt.data_len == sizeof(SubDevicelnfo))
+        {
+            const SubDevicelnfo *info = (const SubDevicelnfo *)pkt.data;
+            if (rs485_subdev_payload_is_valid(pkt.address, info))
+            {
+                memcpy(&g_SubDevicelnfo[pkt.address - 1U], info, sizeof(SubDevicelnfo));
+                g_subdev_valid[pkt.address - 1U] = 1U;
+                g_subdev_last_tick[pkt.address - 1U] = HAL_GetTick();
+            }
+        }
+        break;
+    case DEVINFO_WRITE_REQ_ACK:
+        usb_printf("rs485_parse_frame DEVINFO_WRITE_REQ_ACK %d \n", pkt.address);
+        if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
+        {
+            g_subdev_write_ack[pkt.address - 1U] = 1U;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, const uint8_t *data, uint16_t len)
+{
+    rs485_packet_t pkt;
+    uint16_t frame_len = 0U;
+    uint8_t frame[RS485_RX_BUF_LEN];
+
+    if ((len > 0U) && (data == NULL))
+    {
+        return -1;
+    }
+    if ((dev_num < RS485_SLAVE_ADDR_MIN) || (dev_num > RS485_SLAVE_ADDR_MAX))
+    {
+        return -1;
+    }
+
+    pkt.address = dev_num;
+    pkt.function = cmd;
+    pkt.data_len = len;
+    pkt.data = data;
+
+    if (rs485_build_frame(&pkt, frame, sizeof(frame), &frame_len) != 0)
+    {
+        return -1;
+    }
+
+    return rs485_send_raw(frame, frame_len);
+}
+
+void rs485_processor_poll(void)
+{
+    uint8_t frame[RS485_RX_BUF_LEN];
+    uint16_t frame_len = 0U;
+
+    if (rs485_read_raw_frame(frame, sizeof(frame), &frame_len) == 0)
+    {
+        rs485_parse_frame(frame, frame_len);
+    }
+}

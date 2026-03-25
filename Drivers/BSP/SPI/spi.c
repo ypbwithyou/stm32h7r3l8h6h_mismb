@@ -3,14 +3,8 @@
 #include "./BSP/TIMER/gtim.h"
 #include "./BSP/DMA_LIST/dma_list.h"
 
-SPI_HandleTypeDef g_spi_handle[3]; /* SPI��� */
-
-/**
- * @brief       SPI��ʼ������
- *   @note      ����ģʽ,8λ����,��ֹӲ��Ƭѡ
- * @param       ��
- * @retval      ��
- */
+SPI_HandleTypeDef g_spi_handle[3];  
+ 
 void spi_init(unsigned int spi_periph)
 {
     char i = 0;
@@ -54,7 +48,7 @@ void spi_init(unsigned int spi_periph)
     HAL_SPI_Init(&g_spi_handle[i]);
 
     // 屏蔽使能SPI传输，等DMA准备好后再使能，确保SPI传输与DMA传输之间的同步问题
-    __HAL_SPI_ENABLE(&g_spi_handle[i]); /* ʹ��SPI2 */
+    __HAL_SPI_ENABLE(&g_spi_handle[i]); /* 使能SPI */
 }
  
 void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
@@ -64,99 +58,99 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 
     if (hspi->Instance == SPI1_SPIx)
     {
-        SPI1_SPI_CLK_ENABLE();       /* SPI1ʱ��ʹ�� */
-        SPI1_SCK_GPIO_CLK_ENABLE();  /* SPI1_SCK��ʱ��ʹ�� */
-        SPI1_MISO_GPIO_CLK_ENABLE(); /* SPI1_MISO��ʱ��ʹ�� */
-        SPI1_MOSI_GPIO_CLK_ENABLE(); /* SPI1_MOSI��ʱ��ʹ�� */
+        SPI1_SPI_CLK_ENABLE();       /* SPI1时钟使能 */
+        SPI1_SCK_GPIO_CLK_ENABLE();  /* SPI1_SCK时钟使能 */
+        SPI1_MISO_GPIO_CLK_ENABLE(); /* SPI1_MISO时钟使能 */
+        SPI1_MOSI_GPIO_CLK_ENABLE(); /* SPI1_MOSI时钟使能 */
 
-        /* ����SPI1��ʱ��Դ */
-        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI1;    /* ����SPI1ʱ��Դ */
-        rcc_periph_clk_init.Spi1ClockSelection = RCC_SPI1CLKSOURCE_PLL1Q; /* SPI1ʱ��Դʹ��PLL1Q */
+        /* 配置SPI1的时钟源 */
+        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI1;    /* 配置SPI1时钟源 */
+        rcc_periph_clk_init.Spi1ClockSelection = RCC_SPI1CLKSOURCE_PLL1Q; /* SPI1时钟源使用PLL1Q */
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
         gpio_init_struct.Pin = SPI1_SCK_GPIO_PIN;
-        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* ����������� */
-        gpio_init_struct.Pull = GPIO_PULLUP;                  /* ���� */
-        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* ���� */
-        gpio_init_struct.Alternate = SPI1_SCK_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI1_SCK_GPIO_PORT, &gpio_init_struct); /* ��ʼ��SCK���� */
+        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* 复用推挽输出 */
+        gpio_init_struct.Pull = GPIO_PULLUP;                  /* 上拉 */
+        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* 超高速 */
+        gpio_init_struct.Alternate = SPI1_SCK_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI1_SCK_GPIO_PORT, &gpio_init_struct); /* 初始化SCK引脚 */
 
         gpio_init_struct.Pin = SPI1_MISO_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI1_MISO_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI1_MISO_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MISO���� */
+        gpio_init_struct.Alternate = SPI1_MISO_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI1_MISO_GPIO_PORT, &gpio_init_struct); /* 初始化MISO引脚 */
 
         gpio_init_struct.Pin = SPI1_MOSI_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI1_MOSI_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI1_MOSI_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MOSI���� */
+        gpio_init_struct.Alternate = SPI1_MOSI_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI1_MOSI_GPIO_PORT, &gpio_init_struct); /* 初始化MOSI引脚 */
     }
     else if (hspi->Instance == SPI2_SPIx)
     {
-        SPI2_SPI_CLK_ENABLE();       /* SPI2ʱ��ʹ�� */
-        SPI2_SCK_GPIO_CLK_ENABLE();  /* SPI2_SCK��ʱ��ʹ�� */
-        SPI2_MISO_GPIO_CLK_ENABLE(); /* SPI2_MISO��ʱ��ʹ�� */
-        SPI2_MOSI_GPIO_CLK_ENABLE(); /* SPI2_MOSI��ʱ��ʹ�� */
+        SPI2_SPI_CLK_ENABLE();       /* SPI2时钟使能 */
+        SPI2_SCK_GPIO_CLK_ENABLE();  /* SPI2_SCK时钟使能 */
+        SPI2_MISO_GPIO_CLK_ENABLE(); /* SPI2_MISO时钟使能 */
+        SPI2_MOSI_GPIO_CLK_ENABLE(); /* SPI2_MOSI时钟使能 */
 
-        /* ����SPI2��ʱ��Դ */
-        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI23;     /* ����SPI2ʱ��Դ */
-        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI23CLKSOURCE_PLL1Q; /* SPI2ʱ��Դʹ��PLL1Q */
+        /* 配置SPI2的时钟源 */
+        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI23;     /* 配置SPI2时钟源 */
+        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI23CLKSOURCE_PLL1Q; /* SPI2时钟源使用PLL1Q */
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
         gpio_init_struct.Pin = SPI2_SCK_GPIO_PIN;
-        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* ����������� */
-        gpio_init_struct.Pull = GPIO_PULLUP;                  /* ���� */
-        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* ���� */
-        gpio_init_struct.Alternate = SPI2_SCK_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI2_SCK_GPIO_PORT, &gpio_init_struct); /* ��ʼ��SCK���� */
+        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* 复用推挽输出 */
+        gpio_init_struct.Pull = GPIO_PULLUP;                  /* 上拉 */
+        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* 超高速 */
+        gpio_init_struct.Alternate = SPI2_SCK_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI2_SCK_GPIO_PORT, &gpio_init_struct); /* 初始化SCK引脚 */
 
         gpio_init_struct.Pin = SPI2_MISO_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI2_MISO_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI2_MISO_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MISO���� */
+        gpio_init_struct.Alternate = SPI2_MISO_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI2_MISO_GPIO_PORT, &gpio_init_struct); /* 初始化MISO引脚 */
 
         gpio_init_struct.Pin = SPI2_MOSI_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI2_MOSI_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI2_MOSI_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MOSI���� */
+        gpio_init_struct.Alternate = SPI2_MOSI_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI2_MOSI_GPIO_PORT, &gpio_init_struct); /* 初始化MOSI引脚 */
     }
     else if (hspi->Instance == SPI3_SPIx)
     {
-        SPI3_SPI_CLK_ENABLE();       /* SPI3ʱ��ʹ�� */
-        SPI3_SCK_GPIO_CLK_ENABLE();  /* SPI3_SCK��ʱ��ʹ�� */
-        SPI3_MISO_GPIO_CLK_ENABLE(); /* SPI3_MISO��ʱ��ʹ�� */
-        SPI3_MOSI_GPIO_CLK_ENABLE(); /* SPI3_MOSI��ʱ��ʹ�� */
+        SPI3_SPI_CLK_ENABLE();       /* SPI3时钟使能 */
+        SPI3_SCK_GPIO_CLK_ENABLE();  /* SPI3_SCK时钟使能 */
+        SPI3_MISO_GPIO_CLK_ENABLE(); /* SPI3_MISO时钟使能 */
+        SPI3_MOSI_GPIO_CLK_ENABLE(); /* SPI3_MOSI时钟使能 */
 
-        /* ����SPI3��ʱ��Դ */
-        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI45;     /* ����SPI3ʱ��Դ */
-        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q; /* SPI3ʱ��Դʹ��PLL1Q */
+        /* 配置SPI3的时钟源 */
+        rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI45;     /* 配置SPI3时钟源 */
+        rcc_periph_clk_init.Spi23ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q; /* SPI3时钟源使用PLL2Q */
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
         gpio_init_struct.Pin = SPI3_SCK_GPIO_PIN;
-        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* ����������� */
-        gpio_init_struct.Pull = GPIO_PULLUP;                  /* ���� */
-        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* ���� */
-        gpio_init_struct.Alternate = SPI3_SCK_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI3_SCK_GPIO_PORT, &gpio_init_struct); /* ��ʼ��SCK���� */
+        gpio_init_struct.Mode = GPIO_MODE_AF_PP;              /* 复用推挽输出 */
+        gpio_init_struct.Pull = GPIO_PULLUP;                  /* 上拉 */
+        gpio_init_struct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;   /* 超高速 */
+        gpio_init_struct.Alternate = SPI3_SCK_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI3_SCK_GPIO_PORT, &gpio_init_struct); /* 初始化SCK引脚 */
 
         gpio_init_struct.Pin = SPI3_MISO_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI3_MISO_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI3_MISO_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MISO���� */
+        gpio_init_struct.Alternate = SPI3_MISO_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI3_MISO_GPIO_PORT, &gpio_init_struct); /* 初始化MISO引脚 */
 
         gpio_init_struct.Pin = SPI3_MOSI_GPIO_PIN;
-        gpio_init_struct.Alternate = SPI3_MOSI_GPIO_AF;        /* ���� */
-        HAL_GPIO_Init(SPI3_MOSI_GPIO_PORT, &gpio_init_struct); /* ��ʼ��MOSI���� */
+        gpio_init_struct.Alternate = SPI3_MOSI_GPIO_AF;        /* 复用 */
+        HAL_GPIO_Init(SPI3_MOSI_GPIO_PORT, &gpio_init_struct); /* 初始化MOSI引脚 */
     }
     else if (hspi->Instance == SDNAND_SPI)
     {
-        /* ����ʱ��Դ */
+        /* 配置时钟源 */
         rcc_periph_clk_init.PeriphClockSelection = RCC_PERIPHCLK_SPI45;
         rcc_periph_clk_init.Xspi1ClockSelection = RCC_SPI45CLKSOURCE_PLL2Q;
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init);
 
-        /* ʹ��ʱ�� */
+        /* 使能时钟 */
         SDNAND_SPI_CLK_ENABLE();
         SDNAND_SPI_SCK_GPIO_CLK_ENABLE();
         SDNAND_SPI_MOSI_GPIO_CLK_ENABLE();
         SDNAND_SPI_MISO_GPIO_CLK_ENABLE();
 
-        /* ��ʼ��ͨѶ���� */
+        /* 初始化通信引脚 */
         gpio_init_struct.Pin = SDNAND_SPI_SCK_GPIO_PIN;
         gpio_init_struct.Mode = GPIO_MODE_AF_PP;
         gpio_init_struct.Pull = GPIO_PULLUP;
@@ -179,11 +173,11 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 }
 
 /**
- * @brief       SPI�ٶ����ú���
- *   @note      SPIʱ��ѡ������pll1_q_ck, Ϊ250Mhz
- *              SPI�ٶ� = spi_ker_ck / 2^(speed + 1)
- * @param       speed: SPI2ʱ�ӷ�Ƶϵ��,SPI_BAUDRATEPRESCALER_2~SPI_BAUDRATEPRESCALER_256
- * @retval      ��
+ * @brief       SPI速度配置函数
+ *   @note      SPI时钟选择来源为pll1_q_ck, 为250Mhz
+ *              SPI速度 = spi_ker_ck / 2^(speed + 1)
+ * @param       speed: SPI2时钟分频系数,SPI_BAUDRATEPRESCALER_2~SPI_BAUDRATEPRESCALER_256
+ * @retval      无
  */
 void spi_set_speed(unsigned int spi_periph, unsigned int speed)
 {
@@ -202,17 +196,17 @@ void spi_set_speed(unsigned int spi_periph, unsigned int speed)
     default:
         break;
     }
-    assert_param(IS_SPI_BAUDRATE_PRESCALER(speed)); /* �ж���Ч�� */
-    __HAL_SPI_DISABLE(&g_spi_handle[i]);            /* �ر�SPI */
-    g_spi_handle[i].Instance->CFG1 &= ~(0X7 << 28); /* λ30-28���㣬�������ò����� */
-    g_spi_handle[i].Instance->CFG1 |= speed;        /* ����SPI�ٶ� */
-    __HAL_SPI_ENABLE(&g_spi_handle[i]);             /* ʹ��SPI */
+    assert_param(IS_SPI_BAUDRATE_PRESCALER(speed)); /* 判断有效性 */
+    __HAL_SPI_DISABLE(&g_spi_handle[i]);            /* 关闭SPI */
+    g_spi_handle[i].Instance->CFG1 &= ~(0X7 << 28); /* 清零设置波特率位 */
+    g_spi_handle[i].Instance->CFG1 |= speed;        /* 设置SPI速度 */
+    __HAL_SPI_ENABLE(&g_spi_handle[i]);             /* 使能SPI */
 }
 
 /**
- * @brief       SPI2��дһ���ֽ�����
- * @param       txdata: Ҫ���͵�����(1�ֽ�)
- * @retval      ���յ�������(1�ֽ�)
+ * @brief       SPI2读写一个字节数据
+ * @param       txdata: 要发送的数据(1字节)
+ * @retval      接收到的数据(1字节)
  */
 unsigned char spi_read_write_byte(unsigned int spi_periph, unsigned char *txdata, unsigned char *rxdata, unsigned char size)
 {
@@ -233,108 +227,152 @@ unsigned char spi_read_write_byte(unsigned int spi_periph, unsigned char *txdata
         break;
     }
     HAL_SPI_TransmitReceive(&g_spi_handle[i], txdata, rxdata, size, 1000);
-    return size; /* �����յ������� */
+    return size; /* 返回接收到的数据 */
 }
-
-/**
- * @brief       SPI快速传输函数（寄存器版本）
- * @param       spi_periph: SPI外设编号
- * @param       txdata: 发送数据缓冲区
- * @param       rxdata: 接收数据缓冲区
- * @param       size: 传输字节数
- * @retval      实际传输的字节数
- */
-unsigned char spi_read_write_byte_fast(unsigned int spi_periph, unsigned char *txdata, unsigned char *rxdata, unsigned char size)
+ 
+ unsigned char spi_read_write_byte_fast(unsigned int spi_periph,
+                                        unsigned char *txdata,
+                                        unsigned char *rxdata,
+                                        unsigned char size)
 {
     SPI_TypeDef *SPIx = NULL;
-    uint8_t i = 0;
-    SPI_HandleTypeDef *hspi;
+    uint8_t idx = 0;
 
-    // 获取SPI实例
-    switch (spi_periph)
-    {
-    case SPI1_SPI:
-        SPIx = SPI1_SPIx;
-        i = 0;
-        break;
-    case SPI2_SPI:
-        SPIx = SPI2_SPIx;
-        i = 1;
-        break;
-    case SPI3_SPI:
-        SPIx = SPI3_SPIx;
-        i = 2;
-        break;
-    default:
-        return 0;
+    switch (spi_periph) {
+        case SPI1_SPI: SPIx = SPI1_SPIx; idx = 0; break;
+        case SPI2_SPI: SPIx = SPI2_SPIx; idx = 1; break;
+        case SPI3_SPI: SPIx = SPI3_SPIx; idx = 2; break;
+        default: return 0;
     }
 
-    hspi = &g_spi_handle[i];
+    SPI_HandleTypeDef *hspi = &g_spi_handle[idx];
 
-    /* Set the transaction information */
-    hspi->State = HAL_SPI_STATE_BUSY_TX_RX;
-    hspi->ErrorCode = HAL_SPI_ERROR_NONE;
-    hspi->pRxBuffPtr = (uint8_t *)rxdata;
-    hspi->RxXferCount = size;
-    hspi->RxXferSize = size;
-    hspi->pTxBuffPtr = (const uint8_t *)txdata;
-    hspi->TxXferCount = size;
-    hspi->TxXferSize = size;
-
-    /*Init field not used in handle to zero */
-    hspi->RxISR = NULL;
-    hspi->TxISR = NULL;
-
-    /* Set Full-Duplex mode */
-    SPI_2LINES(hspi);
-
-    /* Set the number of data at current transfer */
-    MODIFY_REG(hspi->Instance->CR2, SPI_CR2_TSIZE, size);
-
+    /* 设置传输字节数 */
+    MODIFY_REG(SPIx->CR2, SPI_CR2_TSIZE, size);
     __HAL_SPI_ENABLE(hspi);
+    SET_BIT(SPIx->CR1, SPI_CR1_CSTART);
 
-    if (hspi->Init.Mode == SPI_MODE_MASTER)
+    uint8_t tx_sent = 0;
+    uint8_t rx_recv = 0;
+
+    /* 流水线：TX和RX同时推进，不等单字节完成 */
+    while (rx_recv < size)
     {
-        /* Master transfer start */
-        SET_BIT(hspi->Instance->CR1, SPI_CR1_CSTART);
-    }
-
-    // 直接使用HAL库的寄存器配置，但用轮询方式读取
-    for (uint8_t byte_count = 0; byte_count < size; byte_count++)
-    {
-        uint8_t tx_byte = txdata ? txdata[byte_count] : 0xFF;
-
-        // 等待TXE标志（发送缓冲区空）
-        while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_TXP)))
-            ;
-
-        // 写入数据
-        *(__IO uint8_t *)&SPIx->TXDR = tx_byte;
-
-        // 等待RXNE标志（接收缓冲区非空）
-        while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_RXP)))
-            ;
-
-        // 读取数据
-        if (rxdata)
+        /* 有FIFO空间且还有数据要发 */
+        if (tx_sent < size && (SPIx->SR & SPI_SR_TXP))
         {
-            rxdata[byte_count] = *(__IO uint8_t *)&SPIx->RXDR;
+            *(__IO uint8_t *)&SPIx->TXDR = txdata ? txdata[tx_sent] : 0xFF;
+            tx_sent++;
         }
-        else
+        /* 有数据可读 */
+        if (SPIx->SR & SPI_SR_RXP)
         {
-            (void)*(__IO uint8_t *)&SPIx->RXDR;
+            uint8_t rx_byte = *(__IO uint8_t *)&SPIx->RXDR;
+            if (rxdata) rxdata[rx_recv] = rx_byte;
+            rx_recv++;
         }
     }
 
-    // 等待传输完成
-    while (!__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_EOT))
-        ;
-
-    // 清除状态标志
+    /* 等待传输彻底完成 */
+    uint32_t timeout = 10000;
+    while (!(SPIx->SR & SPI_SR_EOT) && --timeout);
     SPIx->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC;
+    hspi->State = HAL_SPI_STATE_READY;
 
     return size;
 }
+
+// unsigned char spi_read_write_byte_fast(unsigned int spi_periph, unsigned char *txdata, unsigned char *rxdata, unsigned char size)
+// {
+//     SPI_TypeDef *SPIx = NULL;
+//     uint8_t i = 0;
+//     SPI_HandleTypeDef *hspi;
+
+//     // 获取SPI实例
+//     switch (spi_periph)
+//     {
+//     case SPI1_SPI:
+//         SPIx = SPI1_SPIx;
+//         i = 0;
+//         break;
+//     case SPI2_SPI:
+//         SPIx = SPI2_SPIx;
+//         i = 1;
+//         break;
+//     case SPI3_SPI:
+//         SPIx = SPI3_SPIx;
+//         i = 2;
+//         break;
+//     default:
+//         return 0;
+//     }
+
+//     hspi = &g_spi_handle[i];
+
+//     /* Set the transaction information */
+//     hspi->State = HAL_SPI_STATE_BUSY_TX_RX;
+//     hspi->ErrorCode = HAL_SPI_ERROR_NONE;
+//     hspi->pRxBuffPtr = (uint8_t *)rxdata;
+//     hspi->RxXferCount = size;
+//     hspi->RxXferSize = size;
+//     hspi->pTxBuffPtr = (const uint8_t *)txdata;
+//     hspi->TxXferCount = size;
+//     hspi->TxXferSize = size;
+
+//     /*Init field not used in handle to zero */
+//     hspi->RxISR = NULL;
+//     hspi->TxISR = NULL;
+
+//     /* Set Full-Duplex mode */
+//     SPI_2LINES(hspi);
+
+//     /* Set the number of data at current transfer */
+//     MODIFY_REG(hspi->Instance->CR2, SPI_CR2_TSIZE, size);
+
+//     __HAL_SPI_ENABLE(hspi);
+
+//     if (hspi->Init.Mode == SPI_MODE_MASTER)
+//     {
+//         /* Master transfer start */
+//         SET_BIT(hspi->Instance->CR1, SPI_CR1_CSTART);
+//     }
+
+//     // 直接使用HAL库的寄存器配置，但用轮询方式读取
+//     for (uint8_t byte_count = 0; byte_count < size; byte_count++)
+//     {
+//         uint8_t tx_byte = txdata ? txdata[byte_count] : 0xFF;
+
+//         // 等待TXE标志（发送缓冲区空）
+//         while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_TXP)))
+//             ;
+
+//         // 写入数据
+//         *(__IO uint8_t *)&SPIx->TXDR = tx_byte;
+
+//         // 等待RXNE标志（接收缓冲区非空）
+//         while (!(__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_RXP)))
+//             ;
+
+//         // 读取数据
+//         if (rxdata)
+//         {
+//             rxdata[byte_count] = *(__IO uint8_t *)&SPIx->RXDR;
+//         }
+//         else
+//         {
+//             (void)*(__IO uint8_t *)&SPIx->RXDR;
+//         }
+//     }
+
+//     // 等待传输完成
+//     while (!__HAL_SPI_GET_FLAG(hspi, SPI_FLAG_EOT))
+//         ;
+
+//     // 清除状态标志
+//     SPIx->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC;
+
+//     return size;
+// }
 
 /**
  * @brief       SPI超快速批量传输函数（寄存器版本，用于连续读取多个字节）

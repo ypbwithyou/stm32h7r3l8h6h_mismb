@@ -1,151 +1,192 @@
 #include "lib_dwt_timestamp.h"
 #include "stm32h7r3xx.h"
 
-// 系统参数（STM32H7R3 600MHz）
-#define SYS_CLOCK_HZ     600000000U
-#define CYCLES_PER_US    600U          // 600MHz / 1MHz
+/* ------------------------------------------------------------------ */
+/*  编译期校验                                                          */
+/* ------------------------------------------------------------------ */
+#define SYS_CLOCK_HZ   600000000U
+#define CYCLES_PER_US  600U
+#define CYCLES_PER_NS  (CYCLES_PER_US / 1000U)   /* 仅供注释，实际用比例 */
 
-// DWT状态变量
-static struct {
-    volatile uint64_t overflow_count;  // 溢出次数（每2^32周期）
-    volatile uint32_t last_cycle;      // 上次读取的周期值
-    bool initialized;                  // 初始化标志
-    bool running;                      // 运行状态
+_Static_assert(SYS_CLOCK_HZ / 1000000U == CYCLES_PER_US,
+               "CYCLES_PER_US 与 SYS_CLOCK_HZ 不匹配，请同步修改");
+
+/* ------------------------------------------------------------------ */
+/*  内部状态                                                            */
+/* ------------------------------------------------------------------ */
+/*
+ * overflow_count：32-bit，Cortex-M 单指令写，天然原子。
+ * 32-bit 溢出周期 = 2^32 / 600e6 ≈ 7.16 s，
+ * overflow_count 本身需要 7.16 s × 2^32 ≈ 30730 年才溢出，无需担心。
+ */
+static struct
+{
+    volatile uint32_t overflow_count;
+    volatile uint32_t last_cyc;       /* SysTick hook 用于边沿检测 */
+    volatile bool     initialized;
+    volatile bool     running;
 } dwt_state = {0};
 
-// 初始化DWT
+/* ------------------------------------------------------------------ */
+/*  核心读取：double-read 无锁防撕裂                                    */
+/* ------------------------------------------------------------------ */
+/*
+ * 协议：
+ *   写方（SysTick ISR）：先更新 overflow_count（单指令，原子）。
+ *   读方（本函数）：先读 overflow，再读 CYCCNT，再读 overflow。
+ *   若两次 overflow 不同，说明期间发生了溢出，重试。
+ *
+ * 边界窗口（CYCCNT 已绕回但 ISR 尚未执行）：
+ *   overflow1 == overflow2，但 cyc 接近 0 而 overflow 尚未递增。
+ *   通过阈值判断：若 cyc < 阈值 且 当前 overflow 已变化，修正为 overflow+1。
+ *   阈值取 2^28（约 0.45 s），远大于任何中断延迟，保守安全。
+ */
+#define OVERFLOW_EDGE_THRESHOLD  0x10000000U   /* 2^28 cycles ≈ 0.45 s */
+
+static uint64_t get_total_cycles(void)
+{
+    uint32_t ov1, ov2, cyc;
+
+    do {
+        ov1 = dwt_state.overflow_count;
+        cyc = DWT->CYCCNT;
+        ov2 = dwt_state.overflow_count;
+    } while (ov1 != ov2);
+
+    /*
+     * 极罕见边界：CYCCNT 已绕回（值很小），但 SysTick ISR 还没跑到，
+     * overflow_count 还是旧值。此时再读一次 overflow，若已变则修正。
+     */
+    if (cyc < OVERFLOW_EDGE_THRESHOLD)
+    {
+        uint32_t ov3 = dwt_state.overflow_count;
+        if (ov3 != ov1)
+            return ((uint64_t)ov3 << 32) | cyc;
+    }
+
+    return ((uint64_t)ov1 << 32) | cyc;
+}
+
+/* ------------------------------------------------------------------ */
+/*  SysTick hook（在 SysTick_Handler 里调用）                          */
+/* ------------------------------------------------------------------ */
+/*
+ * SysTick 默认 1 ms 一次，远小于 7.16 s 的溢出周期，
+ * 因此每次溢出至多触发一次递增，不会漏计。
+ *
+ * 使用边沿检测（cur < last）而非固定计数，
+ * 即使 SysTick 周期被临时拉长也不会漏溢出。
+ */
+void dwt_systick_hook(void)
+{
+    if (!dwt_state.initialized || !dwt_state.running)
+        return;
+
+    uint32_t cur = DWT->CYCCNT;
+
+    if (cur < dwt_state.last_cyc)
+        dwt_state.overflow_count++;   /* 32-bit 写，单指令原子 */
+
+    dwt_state.last_cyc = cur;
+}
+
+/* ------------------------------------------------------------------ */
+/*  初始化 / 控制                                                       */
+/* ------------------------------------------------------------------ */
 bool dwt_init(void)
 {
-    // 启用DWT跟踪
+    /* 使能 DWT */
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    
-    // 检查DWT是否可用
-    if (DWT->CTRL & DWT_CTRL_NOCYCCNT_Msk) {
-        return false;  // 不支持DWT
-    }
-    
-    // 启动周期计数器
+    __DSB();
+
+    /* 检查硬件是否支持 CYCCNT */
+    if (DWT->CTRL & DWT_CTRL_NOCYCCNT_Msk)
+        return false;
+
+    /* 清零并使能 */
     DWT->CYCCNT = 0;
+    __DSB();
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-    
-    // 初始化状态
+
     dwt_state.overflow_count = 0;
-    dwt_state.last_cycle = 0;
-    dwt_state.initialized = true;
-    dwt_state.running = true;
-    
+    dwt_state.last_cyc       = 0;
+    dwt_state.initialized    = true;
+    dwt_state.running        = true;
+
     return true;
 }
 
-// 检查并更新溢出（必须在禁用中断或原子操作中调用）
-static void update_overflow(void)
-{
-    uint32_t current = DWT->CYCCNT;
-    
-    // 检测溢出：当前值 < 上次值
-    if (current < dwt_state.last_cycle) {
-        dwt_state.overflow_count++;
-    }
-    
-    dwt_state.last_cycle = current;
-}
-
-// 获取64位周期计数
-static uint64_t get_total_cycles(void)
-{
-    uint32_t primask;
-    uint32_t cycles_low, cycles_high1, cycles_high2;
-    uint64_t total_cycles;
-    
-    // 禁用中断确保原子性
-    primask = __get_PRIMASK();
-    __disable_irq();
-    
-    // 更新溢出计数
-    update_overflow();
-    
-    // 读取当前值（防止读取过程中被中断）
-    do {
-        cycles_high1 = (uint32_t)dwt_state.overflow_count;
-        cycles_low = DWT->CYCCNT;
-        cycles_high2 = (uint32_t)dwt_state.overflow_count;
-    } while (cycles_high1 != cycles_high2);
-    
-    // 恢复中断状态
-    if (!primask) {
-        __enable_irq();
-    }
-    
-    // 组合64位值
-    total_cycles = ((uint64_t)cycles_high1 << 32) | cycles_low;
-    
-    return total_cycles;
-}
-
-// 控制函数
 void dwt_start(void)
 {
     if (!dwt_state.initialized) return;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
     dwt_state.running = true;
 }
-// 停止DWT
+
 void dwt_stop(void)
 {
     if (!dwt_state.initialized) return;
     DWT->CTRL &= ~DWT_CTRL_CYCCNTENA_Msk;
     dwt_state.running = false;
 }
-// 重置DWT
+
+/*
+ * reset 需要关中断：同时清零 CYCCNT、overflow_count、last_cyc，
+ * 三者必须原子更新，否则 hook 或 get_total_cycles 会读到不一致状态。
+ * reset 是低频操作，关中断代价可接受。
+ */
 void dwt_reset(void)
 {
     if (!dwt_state.initialized) return;
-    
+
     uint32_t primask = __get_PRIMASK();
     __disable_irq();
-    
+
     DWT->CYCCNT = 0;
+    __DSB();
     dwt_state.overflow_count = 0;
-    dwt_state.last_cycle = 0;
-    
+    dwt_state.last_cyc       = 0;
+
     if (!primask) __enable_irq();
 }
 
-// 获取时间戳
+/* ------------------------------------------------------------------ */
+/*  时间读取                                                            */
+/* ------------------------------------------------------------------ */
 timestamp_t dwt_get_timestamp(void)
 {
     timestamp_t ts = {0};
-    
-    if (!dwt_state.initialized || !dwt_state.running) {
+    if (!dwt_state.initialized || !dwt_state.running)
         return ts;
-    }
-    
-    uint64_t total_cycles = get_total_cycles();
-    
-    // 转换为秒和微秒
-    ts.tv_sec = total_cycles / SYS_CLOCK_HZ;
-    ts.tv_usec = (total_cycles % SYS_CLOCK_HZ) / CYCLES_PER_US;
-    
+
+    uint64_t c   = get_total_cycles();
+    ts.tv_sec    = (uint32_t)(c / SYS_CLOCK_HZ);
+    ts.tv_usec   = (uint32_t)((c % SYS_CLOCK_HZ) / CYCLES_PER_US);
     return ts;
 }
 
-// 获取64位原始时间戳
 uint64_t dwt_get_timestamp_raw(void)
 {
-    timestamp_t ts = dwt_get_timestamp();
-    return ((uint64_t)ts.tv_sec << 32) | ts.tv_usec;
+    if (!dwt_state.initialized || !dwt_state.running)
+        return 0;
+    return get_total_cycles();
 }
 
-// 获取微秒数
 uint64_t dwt_get_us(void)
 {
-    uint64_t total_cycles = get_total_cycles();
-    return total_cycles / CYCLES_PER_US;
+    if (!dwt_state.initialized || !dwt_state.running)
+        return 0;
+    return get_total_cycles() / CYCLES_PER_US;
 }
 
-// 获取纳秒数
 uint64_t dwt_get_ns(void)
 {
-    uint64_t total_cycles = get_total_cycles();
-    return total_cycles * 1000 / CYCLES_PER_US;
+    if (!dwt_state.initialized || !dwt_state.running)
+        return 0;
+    /*
+     * cycles * 1000 / 600 = ns
+     * uint64_t 最大值 / 1000 ≈ 1.8×10^16，
+     * 600 MHz 下需运行约 975 年才可能溢出，安全。
+     */
+    return get_total_cycles() * 1000ULL / CYCLES_PER_US;
 }

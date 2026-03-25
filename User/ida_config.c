@@ -16,6 +16,7 @@
 #include "./FATFS/source/diskio.h"
 #include "./LIBS/lib_dwt/lib_dwt_timestamp.h"
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
+#include "./BSP/EXTI/exti.h"
 
 #include "rs485_processor.h"
 #include "offline_processor.h"
@@ -23,10 +24,307 @@
 #include "collector_processor.h"
 
 #include "usbd_cdc_if.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #define TEST_FILE_NAME "speed_test.bin"
 #define TEST_FILE_SIZE (4 * 1024 * 1024) // 4MB
 #define TEST_BLOCK_SIZE (16 * 1024)      // 16KB
+#define SOFT_TIME_FILE_PATH "0:/.sys_time.dat"
+#define SOFT_TIME_SYNC_INTERVAL_MS 10000U
+#define SOFT_TIME_DEFAULT_EPOCH 1767225600UL /* 2026-01-01 00:00:00 */
+
+uint8_t offline_mode;
+
+static uint32_t g_soft_time_base_epoch = SOFT_TIME_DEFAULT_EPOCH;
+static uint32_t g_soft_time_base_tick = 0U;
+static uint32_t g_soft_time_last_sync_tick = 0U;
+static uint8_t g_soft_time_inited = 0U;
+static uint64_t g_soft_time_abs_base_epoch_ns = 0ULL;
+static uint64_t g_soft_time_abs_base_dwt_ns = 0ULL;
+static uint8_t g_soft_time_abs_base_inited = 0U;
+
+static uint32_t soft_time_get_epoch(void);
+
+static uint8_t soft_time_is_leap_year(uint16_t year)
+{
+    return ((year % 4U == 0U && year % 100U != 0U) || (year % 400U == 0U)) ? 1U : 0U;
+}
+
+static uint8_t soft_time_days_in_month(uint16_t year, uint8_t month)
+{
+    static const uint8_t days_tbl[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    uint8_t days = days_tbl[month - 1U];
+
+    if ((month == 2U) && soft_time_is_leap_year(year))
+    {
+        days = 29U;
+    }
+
+    return days;
+}
+
+static void soft_time_set_epoch(uint32_t epoch_s)
+{
+    g_soft_time_base_epoch = epoch_s;
+    g_soft_time_base_tick = HAL_GetTick();
+    g_soft_time_inited = 1U;
+}
+
+static void soft_time_refresh_abs_ns_base(void)
+{
+    g_soft_time_abs_base_epoch_ns = (uint64_t)soft_time_get_epoch() * 1000000000ULL;
+    g_soft_time_abs_base_dwt_ns = dwt_get_ns();
+    g_soft_time_abs_base_inited = 1U;
+}
+
+static uint32_t soft_time_get_epoch(void)
+{
+    uint32_t now_tick;
+    uint32_t elapsed_ms;
+
+    if (g_soft_time_inited == 0U)
+    {
+        soft_time_set_epoch(SOFT_TIME_DEFAULT_EPOCH);
+    }
+
+    now_tick = HAL_GetTick();
+    elapsed_ms = now_tick - g_soft_time_base_tick;
+
+    return g_soft_time_base_epoch + (elapsed_ms / 1000U);
+}
+
+static void soft_time_epoch_to_calendar(uint32_t epoch_s,
+                                        uint16_t *year,
+                                        uint8_t *month,
+                                        uint8_t *day,
+                                        uint8_t *hour,
+                                        uint8_t *minute,
+                                        uint8_t *second)
+{
+    uint32_t days;
+    uint32_t rem;
+    uint16_t y;
+    uint8_t m;
+    uint32_t dim;
+
+    days = epoch_s / 86400UL;
+    rem = epoch_s % 86400UL;
+
+    *hour = (uint8_t)(rem / 3600UL);
+    rem %= 3600UL;
+    *minute = (uint8_t)(rem / 60UL);
+    *second = (uint8_t)(rem % 60UL);
+
+    y = 1970U;
+    while (1)
+    {
+        dim = soft_time_is_leap_year(y) ? 366UL : 365UL;
+        if (days < dim)
+        {
+            break;
+        }
+        days -= dim;
+        y++;
+    }
+
+    m = 1U;
+    while (1)
+    {
+        dim = soft_time_days_in_month(y, m);
+        if (days < dim)
+        {
+            break;
+        }
+        days -= dim;
+        m++;
+    }
+
+    *year = y;
+    *month = m;
+    *day = (uint8_t)(days + 1UL);
+}
+
+static FRESULT soft_time_save_to_file(void)
+{
+    FIL fil;
+    FRESULT res;
+    UINT bw;
+    char buf[24];
+    int len;
+    uint32_t epoch_s = soft_time_get_epoch();
+
+    len = snprintf(buf, sizeof(buf), "%lu\n", (unsigned long)epoch_s);
+    if (len <= 0)
+    {
+        return FR_INT_ERR;
+    }
+
+    res = f_open(&fil, SOFT_TIME_FILE_PATH, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK)
+    {
+        return res;
+    }
+
+    res = f_write(&fil, buf, (UINT)len, &bw);
+    if ((res == FR_OK) && (bw != (UINT)len))
+    {
+        res = FR_DISK_ERR;
+    }
+
+    if (res == FR_OK)
+    {
+        res = f_sync(&fil);
+    }
+
+    f_close(&fil);
+    return res;
+}
+
+static uint8_t soft_time_load_from_file(void)
+{
+    FIL fil;
+    FRESULT res;
+    UINT br;
+    char buf[24];
+    uint32_t epoch_s;
+    char *endptr = NULL;
+
+    res = f_open(&fil, SOFT_TIME_FILE_PATH, FA_READ);
+    if (res != FR_OK)
+    {
+        return 0U;
+    }
+
+    res = f_read(&fil, buf, (UINT)(sizeof(buf) - 1U), &br);
+    f_close(&fil);
+    if (res != FR_OK)
+    {
+        return 0U;
+    }
+
+    buf[br] = '\0';
+    epoch_s = (uint32_t)strtoul(buf, &endptr, 10);
+
+    if (endptr == buf)
+    {
+        return 0U;
+    }
+
+    if (epoch_s < 315532800UL) /* 1980-01-01 */
+    {
+        return 0U;
+    }
+
+    soft_time_set_epoch(epoch_s);
+    return 1U;
+}
+
+static void soft_time_init_after_mount(void)
+{
+    if (soft_time_load_from_file() == 0U)
+    {
+        soft_time_set_epoch(SOFT_TIME_DEFAULT_EPOCH);
+        (void)soft_time_save_to_file();
+    }
+
+    g_soft_time_last_sync_tick = HAL_GetTick();
+    soft_time_refresh_abs_ns_base();
+}
+
+static void soft_time_periodic_sync(void)
+{
+    uint32_t now_tick = HAL_GetTick();
+    if ((now_tick - g_soft_time_last_sync_tick) >= SOFT_TIME_SYNC_INTERVAL_MS)
+    {
+        (void)soft_time_save_to_file();
+        g_soft_time_last_sync_tick = now_tick;
+    }
+}
+
+DWORD get_fattime(void)
+{
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+
+    soft_time_epoch_to_calendar(soft_time_get_epoch(), &year, &month, &day, &hour, &minute, &second);
+
+    if (year < 1980U)
+    {
+        year = 1980U;
+        month = 1U;
+        day = 1U;
+        hour = 0U;
+        minute = 0U;
+        second = 0U;
+    }
+    else if (year > 2107U)
+    {
+        year = 2107U;
+        month = 12U;
+        day = 31U;
+        hour = 23U;
+        minute = 59U;
+        second = 58U;
+    }
+
+    return ((DWORD)(year - 1980U) << 25) |
+           ((DWORD)month << 21) |
+           ((DWORD)day << 16) |
+           ((DWORD)hour << 11) |
+           ((DWORD)minute << 5) |
+           ((DWORD)second >> 1);
+}
+
+int8_t SoftTimeSyncFromNanoSecond(int64_t nano_second)
+{
+    uint64_t epoch_s;
+    FRESULT res;
+
+    if (nano_second <= 0)
+    {
+        return RET_ERROR;
+    }
+
+    epoch_s = (uint64_t)nano_second / 1000000000ULL;
+    if (epoch_s < 315532800ULL) /* 1980-01-01 */
+    {
+        return RET_ERROR;
+    }
+
+    if (epoch_s > 0xFFFFFFFFULL)
+    {
+        epoch_s = 0xFFFFFFFFULL;
+    }
+
+    soft_time_set_epoch((uint32_t)epoch_s);
+    g_soft_time_last_sync_tick = HAL_GetTick();
+    soft_time_refresh_abs_ns_base();
+
+    res = soft_time_save_to_file();
+    return (res == FR_OK) ? RET_OK : RET_ERROR;
+}
+
+uint32_t SoftTimeGetEpochSecond(void)
+{
+    return soft_time_get_epoch();
+}
+
+uint64_t SoftTimeGetEpochNanosecond(void)
+{
+    uint64_t now_dwt_ns;
+    if (g_soft_time_abs_base_inited == 0U)
+    {
+        soft_time_refresh_abs_ns_base();
+    }
+
+    now_dwt_ns = dwt_get_ns();
+    return g_soft_time_abs_base_epoch_ns + (now_dwt_ns - g_soft_time_abs_base_dwt_ns);
+}
 
 void sd_file_speed_test(void)
 {
@@ -139,16 +437,19 @@ static void CheckMcuPwrStatus(void);
 static void CheckMcuRunStatus(void);
 
 static int8_t format_emmc(void);
-static int8_t test_filesystem(void);
+ 
 
 FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retries);
 int8_t check_filesystem_status(const TCHAR *drive);
 
 /***********************************全局变量*********************************/
-///* USBD句柄 */
-// USBD_HandleTypeDef g_usbd_handle = {0};
-/* 系统运行状态 */
+
+uint8_t g_offline_mode; // 离线模式：0--待机，1--离线运行
+
+/* 在全局区紧挨着放哨兵 */
+volatile uint32_t g_sentinel_before = 0xDEADBEEF;
 volatile SystemStatus g_IdaSystemStatus;
+volatile uint32_t g_sentinel_after = 0xDEADBEEF;
 
 /***********************************函数*********************************/
 /**
@@ -183,6 +484,7 @@ int8_t IdaDeviceInit(void)
 
     // PCA9554A初始化
     PCA9554A_init();
+    external_io_init();
 
     // RS485初始化
     rs485_init(RS485_BAUDRATE);
@@ -264,6 +566,7 @@ int8_t IdaDeviceInit(void)
     }
 
     /* mount eMMC */
+    // format_emmc();
     res = safe_f_mount(fs[0], "0:", 1, 2);
     if (res == FR_NO_FILESYSTEM)
     {
@@ -296,10 +599,16 @@ int8_t IdaDeviceInit(void)
         usb_printf("[FatFs] Mount OK\r\n");
     }
 
+    soft_time_init_after_mount();
+    usb_device_info_reload_from_file();
     check_filesystem_status("0:");
 
+    OfflineRecordInit();
+
     test_filesystem();
-    sd_file_speed_test();
+
+    rs485_subdev_scan_once();
+ 
     return RET_OK;
 }
 
@@ -407,119 +716,10 @@ static int8_t format_emmc(void)
     return 0;
 }
 
-// /**
-//  *
-//  * @warning 这会删除所有数据！
-//  */
-// static int8_t format_sd_card(void)
-// {
-//     FRESULT fres;  /* FatFs函数返回结果 */
-//     MKFS_PARM opt; /* 格式化参数 */
-//     const uint8_t work_buffer[512];
-
-//     printf("\n=== 格式化SD卡 ===\n");
-//     printf("警告：这将删除所有数据！\n");
-
-//     /* 配置格式化参数 */
-//     memset(&opt, 0, sizeof(opt));
-//     opt.fmt = FM_FAT32; /* 文件系统类型：FAT32 */
-//     opt.n_fat = 1;      /* FAT表数量：1 */
-//     opt.align = 0;      /* 对齐：自动 */
-//     opt.n_root = 0;     /* 根目录条目数：0（FAT32自动计算） */
-
-//     /* 获取SD卡信息 */
-//     DSTATUS status = disk_initialize(0);
-//     if (status != 0)
-//     {
-//         printf("磁盘初始化失败\n");
-//         return -1;
-//     }
-
-//     DWORD sector_count = 0;
-//     DRESULT res = disk_ioctl(0, GET_SECTOR_COUNT, &sector_count);
-//     if (res != RES_OK)
-//     {
-//         printf("获取扇区数量失败\n");
-//         return -1;
-//     }
-
-//     printf("SD卡总扇区数: %u\n", sector_count);
-//     printf("总容量: %.2f GB\n", (float)sector_count * 512.0f / 1024.0f / 1024.0f / 1024.0f);
-
-//     /* 自动选择簇大小 */
-//     if (sector_count > 66600)
-//     {                       /* > 32MB */
-//         opt.au_size = 4096; /* 4KB簇大小 */
-//     }
-//     if (sector_count > 532480)
-//     {                       /* > 260MB */
-//         opt.au_size = 8192; /* 8KB簇大小 */
-//     }
-//     if (sector_count > 16777216)
-//     {                        /* > 8GB */
-//         opt.au_size = 16384; /* 16KB簇大小 */
-//     }
-
-//     printf("使用簇大小: %u 字节\n", opt.au_size);
-
-//     /* 执行格式化 */
-//     printf("正在格式化...\n");
-//     fres = f_mkfs("0:", &opt, (void *)work_buffer, sizeof(work_buffer));
-//     //    fres = f_mkfs("0:", &opt, NULL, 0);
-
-//     if (fres == FR_OK)
-//     {
-//         printf("格式化成功！\n");
-
-//         /* 重新挂载 */
-//         f_mount(NULL, "0:", 0); // 卸载
-//         HAL_Delay(100);
-//         fres = f_mount(fs[0], "0:", 1);
-
-//         if (fres == FR_OK)
-//         {
-//             printf("格式化后重新挂载成功！\n");
-//             return 0;
-//         }
-//         else
-//         {
-//             printf("重新挂载失败: %d\n", fres);
-//             return -1;
-//         }
-//     }
-//     else
-//     {
-//         printf("格式化失败: %d\n", fres);
-
-//         if (fres == FR_DISK_ERR)
-//         {
-//             printf("磁盘错误\n");
-//         }
-//         else if (fres == FR_NOT_READY)
-//         {
-//             printf("磁盘未准备好\n");
-//         }
-//         else if (fres == FR_WRITE_PROTECTED)
-//         {
-//             printf("磁盘写保护\n");
-//         }
-//         else if (fres == FR_INVALID_DRIVE)
-//         {
-//             printf("无效驱动器\n");
-//         }
-//         else if (fres == FR_MKFS_ABORTED)
-//         {
-//             printf("格式化被中止\n");
-//         }
-
-//         return -1;
-//     }
-// }
-
 /**
  * @brief 创建测试文件和目录，验证文件系统功能
  */
-static int8_t test_filesystem(void)
+  int8_t test_filesystem(void)
 {
     FRESULT fres; /* FatFs function result */
     FIL fil;
@@ -580,33 +780,33 @@ static int8_t test_filesystem(void)
         return -1;
     }
 
-    // /* 3. Re-open file and read data */
-    // fres = f_open(&fil, "0:/OfflineCfgSchedule.txt", FA_READ);
-    // if (fres == FR_OK)
-    // {
-    //     usb_printf("File opened successfully for reading\n");
+    /* 3. Re-open file and read data */
+    fres = f_open(&fil, "0:/OfflineCfgSchedule.txt", FA_READ);
+    if (fres == FR_OK)
+    {
+        usb_printf("File opened successfully for reading\n");
 
-    //     /* Read data */
-    //     fres = f_read(&fil, read_buffer, sizeof(read_buffer) - 1, &bytes_read);
-    //     if (fres == FR_OK)
-    //     {
-    //         read_buffer[bytes_read] = '\0'; /* Null-terminate the string */
-    //         usb_printf("Read %u bytes successfully\n", bytes_read);
-    //         usb_printf("File content:\n%s\n", read_buffer);
-    //     }
-    //     else
-    //     {
-    //         usb_printf("Failed to read data: %d\n", fres);
-    //     }
+        /* Read data */
+        fres = f_read(&fil, read_buffer, sizeof(read_buffer) - 1, &bytes_read);
+        if (fres == FR_OK)
+        {
+            read_buffer[bytes_read] = '\0'; /* Null-terminate the string */
+            usb_printf("Read %u bytes successfully\n", bytes_read);
+            usb_printf("File content:\n%s\n", read_buffer);
+        }
+        else
+        {
+            usb_printf("Failed to read data: %d\n", fres);
+        }
 
-    //     /* Close file */
-    //     f_close(&fil);
-    // }
-    // else
-    // {
-    //     usb_printf("Failed to open file for reading: %d\n", fres);
-    //     return -1;
-    // }
+        /* Close file */
+        f_close(&fil);
+    }
+    else
+    {
+        usb_printf("Failed to open file for reading: %d\n", fres);
+        return -1;
+    }
 
     /* 4. List directory contents */
     DIR dir;
@@ -659,6 +859,10 @@ static int8_t test_filesystem(void)
         usb_printf("  Used clusters:  %lu\n", total_clusters - free_clusters);
         usb_printf("  Total capacity: %llu MB\n", total_mb);
         usb_printf("  Free space:     %llu MB\n", free_mb);
+
+        g_dev_info.fTotalDiskSapce = total_mb * 1024.0;
+        g_dev_info.fFreeDiskSpace = free_mb * 1024.0;
+
         if (total_clusters > 0)
         {
             usb_printf("  Usage:          %.1f%%\n",
@@ -746,78 +950,6 @@ FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retrie
     return res;
 }
 
-// /**
-//  * @brief 安全挂载文件系统
-//  * @param drive 驱动器号
-//  * @param fs 文件系统对象
-//  * @param max_retries 最大重试次数
-//  * @return FRESULT 结果
-//  */
-// FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retries)
-// {
-//     FRESULT res;
-//     uint8_t retry = 0;
-
-//     while (retry < max_retries)
-//     {
-//         printf("第 %d 次尝试挂载文件系统...\n", retry + 1);
-
-//         // 检查SD卡状态
-//         printf("挂载前SD卡状态: ");
-//         sd_get_status();
-
-//         res = f_mount(fs, drive, opt);
-//         if (res == FR_OK)
-//         {
-//             return res;
-//         }
-
-//         retry++;
-//         printf("挂载文件系统失败: %d, 重试 %d/%d\n", res, retry, max_retries);
-
-//         // 重新初始化SD卡
-//         if (mmc_init() != 0)
-//         {
-//             printf("SD卡重新初始化失败\n");
-//         }
-//         else
-//         {
-//             printf("SD卡重新初始化成功\n");
-//             // 检查初始化后的SD卡状态
-//             printf("重新初始化后SD卡状态: ");
-//             sd_get_status();
-//         }
-
-//         HAL_Delay(100);
-//     }
-
-//     return res;
-// }
-
-// /**
-//  * @brief 检查文件系统状态
-//  * @param drive 驱动器号
-//  * @return 0 正常, -1 异常
-//  */
-// int8_t check_filesystem_status(const TCHAR *drive)
-// {
-//     FRESULT res;
-//     DWORD free_clusters, total_clusters;
-//     FATFS *fs_ptr;
-
-//     res = f_getfree(drive, &free_clusters, &fs_ptr);
-//     if (res != FR_OK)
-//     {
-//         printf("检查文件系统失败: %d\n", res);
-//         return -1;
-//     }
-
-//     total_clusters = fs_ptr->n_fatent - 2;
-//     printf("文件系统状态: 总簇数=%u, 空闲簇数=%u\n", total_clusters, free_clusters);
-
-//     return 0;
-// }
-
 /**
  * @brief  Check filesystem status and print capacity info
  * @param  drive  Drive path e.g. "0:"
@@ -888,6 +1020,7 @@ static void CheckMcuPwrStatus(void)
 {
     SysPwrLED_Output();
 }
+
 /**
  * @brief   系统运行指示灯输出控制
  * @param   无
@@ -901,8 +1034,9 @@ static void CheckMcuRunStatus(void)
     static uint32_t t_last = 0;
     uint32_t t_now = 0;
     uint32_t t_off = 0;
+    static bool led_state = 0; // 0: 灭，1: 亮
 
-    t_now = ticks_timx_get_counter();
+    t_now = HAL_GetTick();
 
     ret = PCA9554_Get(&read_val);
     if (ret != PCA9554A_OK)
@@ -922,16 +1056,34 @@ static void CheckMcuRunStatus(void)
     }
     else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_link.link_status != USB_CONNECTED))
     {
-        // 未连接但已运行时蓝灯闪烁（离线运行）
         t_off = t_now - t_last;
         if (t_off > 500)
         {
             t_last = t_now;
-            PCA9554_Set(PCA9544A_STS_B(read_val));
+            led_state = !led_state; // 切换状态
+        }
+        if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
+        {
+            // 离线记录中，绿灯闪烁
+            if (led_state)
+            {
+                PCA9554_Set(PCA9544A_STS_G(read_val));
+            }
+            else
+            {
+                PCA9554_Set(PCA9544A_STS_I(read_val));
+            }
         }
         else
-        {
-            PCA9554_Set(PCA9544A_STS_I(read_val));
+        { // 离线运行未记录，蓝灯闪烁
+            if (led_state)
+            {
+                PCA9554_Set(PCA9544A_STS_B(read_val));
+            }
+            else
+            {
+                PCA9554_Set(PCA9544A_STS_I(read_val));
+            }
         }
     }
     else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_record.record_status != RECORD_RUN))
@@ -939,21 +1091,8 @@ static void CheckMcuRunStatus(void)
         // 已运行但未记录时绿灯常亮
         PCA9554_Set(PCA9544A_STS_G(read_val));
     }
-    else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN))
-    {
-        // 已运行且在记录中时绿灯闪烁（离线记录）
-        t_off = t_now - t_last;
-        if (t_off > 100)
-        {
-            t_last = t_now;
-            PCA9554_Set(PCA9544A_STS_G(read_val));
-        }
-        else
-        {
-            PCA9554_Set(PCA9544A_STS_I(read_val));
-        }
-    }
 }
+
 // rs485写子卡设备信息测试
 void WriteSubDevicelnfo_test(void)
 {
@@ -990,58 +1129,48 @@ int8_t app_processor(void)
     uint32_t t_now = 0;
     uint32_t t_off = 0;
 
-    // 初始化采集数据缓存Buffer
-    g_cb_adc = collect_cb_init(SPI_NUM * ADC_DATA_LEN * SPI_CH_ADC_MAX * BLOCK_LEN);
-    if (!g_cb_adc)
+    g_tx_packet = (uint8_t *)mymalloc(SRAMEX, (sizeof(FrameHeadInfo) +
+                                               sizeof(uint32_t) +
+                                               sizeof(UserDataHeadInfo) +
+                                               sizeof(ArmBackFrameHeader) +
+                                               ADC_CH_TOTAL * BLOCK_LEN * sizeof(short) + sizeof(uint32_t) +
+                                               sizeof(uint32_t) + 256));
+
+    if (collect_cb_init_all(ADC_CB_SIZE_PER_CH) != RET_OK)
     {
-        usb_printf("collect_cb_init err.\n");
+        printf("collect_cb_init_all err.\n");
         return 0;
     }
-
-    // 滑动窗口初始化
-    // SWR_Init(&receiver, on_frame, NULL);
 
     // 系统运行参数初始化
     SystemStatusInit();
 
     // 离线初始化
     SysRunStatusInit();
-
-    //    // 写子卡设备信息测试
-    //    WriteSubDevicelnfo_test();
-    //
-    //    // 获取BASE卡设备信息（设备信息预期不符则使用默认设备信息）
-    //    GetDeviceInfo(&g_dev_info);
-
-    //    // 轮询查询子卡设备信息
-    //    for (uint8_t i=0; i<SUBDEV_NUM_MAX; i++) {
-    //       rs485_send_frame(i+1, 0x01, NULL, 0);
-    //    }
-    //    t_last = ticks_timx_get_counter();
-    //    while (t_off < 1000) {
-    //       /* 处理所有待处理的帧 */
-    //       pending_frames = rs485_get_pending_frames();
-    //
-    //       for (uint8_t i = 0; i < pending_frames; i++) {
-    //           /* 从队列中获取数据帧 */
-    //           if (rs485_recv_data(rs485buf, &len) == 0 && len > 0) {
-    //               /* 解析数据帧 */
-    //               rs485_parse_frame(rs485buf, len);
-    //               /* 可选：数据回环测试（自动添加帧头帧尾） */
-    //    //                rs485_send_data(rs485buf, len);
-    //           }
-    //       }
-    //       t_now = ticks_timx_get_counter();
-    //       t_off = t_now - t_last;
-    //    }
+ 
+    uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMEX, SWR_BUFFER_SIZE);
+    if (!frame_copy)
+    {
+        usb_printf("Failed to allocate frame_copy buffer\n");
+        return RET_ERROR;
+    }
 
     while (1)
     {
-        t_now = ticks_timx_get_counter();
+
+        if (g_sentinel_before != 0xDEADBEEF ||
+            g_sentinel_after != 0xDEADBEEF)
+        {
+            // 哨兵被踩 → 内存溢出确认
+            __BKPT(0); // 触发断点
+        }
+
+        // ----------------------------------------------------------------------
+        t_now = HAL_GetTick();
 
         t_off = t_now - t_last;
         // 系统指示灯控制
-        if (t_off > 500 * 1000)
+        if (t_off > 100)
         {
             t_last = t_now;
             CheckMcuPwrStatus();
@@ -1049,31 +1178,45 @@ int8_t app_processor(void)
             LED0_TOGGLE();
         }
 
-        //       // START事件处理（事件发生时执行一次离线计划表offline_processor，计划表执行期间的重复事件视为同一次）
-        //       if (g_IdaSystemStatus.st_dev_offline.start_flag == 1) {
-        //           offline_processor(g_IdaSystemStatus.st_dev_offline.start_flag);
-        //       }
+        soft_time_periodic_sync();
 
-        // offline_processor(1);
+        // ---------------------------emmc--------------------
+        MmcAsyncState st = sd_disk_poll();
+        if (st == MMC_DONE || st == MMC_ERROR)
+        {
+            sd_disk_reset();
+        }
 
-        // USB通信数据处理
-        // USB_CDC_Receive_From_Queue(usb_rx_buf, &data_len);
-        // if (data_len > 0)
-        // {
-        //     /* 数据回显（可根据需要修改为业务逻辑） */
-        //     SWR_ProcessBytes(&receiver, usb_rx_buf, data_len);
-        // }
+        ExternalIO_Process();
+
+        rs485_processor_poll();
+
+        offline_processor(g_offline_mode);
+
         // ─── 最高优先级：接收到的完整协议帧 ───
         if (g_slidingWindow_receiver.frame_flag)
         {
-            uint32_t len = g_slidingWindow_receiver.frame_len_current;
-            on_frame(g_slidingWindow_receiver.buffer, len);
+            // 主循环外定义，只分配一次
+            uint32_t flen = g_slidingWindow_receiver.frame_len_current;
+
+            // 1. 拷贝到静态缓冲
+            memcpy(frame_copy,
+                   g_slidingWindow_receiver.buffer + g_slidingWindow_receiver.frame_start_pos,
+                   flen);
+
+            // 2. 清标志
             g_slidingWindow_receiver.frame_flag = 0;
+
+            // 3. 处理
+            on_frame(frame_copy, flen);
         }
 
-        USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag && g_IdaSystemStatus.st_dev_mode.work_mode != WORKMODE_ONLINE);
+        USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag);
 
         IdaProcessor();
     }
+
+    // 虽然这里不会执行到，但为了代码完整性添加释放
+    myfree(SRAMEX, frame_copy);
     return ret;
 }
