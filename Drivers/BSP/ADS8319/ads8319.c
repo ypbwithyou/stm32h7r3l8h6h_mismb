@@ -3,8 +3,6 @@
 #include "./BSP/SPI/spi.h"
 #include "string.h"
 #include "./SYSTEM/delay/delay.h"
-// #include "./BSP/DMA/dma.h"
-#include "./BSP/DMA_LIST/dma_list.h"
 
 extern DMA_HandleTypeDef g_dma_rx_handle; /* DMA句柄 */
 

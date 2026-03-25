@@ -82,6 +82,13 @@ unsigned char spi_read_bulk_fast(unsigned int spi_periph, unsigned char* rxdata,
 unsigned char spi_read_write_halfword_fast(unsigned int spi_periph, uint16_t* txdata, uint16_t* rxdata, unsigned char size);
 unsigned char spi_read_ads8319_chain_fast(unsigned int spi_periph, uint16_t* adc_data);
 
+/* DMA相关函数 */
+void spi_dma_init(void);
+void spi_dma_start_transfer(uint8_t spi_idx, uint8_t *tx_data, uint8_t *rx_data, uint16_t size);
+uint8_t spi_dma_is_complete(uint8_t spi_idx);
+void spi_dma_wait_complete(uint8_t spi_idx);
+void spi_dma_abort(uint8_t spi_idx);
+
 #endif
 
 

@@ -3,6 +3,7 @@
 #include "./BSP/LED/led.h"
 #include "./BSP/ADS8319/ads8319.h"
 #include "./BSP/SPI/spi.h"
+#include "./BSP/SPI_DMA/spi_dma.h"
 #include "collector_processor.h"
 
 #include "usbd_cdc_if.h"
@@ -22,6 +23,14 @@ static uint8_t g_write_ch[ADC_CH_TOTAL];
 static uint8_t g_write_cnt = 0U;
 static uint32_t g_map_cached_mask = 0xFFFFFFFFUL;
 static uint8_t g_map_cached_spi_cnt[SPI_NUM] = {0xFFU, 0xFFU, 0xFFU};
+
+/* DMA传输缓冲区 */
+static uint8_t g_spi_tx_buf[3][SPI_DMA_MAX_TRANSFER_SIZE];
+static uint8_t g_spi_rx_buf[3][SPI_DMA_MAX_TRANSFER_SIZE];
+static uint16_t g_spi_dma_size[3];
+
+/* DMA模式标志 */
+static volatile uint8_t g_dma_transfer_pending = 0;
 
 static void gtim_rebuild_write_map_if_needed(void)
 {
@@ -58,7 +67,7 @@ static void gtim_rebuild_write_map_if_needed(void)
 
 uint8_t gtim_dma_path_enabled(void)
 {
-    return 0U;
+    return 1U; /* 启用DMA模式 */
 }
 
 uint16_t gtim_dma_fail_streak_get(void)
@@ -106,79 +115,53 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
  
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-
-    // if (htim->Instance != GTIM_TIMX)
-    //     return;
-    // g_gtim_it_counts++;
-
-    // static uint8_t first_frame = 1;
-    // uint16_t adc_buf[SPI_NUM][SPI_CH_NUM];
-
-    // // 第1步：先读上一次转换结果（第1帧跳过）
-    // if (!first_frame)
-    // {
-    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
-    //     {
-    //         if (g_spi_adc_cnt[spi] == 0)
-    //             continue;
-    //         ads8319_read_daisy_chain_fast(spi + 1, g_spi_adc_cnt[spi], adc_buf[spi]);
-    //     }
-    //     ADS8319_CONVST_LOW(); // 结束上次转换周期
-
-    //     // for (volatile uint16_t i = 0; i < 100; i++)
-    //     // {
-    //     //     __NOP();
-    //     // } // 等待1.2μs转换完成
-    // }
-    // else
-    // {
-    //     first_frame = 0;
-    //     ADS8319_CONVST_LOW();
-    // }
-
-    // // 第2步：启动本次转换
-    // ADS8319_CONVST_HIGH();
-    // // for (volatile uint16_t i = 0; i < 300; i++)
-    // // {
-    // //     __NOP();
-    // // } // 等待1.2μs转换完成
-
-    // // 第3步：写入缓冲区（使用刚读到的上帧数据）
-    // if (g_gtim_it_counts > 1)
-    // {
-    //     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
-    //     {
-    //         for (uint8_t pos = 0; pos < g_spi_adc_cnt[spi]; pos++)
-    //         {
-    //             uint8_t ch = pos * SPI_NUM + spi;
-    //             if (ch >= ADC_CH_TOTAL)
-    //                 continue;
-    //             if (!(g_ch_enable_mask & (1u << ch)))
-    //                 continue;
-    //             cb_write(g_cb_ch[ch], (const char *)&adc_buf[spi][pos], ADC_DATA_LEN);
-    //         }
-    //     }
-    // }
-
     if (htim->Instance != GTIM_TIMX)
         return;
     g_gtim_it_counts++;
 
     gtim_rebuild_write_map_if_needed();
 
+    /* 启动ADC转换 */
     ads8319_start_convst();
 
+    /* 使用DMA同时启动三路SPI传输 */
+    memset(g_spi_dma_size, 0, sizeof(g_spi_dma_size));
+    
     for (uint8_t spi = 0; spi < SPI_NUM; spi++)
     {
         if (g_spi_adc_cnt[spi] == 0)
             continue;
-        ads8319_read_daisy_chain_fast(spi + 1, // SPI编号1-based
-                                      g_spi_adc_cnt[spi],
-                                      g_adc_buf[spi]);
+        
+        /* 计算传输字节数 */
+        g_spi_dma_size[spi] = (g_spi_adc_cnt[spi] * ADS8319_DATA_BITS + 7) / 8;
+        
+        /* 填充TX缓冲区（发送0xFF生成时钟） */
+        memset(g_spi_tx_buf[spi], 0xFF, g_spi_dma_size[spi]);
     }
-
+    
+    /* 同时启动三路DMA传输 */
+    spi_dma_start_all(g_spi_tx_buf, g_spi_rx_buf, g_spi_dma_size);
+    
+    /* 等待所有DMA传输完成 */
+    spi_dma_wait_all_complete();
+    
+    /* 停止ADC转换 */
     ads8319_stop_transfer();
 
+    /* 解析DMA接收的数据 */
+    for (uint8_t spi = 0; spi < SPI_NUM; spi++)
+    {
+        if (g_spi_adc_cnt[spi] == 0)
+            continue;
+        
+        for (uint8_t i = 0; i < g_spi_adc_cnt[spi]; i++)
+        {
+            g_adc_buf[spi][i] = (g_spi_rx_buf[spi][0 + 2 * i] << 8) | 
+                                 g_spi_rx_buf[spi][1 + 2 * i];
+        }
+    }
+
+    /* 写入缓冲区 */
     for (uint8_t i = 0U; i < g_write_cnt; i++)
     {
         uint8_t spi = g_write_spi[i];
