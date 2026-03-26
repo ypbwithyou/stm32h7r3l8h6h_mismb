@@ -40,6 +40,8 @@ static void gtim_abort_frame_from_isr(void);
 static void gtim_copy_rx_to_adc_buf(uint8_t spi_idx);
 static void gtim_invalidate_spi_rx_cache(uint8_t spi_idx, uint8_t bytes);
 static void gtim_collect_frame_polling(void);
+static uint8_t gtim_use_fast_polling_3ch(void);
+static void gtim_collect_frame_polling_3ch_fast(void);
 
 static void gtim_rebuild_write_map_if_needed(void)
 {
@@ -105,8 +107,53 @@ static void gtim_copy_rx_to_adc_buf(uint8_t spi_idx)
     }
 }
 
+static uint8_t gtim_use_fast_polling_3ch(void)
+{
+    return (g_enabled_ch_cnt == 3U) &&
+           (g_ch_enable_mask == 0x000007UL) &&
+           (g_spi_adc_cnt[0] == 1U) &&
+           (g_spi_adc_cnt[1] == 1U) &&
+           (g_spi_adc_cnt[2] == 1U);
+}
+
+static void gtim_collect_frame_polling_3ch_fast(void)
+{
+    uint16_t sample;
+
+    ads8319_start_convst();
+
+    spi_read_write_byte_fast(SPI1_SPI, &spi_tx_buffer[0], &spi_rx_buffer[0][0], 2U);
+    sample = (uint16_t)(((uint16_t)spi_rx_buffer[0][0] << 8) | spi_rx_buffer[0][1]);
+    cb_write(g_cb_ch[0], (const char *)&sample, ADC_DATA_LEN);
+    g_dma_cplt_count[0]++;
+
+    spi_read_write_byte_fast(SPI2_SPI, &spi_tx_buffer[0], &spi_rx_buffer[1][0], 2U);
+    sample = (uint16_t)(((uint16_t)spi_rx_buffer[1][0] << 8) | spi_rx_buffer[1][1]);
+    cb_write(g_cb_ch[1], (const char *)&sample, ADC_DATA_LEN);
+    g_dma_cplt_count[1]++;
+
+    spi_read_write_byte_fast(SPI3_SPI, &spi_tx_buffer[0], &spi_rx_buffer[2][0], 2U);
+    sample = (uint16_t)(((uint16_t)spi_rx_buffer[2][0] << 8) | spi_rx_buffer[2][1]);
+    cb_write(g_cb_ch[2], (const char *)&sample, ADC_DATA_LEN);
+    g_dma_cplt_count[2]++;
+
+    ads8319_stop_transfer();
+
+    g_dma_finish_count++;
+    g_dma_busy = 0U;
+    g_dma_pending_mask = 0U;
+    g_dma_done_mask = 0U;
+    g_dma_fail_streak = 0U;
+}
+
 static void gtim_collect_frame_polling(void)
 {
+    if (gtim_use_fast_polling_3ch() != 0U)
+    {
+        gtim_collect_frame_polling_3ch_fast();
+        return;
+    }
+
     ads8319_start_convst();
 
     for (uint8_t spi = 0U; spi < SPI_NUM; spi++)
@@ -237,7 +284,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     }
 
     g_gtim_it_counts++;
-    gtim_rebuild_write_map_if_needed();
+    if ((AdcCollectorGetMode() != ADC_COLLECT_MODE_POLLING) || (gtim_use_fast_polling_3ch() == 0U))
+    {
+        gtim_rebuild_write_map_if_needed();
+    }
 
     if (g_dma_busy != 0U)
     {
