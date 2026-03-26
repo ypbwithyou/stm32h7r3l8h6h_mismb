@@ -339,6 +339,25 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
 
     if (sample_rate > 0)
     {
+        uint32_t requested_rate = sample_rate;
+        AdcCollectMode mode;
+
+        sample_rate = AdcCollectorMatchSampleRate(sample_rate, enabled_cnt);
+        if (sample_rate == 0U)
+        {
+            usb_printf("ACQ_Start: rejected, enable_cnt=%u requested=%lu exceeds mode budget\n",
+                       (unsigned int)enabled_cnt,
+                       (unsigned long)requested_rate);
+            return;
+        }
+
+        mode = AdcCollectorSelectMode(sample_rate);
+        usb_printf("ACQ_Start: enable_cnt=%u requested=%lu actual=%lu mode=%s\n",
+                   (unsigned int)enabled_cnt,
+                   (unsigned long)requested_rate,
+                   (unsigned long)sample_rate,
+                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
+
         CfgAdcSampleRate(sample_rate);
 
         g_IdaSystemStatus.st_dev_run.run_flag = 1;

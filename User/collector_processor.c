@@ -1,5 +1,6 @@
 #include "collector_processor.h"
 #include "./BSP/TIMER/gtim.h"
+#include "dataType.h"
 
 #include "usbd_cdc_if.h"
 
@@ -10,6 +11,7 @@ uint8_t g_enabled_ch_cnt = 0;
 uint8_t g_spi_adc_cnt[SPI_NUM];
 volatile uint8_t g_adc_conv_ready = 0;
 volatile uint32_t g_cb_overflow_cnt = 0;
+static volatile AdcCollectMode g_adc_collect_mode = ADC_COLLECT_MODE_DMA;
 
 int8_t collect_cb_init_all(uint32_t cb_len_per_ch)
 {
@@ -122,6 +124,48 @@ done:
 
     gtim_timx_cfg((uint16_t)best_arr, (uint16_t)best_psc);
 }
+}
+
+uint32_t AdcCollectorMatchSampleRate(uint32_t requested_rate, uint8_t enabled_ch_cnt)
+{
+    if ((requested_rate == 0U) || (enabled_ch_cnt == 0U))
+    {
+        return 0U;
+    }
+
+    if (requested_rate > ADC_DMA_MAX_RATE)
+    {
+        if (enabled_ch_cnt > ADC_POLL_MAX_CHANNELS)
+        {
+            return 0U;
+        }
+    }
+
+    for (uint32_t i = 0U; i < g_ida_ch_rate_count; i++)
+    {
+        uint32_t candidate = (uint32_t)g_ida_ch_rate[i].ch_cfg_value;
+        if (candidate == requested_rate)
+        {
+            return requested_rate;
+        }
+        if (candidate > requested_rate)
+        {
+            break;
+        }
+    }
+
+    return 0U;
+}
+
+AdcCollectMode AdcCollectorSelectMode(uint32_t sample_rate)
+{
+    g_adc_collect_mode = (sample_rate > ADC_DMA_MAX_RATE) ? ADC_COLLECT_MODE_POLLING : ADC_COLLECT_MODE_DMA;
+    return (AdcCollectMode)g_adc_collect_mode;
+}
+
+AdcCollectMode AdcCollectorGetMode(void)
+{
+    return (AdcCollectMode)g_adc_collect_mode;
 }
 
 /**

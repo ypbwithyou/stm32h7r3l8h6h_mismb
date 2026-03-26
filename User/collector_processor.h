@@ -29,6 +29,15 @@
 #define ADC_CH_ENABLED_MAX ADC_CH_TOTAL     // 最大使能通道数
 
 /* ADC数据结构 */
+#define ADC_DMA_MAX_RATE 25600U
+#define ADC_POLL_MAX_CHANNELS 3U
+
+typedef enum
+{
+    ADC_COLLECT_MODE_DMA = 0,
+    ADC_COLLECT_MODE_POLLING = 1,
+} AdcCollectMode;
+
 typedef struct
 {
   uint16_t data[ADC_CH_TOTAL]; // [spi*8+adc] = data
@@ -55,6 +64,9 @@ void AdcCbClear(void);
 
 void AdcCollectorContrl(uint8_t run_status);
 void CfgAdcSampleRate(uint32_t sample_rate);
+uint32_t AdcCollectorMatchSampleRate(uint32_t requested_rate, uint8_t enabled_ch_cnt);
+AdcCollectMode AdcCollectorSelectMode(uint32_t sample_rate);
+AdcCollectMode AdcCollectorGetMode(void);
 
 void adc_write_spi_channels(uint8_t spi_idx, const uint16_t adc_data[SPI_CH_NUM],
                             uint32_t timestamp);

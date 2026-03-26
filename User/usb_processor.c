@@ -55,6 +55,7 @@ static uint32_t USB_CalibrationRead(uint8_t *data_in, uint32_t data_len, FrameHe
 static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
 static uint32_t PackReplyWithoutDatas(uint32_t event_id);
+static uint32_t PackReplyWithoutDatasParam(uint32_t event_id, int32_t param0);
 
 /* 协议处理函数指针类型：
  * @param data_in: 解包后的用户数据
@@ -382,6 +383,20 @@ static uint32_t PackReplyWithoutDatas(uint32_t event_id)
                                                        0);
 
     uint32_t packet_len = 0;
+    pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+    return packet_len;
+}
+
+static uint32_t PackReplyWithoutDatasParam(uint32_t event_id, int32_t param0)
+{
+    FrameHeadInfo frame_head = create_default_frame_head(0);
+    UserDataHeadInfo user_head = create_user_data_head(event_id,
+                                                       SOURCE_TYPE_NO_DATA,
+                                                       DESTINATION_ARM_TO_PC,
+                                                       0);
+
+    uint32_t packet_len = 0;
+    user_head.nParameters0 = param0;
     pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
     return packet_len;
 }
@@ -916,13 +931,28 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
 
     if (sample_rate > 0)
     {
-        usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] sample_rate=%lu\r\n",
+        uint32_t requested_rate = sample_rate;
+        AdcCollectMode mode;
+
+        sample_rate = AdcCollectorMatchSampleRate(sample_rate, g_enabled_ch_cnt);
+        if (sample_rate == 0U)
+        {
+            usb_printf("[CollectCfg] rejected: enable_cnt=%u requested=%lu exceeds mode budget\r\n",
+                       (unsigned int)g_enabled_ch_cnt,
+                       (unsigned long)requested_rate);
+            return PackReplyWithoutDatasParam(DVSARM_CSP_START_OK, -1);
+        }
+
+        mode = AdcCollectorSelectMode(sample_rate);
+        usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] requested=%lu actual=%lu mode=%s\r\n",
                    (unsigned int)g_enabled_ch_cnt,
                    (unsigned long)g_ch_enable_mask,
                    (unsigned int)g_spi_adc_cnt[0],
                    (unsigned int)g_spi_adc_cnt[1],
                    (unsigned int)g_spi_adc_cnt[2],
-                   (unsigned long)sample_rate);
+                   (unsigned long)requested_rate,
+                   (unsigned long)sample_rate,
+                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
         CfgAdcSampleRate(sample_rate);
 
         g_IdaSystemStatus.st_dev_run.run_flag = 1;

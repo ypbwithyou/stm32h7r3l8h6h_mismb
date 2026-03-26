@@ -39,6 +39,7 @@ static void gtim_finish_frame_from_isr(void);
 static void gtim_abort_frame_from_isr(void);
 static void gtim_copy_rx_to_adc_buf(uint8_t spi_idx);
 static void gtim_invalidate_spi_rx_cache(uint8_t spi_idx, uint8_t bytes);
+static void gtim_collect_frame_polling(void);
 
 static void gtim_rebuild_write_map_if_needed(void)
 {
@@ -104,6 +105,38 @@ static void gtim_copy_rx_to_adc_buf(uint8_t spi_idx)
     }
 }
 
+static void gtim_collect_frame_polling(void)
+{
+    ads8319_start_convst();
+
+    for (uint8_t spi = 0U; spi < SPI_NUM; spi++)
+    {
+        if (g_spi_adc_cnt[spi] == 0U)
+        {
+            continue;
+        }
+
+        ads8319_read_daisy_chain_fast((unsigned int)(spi + 1U), g_spi_adc_cnt[spi], g_adc_buf[spi]);
+        g_dma_cplt_count[spi]++;
+    }
+
+    ads8319_stop_transfer();
+
+    for (uint8_t i = 0U; i < g_write_cnt; i++)
+    {
+        uint8_t spi = g_write_spi[i];
+        uint8_t pos = g_write_pos[i];
+        uint8_t ch = g_write_ch[i];
+        cb_write(g_cb_ch[ch], (const char *)&g_adc_buf[spi][pos], ADC_DATA_LEN);
+    }
+
+    g_dma_finish_count++;
+    g_dma_busy = 0U;
+    g_dma_pending_mask = 0U;
+    g_dma_done_mask = 0U;
+    g_dma_fail_streak = 0U;
+}
+
 static void gtim_finish_frame_from_isr(void)
 {
     ads8319_stop_transfer();
@@ -146,7 +179,7 @@ static void gtim_abort_frame_from_isr(void)
 
 uint8_t gtim_dma_path_enabled(void)
 {
-    return 1U;
+    return (AdcCollectorGetMode() == ADC_COLLECT_MODE_DMA) ? 1U : 0U;
 }
 
 uint16_t gtim_dma_fail_streak_get(void)
@@ -215,6 +248,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     g_dma_busy = 1U;
     g_dma_pending_mask = 0U;
     g_dma_done_mask = 0U;
+
+    if (AdcCollectorGetMode() == ADC_COLLECT_MODE_POLLING)
+    {
+        gtim_collect_frame_polling();
+        return;
+    }
 
     ads8319_start_convst();
 
