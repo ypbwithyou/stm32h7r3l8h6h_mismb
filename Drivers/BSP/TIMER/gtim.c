@@ -230,12 +230,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         }
 
         bytes = gtim_dma_size_bytes(spi);
+        g_dma_pending_mask |= (uint8_t)(1U << spi);
         ret = spi_read_write_dma_start((unsigned int)(spi + 1U),
                                        &spi_tx_buffer[0],
                                        &spi_rx_buffer[spi][0],
                                        bytes);
         if (ret != HAL_OK)
         {
+            g_dma_pending_mask &= (uint8_t)~(1U << spi);
             g_dma_start_fail_count++;
             g_last_start_fail_spi = spi;
             gtim_abort_frame_from_isr();
@@ -243,7 +245,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         }
 
         g_dma_start_ok_count[spi]++;
-        g_dma_pending_mask |= (uint8_t)(1U << spi);
     }
 
     if (g_dma_pending_mask == 0U)

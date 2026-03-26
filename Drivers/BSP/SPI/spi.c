@@ -26,6 +26,15 @@ static void spi_cache_clean_range(const void *addr, uint32_t size);
 static void spi_cache_invalidate_range(const void *addr, uint32_t size);
 static void spi_sdnand_msp_init(void);
 static SPI_TypeDef *spi_get_instance(unsigned int spi_periph);
+static void spi_rx_dma_cplt_callback(DMA_HandleTypeDef *hdma);
+static void spi_rx_dma_error_callback(DMA_HandleTypeDef *hdma);
+static HAL_StatusTypeDef spi_start_rx_dma_only(SPI_HandleTypeDef *hspi,
+                                               const uint8_t *txdata,
+                                               uint8_t *rxdata,
+                                               uint16_t size);
+static void spi_finish_rx_dma_only(SPI_HandleTypeDef *hspi);
+static void spi_drain_rx_fifo(SPI_HandleTypeDef *hspi);
+static uint32_t spi_collect_error_flags(SPI_HandleTypeDef *hspi);
 
 uint8_t spi_get_index(unsigned int spi_periph)
 {
@@ -200,11 +209,11 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
     spi_dma_config(&g_spi_dma_tx_handle[idx], spi_get_dma_tx_instance(idx), spi_get_dma_tx_request(idx), DMA_MEMORY_TO_PERIPH);
     __HAL_LINKDMA(hspi, hdmatx, g_spi_dma_tx_handle[idx]);
 
-    HAL_NVIC_SetPriority(spi_get_dma_rx_irqn(idx), 2, 0);
+    HAL_NVIC_SetPriority(spi_get_dma_rx_irqn(idx), 0, 0);
     HAL_NVIC_EnableIRQ(spi_get_dma_rx_irqn(idx));
-    HAL_NVIC_SetPriority(spi_get_dma_tx_irqn(idx), 2, 1);
+    HAL_NVIC_SetPriority(spi_get_dma_tx_irqn(idx), 3, 0);
     HAL_NVIC_EnableIRQ(spi_get_dma_tx_irqn(idx));
-    HAL_NVIC_SetPriority(spi_get_irqn(idx), 1, 0);
+    HAL_NVIC_SetPriority(spi_get_irqn(idx), 3, 1);
     HAL_NVIC_EnableIRQ(spi_get_irqn(idx));
 }
 
@@ -239,7 +248,7 @@ HAL_StatusTypeDef spi_read_write_dma_start(unsigned int spi_periph, const uint8_
     }
     spi_cache_invalidate_range(rxdata, size);
 
-    return HAL_SPI_TransmitReceive_DMA(&g_spi_handle[idx], (uint8_t *)txdata, rxdata, size);
+    return spi_start_rx_dma_only(&g_spi_handle[idx], txdata, rxdata, size);
 }
 
 void spi_dma_stop(unsigned int spi_periph)
@@ -249,6 +258,7 @@ void spi_dma_stop(unsigned int spi_periph)
     if (idx < SPI_USED_MAX)
     {
         (void)HAL_SPI_DMAStop(&g_spi_handle[idx]);
+        spi_finish_rx_dma_only(&g_spi_handle[idx]);
     }
 }
 
@@ -514,6 +524,195 @@ static void spi_cache_invalidate_range(const void *addr, uint32_t size)
     start = ((uintptr_t)addr) & ~((uintptr_t)31U);
     end = (((uintptr_t)addr) + size + 31U) & ~((uintptr_t)31U);
     SCB_InvalidateDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
+}
+
+static void spi_drain_rx_fifo(SPI_HandleTypeDef *hspi)
+{
+    while ((hspi->Instance->SR & SPI_SR_RXP) != 0U)
+    {
+        (void)*(__IO uint8_t *)&hspi->Instance->RXDR;
+    }
+}
+
+static uint32_t spi_collect_error_flags(SPI_HandleTypeDef *hspi)
+{
+    uint32_t sr = hspi->Instance->SR;
+    uint32_t err = HAL_SPI_ERROR_NONE;
+
+    if ((sr & SPI_SR_OVR) != 0U)
+    {
+        err |= HAL_SPI_ERROR_OVR;
+    }
+    if ((sr & SPI_SR_UDR) != 0U)
+    {
+        err |= HAL_SPI_ERROR_UDR;
+    }
+    if ((sr & SPI_SR_TIFRE) != 0U)
+    {
+        err |= HAL_SPI_ERROR_FRE;
+    }
+    if ((sr & SPI_SR_MODF) != 0U)
+    {
+        err |= HAL_SPI_ERROR_MODF;
+    }
+
+    return err;
+}
+
+static void spi_finish_rx_dma_only(SPI_HandleTypeDef *hspi)
+{
+    __HAL_SPI_DISABLE_IT(hspi, (SPI_IT_EOT | SPI_IT_TXP | SPI_IT_RXP | SPI_IT_DXP |
+                                SPI_IT_UDR | SPI_IT_OVR | SPI_IT_FRE | SPI_IT_MODF));
+    CLEAR_BIT(hspi->Instance->CFG1, SPI_CFG1_TXDMAEN | SPI_CFG1_RXDMAEN);
+    spi_drain_rx_fifo(hspi);
+    hspi->Instance->IFCR = SPI_IFCR_EOTC | SPI_IFCR_TXTFC | SPI_IFCR_UDRC |
+                           SPI_IFCR_OVRC | SPI_IFCR_TIFREC | SPI_IFCR_MODFC |
+                           SPI_IFCR_SUSPC;
+    __HAL_SPI_DISABLE(hspi);
+}
+
+static void spi_rx_dma_cplt_callback(DMA_HandleTypeDef *hdma)
+{
+    SPI_HandleTypeDef *hspi = (SPI_HandleTypeDef *)hdma->Parent;
+    uint32_t timeout = 2048U;
+    uint32_t err;
+    uint32_t sr;
+
+    if (hspi == NULL)
+    {
+        return;
+    }
+
+    while (((hspi->Instance->SR & SPI_SR_TXC) == 0U) && (--timeout != 0U))
+    {
+    }
+
+    sr = hspi->Instance->SR;
+    err = spi_collect_error_flags(hspi);
+    if ((sr & SPI_SR_RXP) != 0U)
+    {
+        spi_drain_rx_fifo(hspi);
+    }
+
+    if ((timeout == 0U) && ((sr & SPI_SR_TXC) == 0U))
+    {
+        err |= HAL_SPI_ERROR_FLAG;
+    }
+
+    spi_finish_rx_dma_only(hspi);
+    hspi->State = HAL_SPI_STATE_READY;
+    hspi->ErrorCode = err;
+
+    if (err != HAL_SPI_ERROR_NONE)
+    {
+        HAL_SPI_ErrorCallback(hspi);
+        return;
+    }
+
+    HAL_SPI_TxRxCpltCallback(hspi);
+}
+
+static void spi_rx_dma_error_callback(DMA_HandleTypeDef *hdma)
+{
+    SPI_HandleTypeDef *hspi = (SPI_HandleTypeDef *)hdma->Parent;
+    uint32_t err;
+
+    if (hspi == NULL)
+    {
+        return;
+    }
+
+    err = spi_collect_error_flags(hspi);
+    spi_finish_rx_dma_only(hspi);
+    hspi->State = HAL_SPI_STATE_READY;
+    hspi->ErrorCode |= HAL_SPI_ERROR_DMA;
+    hspi->ErrorCode |= err;
+    HAL_SPI_ErrorCallback(hspi);
+}
+
+static HAL_StatusTypeDef spi_start_rx_dma_only(SPI_HandleTypeDef *hspi,
+                                               const uint8_t *txdata,
+                                               uint8_t *rxdata,
+                                               uint16_t size)
+{
+    HAL_StatusTypeDef errorcode;
+    uint16_t tx_sent = 0U;
+    uint32_t timeout;
+
+    if ((hspi == NULL) || (rxdata == NULL) || (size == 0U))
+    {
+        return HAL_ERROR;
+    }
+
+    __HAL_LOCK(hspi);
+
+    if (hspi->State != HAL_SPI_STATE_READY)
+    {
+        __HAL_UNLOCK(hspi);
+        return HAL_BUSY;
+    }
+
+    hspi->State = HAL_SPI_STATE_BUSY_TX_RX;
+    hspi->ErrorCode = HAL_SPI_ERROR_NONE;
+    hspi->pTxBuffPtr = txdata;
+    hspi->TxXferSize = size;
+    hspi->TxXferCount = size;
+    hspi->pRxBuffPtr = rxdata;
+    hspi->RxXferSize = size;
+    hspi->RxXferCount = size;
+    hspi->TxISR = NULL;
+    hspi->RxISR = NULL;
+
+    SPI_2LINES(hspi);
+    spi_finish_rx_dma_only(hspi);
+
+    hspi->hdmarx->XferHalfCpltCallback = NULL;
+    hspi->hdmarx->XferCpltCallback = spi_rx_dma_cplt_callback;
+    hspi->hdmarx->XferErrorCallback = spi_rx_dma_error_callback;
+    hspi->hdmarx->XferAbortCallback = NULL;
+    hspi->hdmatx->XferHalfCpltCallback = NULL;
+    hspi->hdmatx->XferCpltCallback = NULL;
+    hspi->hdmatx->XferErrorCallback = NULL;
+    hspi->hdmatx->XferAbortCallback = NULL;
+
+    errorcode = HAL_DMA_Start_IT(hspi->hdmarx,
+                                 (uint32_t)&hspi->Instance->RXDR,
+                                 (uint32_t)hspi->pRxBuffPtr,
+                                 size);
+    if (errorcode != HAL_OK)
+    {
+        hspi->State = HAL_SPI_STATE_READY;
+        hspi->ErrorCode = HAL_SPI_ERROR_DMA;
+        __HAL_UNLOCK(hspi);
+        return HAL_ERROR;
+    }
+
+    MODIFY_REG(hspi->Instance->CR2, SPI_CR2_TSIZE, size);
+    SET_BIT(hspi->Instance->CFG1, SPI_CFG1_RXDMAEN);
+    __HAL_SPI_ENABLE(hspi);
+    SET_BIT(hspi->Instance->CR1, SPI_CR1_CSTART);
+    __HAL_UNLOCK(hspi);
+
+    for (tx_sent = 0U; tx_sent < size; tx_sent++)
+    {
+        timeout = 512U;
+        while (((hspi->Instance->SR & SPI_SR_TXP) == 0U) && (--timeout != 0U))
+        {
+        }
+
+        if (timeout == 0U)
+        {
+            (void)HAL_DMA_Abort(hspi->hdmarx);
+            spi_finish_rx_dma_only(hspi);
+            hspi->State = HAL_SPI_STATE_READY;
+            hspi->ErrorCode = HAL_SPI_ERROR_FLAG;
+            return HAL_ERROR;
+        }
+
+        *(__IO uint8_t *)&hspi->Instance->TXDR = (txdata != NULL) ? txdata[tx_sent] : 0xFFU;
+    }
+
+    return HAL_OK;
 }
 
 static void spi_sdnand_msp_init(void)
