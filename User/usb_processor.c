@@ -916,10 +916,18 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
 
     if (sample_rate > 0)
     {
+        usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] sample_rate=%lu\r\n",
+                   (unsigned int)g_enabled_ch_cnt,
+                   (unsigned long)g_ch_enable_mask,
+                   (unsigned int)g_spi_adc_cnt[0],
+                   (unsigned int)g_spi_adc_cnt[1],
+                   (unsigned int)g_spi_adc_cnt[2],
+                   (unsigned long)sample_rate);
         CfgAdcSampleRate(sample_rate);
 
         g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+        usb_printf("[CollectCfg] acquisition started\r\n");
     }
 
     return PackReplyWithoutDatas(DVSARM_CSP_START_OK);
@@ -1113,18 +1121,40 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     (void)user_head;
 
     static uint32_t frame_num = 0;
+    static uint32_t s_last_wait_log_tick = 0;
+    static uint32_t s_last_send_log_tick = 0;
     const uint32_t cb_needed = BLOCK_LEN * ADC_DATA_LEN;
+    uint32_t now_tick = HAL_GetTick();
 
     // 没有配置通道则直接返回
     if (g_enabled_ch_cnt == 0)
+    {
+        if ((now_tick - s_last_wait_log_tick) >= 500U)
+        {
+            s_last_wait_log_tick = now_tick;
+            usb_printf("[Display] wait: no enabled channel\r\n");
+        }
         return 0;
+    }
 
     // 所有配置通道必须全部就绪，否则等下一次
     for (uint8_t i = 0; i < g_enabled_ch_cnt; i++)
     {
         uint8_t ch = g_enabled_chs[i];
         if (!g_cb_ch[ch] || cb_size(g_cb_ch[ch]) < (int)cb_needed)
+        {
+            if ((now_tick - s_last_wait_log_tick) >= 500U)
+            {
+                s_last_wait_log_tick = now_tick;
+                usb_printf("[Display] wait: ch=%u size=%d need=%lu run=%u enable_cnt=%u\r\n",
+                           (unsigned int)ch,
+                           g_cb_ch[ch] ? cb_size(g_cb_ch[ch]) : -1,
+                           (unsigned long)cb_needed,
+                           (unsigned int)g_IdaSystemStatus.st_dev_run.run_flag,
+                           (unsigned int)g_enabled_ch_cnt);
+            }
             return 0; // 有通道未就绪，本次不发
+        }
     }
 
     /* 填充帧头 */
@@ -1175,6 +1205,16 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
     uint32_t packet_len = 0;
     pack_data((uint8_t *)user_data, send_len,
               &reply_user_head, &reply_frame_head, &packet_len);
+
+    if (((frame_num & 0x0FU) == 0U) || ((now_tick - s_last_send_log_tick) >= 1000U))
+    {
+        s_last_send_log_tick = now_tick;
+        usb_printf("[Display] send: frame=%lu ch=%u send_len=%lu cb0=%d\r\n",
+                   (unsigned long)frame_num,
+                   (unsigned int)g_enabled_ch_cnt,
+                   (unsigned long)send_len,
+                   g_cb_ch[g_enabled_chs[0]] ? cb_size(g_cb_ch[g_enabled_chs[0]]) : -1);
+    }
 
     return packet_len;
 }

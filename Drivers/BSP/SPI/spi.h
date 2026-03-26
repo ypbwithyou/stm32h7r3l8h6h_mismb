@@ -74,6 +74,7 @@ unsigned char spi_read_ads8319_chain_fast(unsigned int spi_periph, uint16_t *adc
 
 HAL_StatusTypeDef spi_read_write_dma_start(unsigned int spi_periph, const uint8_t *txdata, uint8_t *rxdata, uint16_t size);
 void spi_dma_stop(unsigned int spi_periph);
+void spi_dma_debug_poll(void);
 uint8_t spi_get_index(unsigned int spi_periph);
 unsigned int spi_get_periph_from_instance(SPI_TypeDef *instance);
 

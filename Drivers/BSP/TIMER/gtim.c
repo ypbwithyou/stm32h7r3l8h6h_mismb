@@ -16,6 +16,16 @@ static volatile uint8_t g_dma_busy = 0U;
 static volatile uint8_t g_dma_pending_mask = 0U;
 static volatile uint8_t g_dma_done_mask = 0U;
 static volatile uint16_t g_dma_fail_streak = 0U;
+static volatile uint32_t g_dma_start_ok_count[SPI_NUM] = {0U};
+static volatile uint32_t g_dma_cplt_count[SPI_NUM] = {0U};
+static volatile uint32_t g_dma_error_count[SPI_NUM] = {0U};
+static volatile uint32_t g_dma_abort_count = 0U;
+static volatile uint32_t g_dma_finish_count = 0U;
+static volatile uint32_t g_dma_start_fail_count = 0U;
+static volatile uint8_t g_last_start_fail_spi = 0xFFU;
+static volatile uint8_t g_last_error_spi = 0xFFU;
+static volatile uint8_t g_last_abort_pending_mask = 0U;
+static volatile uint8_t g_last_abort_done_mask = 0U;
 static uint16_t g_adc_buf[SPI_NUM][SPI_CH_NUM];
 static uint8_t g_write_spi[ADC_CH_TOTAL];
 static uint8_t g_write_pos[ADC_CH_TOTAL];
@@ -107,6 +117,7 @@ static void gtim_finish_frame_from_isr(void)
         cb_write(g_cb_ch[ch], (const char *)&g_adc_buf[spi][pos], ADC_DATA_LEN);
     }
 
+    g_dma_finish_count++;
     g_dma_busy = 0U;
     g_dma_pending_mask = 0U;
     g_dma_done_mask = 0U;
@@ -115,6 +126,9 @@ static void gtim_finish_frame_from_isr(void)
 
 static void gtim_abort_frame_from_isr(void)
 {
+    g_last_abort_pending_mask = g_dma_pending_mask;
+    g_last_abort_done_mask = g_dma_done_mask;
+
     for (uint8_t spi = 0U; spi < SPI_NUM; spi++)
     {
         if ((g_dma_pending_mask & (1U << spi)) != 0U)
@@ -127,6 +141,7 @@ static void gtim_abort_frame_from_isr(void)
     g_dma_busy = 0U;
     g_dma_pending_mask = 0U;
     g_dma_done_mask = 0U;
+    g_dma_abort_count++;
     g_dma_fail_streak++;
 }
 
@@ -160,6 +175,16 @@ void gtim_timx_int_init(unsigned short arr, unsigned short psc)
     g_dma_pending_mask = 0U;
     g_dma_done_mask = 0U;
     g_dma_fail_streak = 0U;
+    memset((void *)g_dma_start_ok_count, 0, sizeof(g_dma_start_ok_count));
+    memset((void *)g_dma_cplt_count, 0, sizeof(g_dma_cplt_count));
+    memset((void *)g_dma_error_count, 0, sizeof(g_dma_error_count));
+    g_dma_abort_count = 0U;
+    g_dma_finish_count = 0U;
+    g_dma_start_fail_count = 0U;
+    g_last_start_fail_spi = 0xFFU;
+    g_last_error_spi = 0xFFU;
+    g_last_abort_pending_mask = 0U;
+    g_last_abort_done_mask = 0U;
 }
 
 void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
@@ -211,10 +236,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
                                        bytes);
         if (ret != HAL_OK)
         {
+            g_dma_start_fail_count++;
+            g_last_start_fail_spi = spi;
             gtim_abort_frame_from_isr();
             return;
         }
 
+        g_dma_start_ok_count[spi]++;
         g_dma_pending_mask |= (uint8_t)(1U << spi);
     }
 
@@ -249,6 +277,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
     gtim_invalidate_spi_rx_cache(spi_idx, bytes);
     gtim_copy_rx_to_adc_buf(spi_idx);
 
+    g_dma_cplt_count[spi_idx]++;
     g_dma_done_mask |= mask;
     if (g_dma_done_mask == g_dma_pending_mask)
     {
@@ -262,6 +291,8 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 
     if ((spi_periph >= SPI1_SPI) && (spi_periph <= SPI3_SPI) && (g_dma_busy != 0U))
     {
+        g_last_error_spi = (uint8_t)(spi_periph - 1U);
+        g_dma_error_count[g_last_error_spi]++;
         gtim_abort_frame_from_isr();
     }
 }
@@ -300,6 +331,16 @@ void gtim_timx_cfg(uint16_t arr, uint16_t psc)
     g_dma_pending_mask = 0U;
     g_dma_done_mask = 0U;
     g_dma_fail_streak = 0U;
+    memset((void *)g_dma_start_ok_count, 0, sizeof(g_dma_start_ok_count));
+    memset((void *)g_dma_cplt_count, 0, sizeof(g_dma_cplt_count));
+    memset((void *)g_dma_error_count, 0, sizeof(g_dma_error_count));
+    g_dma_abort_count = 0U;
+    g_dma_finish_count = 0U;
+    g_dma_start_fail_count = 0U;
+    g_last_start_fail_spi = 0xFFU;
+    g_last_error_spi = 0xFFU;
+    g_last_abort_pending_mask = 0U;
+    g_last_abort_done_mask = 0U;
 }
 
 void gtim_timx_start(void)
@@ -319,6 +360,48 @@ void gtim_timx_stop(void)
     {
         gtim_abort_frame_from_isr();
     }
+}
+
+void gtim_debug_poll(void)
+{
+    static uint32_t s_last_log_tick = 0U;
+    uint32_t now = HAL_GetTick();
+
+    if ((now - s_last_log_tick) < 500U)
+    {
+        return;
+    }
+    s_last_log_tick = now;
+
+    usb_printf("[DMA] tick=%lu tim=%lu fin=%lu abort=%lu overrun=%lu busy=%u pending=0x%02X done=0x%02X fail_streak=%u start_fail=%lu last_start_fail_spi=%d last_err_spi=%d\r\n",
+               (unsigned long)now,
+               (unsigned long)g_gtim_it_counts,
+               (unsigned long)g_dma_finish_count,
+               (unsigned long)g_dma_abort_count,
+               (unsigned long)g_isr_overrun_count,
+               (unsigned int)g_dma_busy,
+               (unsigned int)g_dma_pending_mask,
+               (unsigned int)g_dma_done_mask,
+               (unsigned int)g_dma_fail_streak,
+               (unsigned long)g_dma_start_fail_count,
+               (g_last_start_fail_spi == 0xFFU) ? -1 : (int)g_last_start_fail_spi,
+               (g_last_error_spi == 0xFFU) ? -1 : (int)g_last_error_spi);
+
+    usb_printf("[DMA] start_ok=[%lu,%lu,%lu] cplt=[%lu,%lu,%lu] err=[%lu,%lu,%lu] last_abort pending=0x%02X done=0x%02X spi_adc_cnt=[%u,%u,%u]\r\n",
+               (unsigned long)g_dma_start_ok_count[0],
+               (unsigned long)g_dma_start_ok_count[1],
+               (unsigned long)g_dma_start_ok_count[2],
+               (unsigned long)g_dma_cplt_count[0],
+               (unsigned long)g_dma_cplt_count[1],
+               (unsigned long)g_dma_cplt_count[2],
+               (unsigned long)g_dma_error_count[0],
+               (unsigned long)g_dma_error_count[1],
+               (unsigned long)g_dma_error_count[2],
+               (unsigned int)g_last_abort_pending_mask,
+               (unsigned int)g_last_abort_done_mask,
+               (unsigned int)g_spi_adc_cnt[0],
+               (unsigned int)g_spi_adc_cnt[1],
+               (unsigned int)g_spi_adc_cnt[2]);
 }
 
 uint32_t get_gtim_interrupt_count(void)

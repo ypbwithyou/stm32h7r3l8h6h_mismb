@@ -1212,6 +1212,8 @@ int8_t app_processor(void)
         }
 
         USB_Display_All(g_IdaSystemStatus.st_dev_run.run_flag);
+        gtim_debug_poll();
+        spi_dma_debug_poll();
 
         IdaProcessor();
     }
