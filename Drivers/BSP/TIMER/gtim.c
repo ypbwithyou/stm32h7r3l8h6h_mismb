@@ -4,7 +4,6 @@
 #include "./BSP/SPI/spi.h"
 #include "collector_processor.h"
 
-#include "usbd_cdc_if.h"
 #include <string.h>
 
 TIM_HandleTypeDef g_gtimx_handle = {0};
@@ -361,48 +360,6 @@ void gtim_timx_stop(void)
     {
         gtim_abort_frame_from_isr();
     }
-}
-
-void gtim_debug_poll(void)
-{
-    static uint32_t s_last_log_tick = 0U;
-    uint32_t now = HAL_GetTick();
-
-    if ((now - s_last_log_tick) < 500U)
-    {
-        return;
-    }
-    s_last_log_tick = now;
-
-    usb_printf("[DMA] tick=%lu tim=%lu fin=%lu abort=%lu overrun=%lu busy=%u pending=0x%02X done=0x%02X fail_streak=%u start_fail=%lu last_start_fail_spi=%d last_err_spi=%d\r\n",
-               (unsigned long)now,
-               (unsigned long)g_gtim_it_counts,
-               (unsigned long)g_dma_finish_count,
-               (unsigned long)g_dma_abort_count,
-               (unsigned long)g_isr_overrun_count,
-               (unsigned int)g_dma_busy,
-               (unsigned int)g_dma_pending_mask,
-               (unsigned int)g_dma_done_mask,
-               (unsigned int)g_dma_fail_streak,
-               (unsigned long)g_dma_start_fail_count,
-               (g_last_start_fail_spi == 0xFFU) ? -1 : (int)g_last_start_fail_spi,
-               (g_last_error_spi == 0xFFU) ? -1 : (int)g_last_error_spi);
-
-    usb_printf("[DMA] start_ok=[%lu,%lu,%lu] cplt=[%lu,%lu,%lu] err=[%lu,%lu,%lu] last_abort pending=0x%02X done=0x%02X spi_adc_cnt=[%u,%u,%u]\r\n",
-               (unsigned long)g_dma_start_ok_count[0],
-               (unsigned long)g_dma_start_ok_count[1],
-               (unsigned long)g_dma_start_ok_count[2],
-               (unsigned long)g_dma_cplt_count[0],
-               (unsigned long)g_dma_cplt_count[1],
-               (unsigned long)g_dma_cplt_count[2],
-               (unsigned long)g_dma_error_count[0],
-               (unsigned long)g_dma_error_count[1],
-               (unsigned long)g_dma_error_count[2],
-               (unsigned int)g_last_abort_pending_mask,
-               (unsigned int)g_last_abort_done_mask,
-               (unsigned int)g_spi_adc_cnt[0],
-               (unsigned int)g_spi_adc_cnt[1],
-               (unsigned int)g_spi_adc_cnt[2]);
 }
 
 uint32_t get_gtim_interrupt_count(void)

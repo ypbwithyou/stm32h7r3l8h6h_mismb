@@ -2,14 +2,9 @@
 #include "./BSP/SDNAND/spi_sdnand.h"
 #include "./BSP/ADS8319/ads8319.h"
 
-#include "usbd_cdc_if.h"
-
 SPI_HandleTypeDef g_spi_handle[3];
 DMA_HandleTypeDef g_spi_dma_rx_handle[3];
 DMA_HandleTypeDef g_spi_dma_tx_handle[3];
-static volatile uint32_t g_spi_dma_rx_irq_cnt[SPI_USED_MAX] = {0U};
-static volatile uint32_t g_spi_dma_tx_irq_cnt[SPI_USED_MAX] = {0U};
-static volatile uint32_t g_spi_irq_cnt[SPI_USED_MAX] = {0U};
 
 static uint32_t spi_get_dma_rx_request(uint8_t idx);
 static uint32_t spi_get_dma_tx_request(uint8_t idx);
@@ -747,113 +742,45 @@ static void spi_sdnand_msp_init(void)
 
 void GPDMA1_Channel1_IRQHandler(void)
 {
-    g_spi_dma_rx_irq_cnt[0]++;
     HAL_DMA_IRQHandler(&g_spi_dma_rx_handle[0]);
 }
 
 void GPDMA1_Channel2_IRQHandler(void)
 {
-    g_spi_dma_tx_irq_cnt[0]++;
     HAL_DMA_IRQHandler(&g_spi_dma_tx_handle[0]);
 }
 
 void GPDMA1_Channel3_IRQHandler(void)
 {
-    g_spi_dma_rx_irq_cnt[1]++;
     HAL_DMA_IRQHandler(&g_spi_dma_rx_handle[1]);
 }
 
 void GPDMA1_Channel4_IRQHandler(void)
 {
-    g_spi_dma_tx_irq_cnt[1]++;
     HAL_DMA_IRQHandler(&g_spi_dma_tx_handle[1]);
 }
 
 void GPDMA1_Channel5_IRQHandler(void)
 {
-    g_spi_dma_rx_irq_cnt[2]++;
     HAL_DMA_IRQHandler(&g_spi_dma_rx_handle[2]);
 }
 
 void GPDMA1_Channel6_IRQHandler(void)
 {
-    g_spi_dma_tx_irq_cnt[2]++;
     HAL_DMA_IRQHandler(&g_spi_dma_tx_handle[2]);
 }
 
 void SPI1_IRQHandler(void)
 {
-    g_spi_irq_cnt[0]++;
     HAL_SPI_IRQHandler(&g_spi_handle[0]);
 }
 
 void SPI2_IRQHandler(void)
 {
-    g_spi_irq_cnt[1]++;
     HAL_SPI_IRQHandler(&g_spi_handle[1]);
 }
 
 void SPI4_IRQHandler(void)
 {
-    g_spi_irq_cnt[2]++;
     HAL_SPI_IRQHandler(&g_spi_handle[2]);
-}
-
-void spi_dma_debug_poll(void)
-{
-    static uint32_t s_last_log_tick = 0U;
-    uint32_t now = HAL_GetTick();
-
-    if ((now - s_last_log_tick) < 500U)
-    {
-        return;
-    }
-    s_last_log_tick = now;
-
-    usb_printf("[SPI-DMA] rx_irq=[%lu,%lu,%lu] tx_irq=[%lu,%lu,%lu] spi_irq=[%lu,%lu,%lu]\r\n",
-               (unsigned long)g_spi_dma_rx_irq_cnt[0],
-               (unsigned long)g_spi_dma_rx_irq_cnt[1],
-               (unsigned long)g_spi_dma_rx_irq_cnt[2],
-               (unsigned long)g_spi_dma_tx_irq_cnt[0],
-               (unsigned long)g_spi_dma_tx_irq_cnt[1],
-               (unsigned long)g_spi_dma_tx_irq_cnt[2],
-               (unsigned long)g_spi_irq_cnt[0],
-               (unsigned long)g_spi_irq_cnt[1],
-               (unsigned long)g_spi_irq_cnt[2]);
-
-    usb_printf("[SPI-DMA] rx_state=[%u,%u,%u] tx_state=[%u,%u,%u] rx_err=[0x%08lX,0x%08lX,0x%08lX] rx_csr=[0x%08lX,0x%08lX,0x%08lX] rx_ccr=[0x%08lX,0x%08lX,0x%08lX]\r\n",
-               (unsigned int)HAL_DMA_GetState(&g_spi_dma_rx_handle[0]),
-               (unsigned int)HAL_DMA_GetState(&g_spi_dma_rx_handle[1]),
-               (unsigned int)HAL_DMA_GetState(&g_spi_dma_rx_handle[2]),
-               (unsigned int)HAL_DMA_GetState(&g_spi_dma_tx_handle[0]),
-               (unsigned int)HAL_DMA_GetState(&g_spi_dma_tx_handle[1]),
-               (unsigned int)HAL_DMA_GetState(&g_spi_dma_tx_handle[2]),
-               (unsigned long)g_spi_dma_rx_handle[0].ErrorCode,
-               (unsigned long)g_spi_dma_rx_handle[1].ErrorCode,
-               (unsigned long)g_spi_dma_rx_handle[2].ErrorCode,
-               (unsigned long)g_spi_dma_rx_handle[0].Instance->CSR,
-               (unsigned long)g_spi_dma_rx_handle[1].Instance->CSR,
-               (unsigned long)g_spi_dma_rx_handle[2].Instance->CSR,
-               (unsigned long)g_spi_dma_rx_handle[0].Instance->CCR,
-               (unsigned long)g_spi_dma_rx_handle[1].Instance->CCR,
-               (unsigned long)g_spi_dma_rx_handle[2].Instance->CCR);
-
-    usb_printf("[SPI-REG] cr1=[0x%08lX,0x%08lX,0x%08lX] cr2=[0x%08lX,0x%08lX,0x%08lX] cfg1=[0x%08lX,0x%08lX,0x%08lX]\r\n",
-               (unsigned long)g_spi_handle[0].Instance->CR1,
-               (unsigned long)g_spi_handle[1].Instance->CR1,
-               (unsigned long)g_spi_handle[2].Instance->CR1,
-               (unsigned long)g_spi_handle[0].Instance->CR2,
-               (unsigned long)g_spi_handle[1].Instance->CR2,
-               (unsigned long)g_spi_handle[2].Instance->CR2,
-               (unsigned long)g_spi_handle[0].Instance->CFG1,
-               (unsigned long)g_spi_handle[1].Instance->CFG1,
-               (unsigned long)g_spi_handle[2].Instance->CFG1);
-
-    usb_printf("[SPI-REG] sr=[0x%08lX,0x%08lX,0x%08lX] ier=[0x%08lX,0x%08lX,0x%08lX]\r\n",
-               (unsigned long)g_spi_handle[0].Instance->SR,
-               (unsigned long)g_spi_handle[1].Instance->SR,
-               (unsigned long)g_spi_handle[2].Instance->SR,
-               (unsigned long)g_spi_handle[0].Instance->IER,
-               (unsigned long)g_spi_handle[1].Instance->IER,
-               (unsigned long)g_spi_handle[2].Instance->IER);
 }
