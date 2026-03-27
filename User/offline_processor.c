@@ -353,7 +353,6 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     //     g_offline_chCfgParam[i].nChannelID = i;
     // }
     // // --------------测试24通道存储--------------------
- 
 
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
@@ -390,12 +389,6 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     // ------------------------采样率配置----------------------------------
 
     uint32_t sample_rate = GetOfflineSampleRate();
-
-    // if (sample_rate > 51200)
-    // {
-    //     sample_rate = 51200;
-    // }
-    sample_rate = 25600;
 
     usb_printf("sample_rate:%d", sample_rate);
 
