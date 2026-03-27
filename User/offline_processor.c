@@ -292,6 +292,16 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     g_enabled_ch_cnt = 0;
     memset(g_spi_adc_cnt, 0, sizeof(g_spi_adc_cnt));
 
+    // --------------测试24通道存储--------------------
+    g_offline_chCfgHeader.nTotalChannelNum = 24;
+
+    for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
+    {
+        g_offline_chCfgParam[i].nChannelID = i;
+    }
+
+    // -------------------------------------------------
+
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
         int32_t ch_id = g_offline_chCfgParam[i].nChannelID;
@@ -332,7 +342,8 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     // {
     //     sample_rate = 51200;
     // }
-    // sample_rate = 102400;
+    sample_rate = 25600;
+
     usb_printf("sample_rate:%d", sample_rate);
 
     // ------------------------启动采集----------------------------------
