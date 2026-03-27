@@ -130,10 +130,10 @@ static void gtim_collect_frame_polling(void)
     // ads8319_stop_transfer();
 
     ADS8319_CONVST_LOW();
-    __NOP();
-    __NOP();
-    __NOP();
-    __NOP();
+    for (uint16_t i = 0; i < 20; i++)
+    {
+        __NOP();
+    }
 
     for (uint8_t i = 0U; i < g_write_cnt; i++)
     {
@@ -237,7 +237,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
     if (htim->Instance == GTIM_TIMX)
     {
         GTIM_TIMX_CLK_ENABLE();
-        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 4, 0);
+        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 1, 0);
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
