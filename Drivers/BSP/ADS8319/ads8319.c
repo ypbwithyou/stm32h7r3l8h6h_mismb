@@ -2,7 +2,6 @@
 #include "./BSP/SPI/spi.h"
 #include "string.h"
 #include "./SYSTEM/delay/delay.h"
-#include "./BSP/DMA_LIST/dma_list.h"
 
 volatile unsigned char current_rx_buffer = 0;
 volatile unsigned char ready_rx_buffer = 0;
