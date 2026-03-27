@@ -16,6 +16,9 @@
 #define DMA_ALIGN      32U
 #define IS_ALIGNED(p)  (((uint32_t)(p) % DMA_ALIGN) == 0U)
 /* 未对齐缓冲中转时，按多扇区批量搬运，避免 512B 逐扇区严重降速 */
+/* A/B测试建议：
+ * - 16U = 8KB（更保守，RAM占用更小）
+ * - 32U = 16KB（吞吐可能更高，但会显著增加静态RAM占用） */
 #define EMMC_BOUNCE_SECTORS 16U /* 16 * 512 = 8KB */
 
 static DSTATUS g_disk_status = STA_NOINIT;

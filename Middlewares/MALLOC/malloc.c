@@ -19,6 +19,7 @@
  */
 
 #include "./MALLOC/malloc.h"
+#include <string.h>
 
 /* 内存池定义 */
 static uint8_t mem1base[MEM1_MAX_SIZE] __attribute__((aligned(64)));                                                        /* AXI-SRAM1~2内存池 */
@@ -67,10 +68,11 @@ struct _m_mallco_dev mallco_dev =
  */
 void my_mem_copy(void *des, void *src, uint32_t n)
 {
-    uint8_t *xdes = des;
-    uint8_t *xsrc = src;
-
-    while (n--) *xdes++ = *xsrc++;
+    if ((des == NULL) || (src == NULL) || (n == 0U))
+    {
+        return;
+    }
+    (void)memcpy(des, src, (size_t)n);
 }
 
 /**
@@ -82,9 +84,11 @@ void my_mem_copy(void *des, void *src, uint32_t n)
  */
 void my_mem_set(void *s, uint8_t c, uint32_t count)
 {
-    uint8_t *xs = s;
-
-    while (count--) *xs++ = c;
+    if ((s == NULL) || (count == 0U))
+    {
+        return;
+    }
+    (void)memset(s, (int)c, (size_t)count);
 }
 
 /**
@@ -94,6 +98,10 @@ void my_mem_set(void *s, uint8_t c, uint32_t count)
  */
 void my_mem_init(uint8_t memx)
 {
+    if (memx >= SRAMBANK)
+    {
+        return;
+    }
     uint8_t mttsize = sizeof(MT_TYPE);  /* 获取memmap数组的类型长度(uint16_t /uint32_t)*/
     my_mem_set(mallco_dev.memmap[memx], 0, memtblsize[memx] * mttsize); /* 内存状态表数据清零 */
     mallco_dev.memrdy[memx] = 1;        /* 内存管理初始化OK */
@@ -108,6 +116,11 @@ uint16_t my_mem_perused(uint8_t memx)
 {
     uint32_t used = 0;
     uint32_t i;
+
+    if (memx >= SRAMBANK)
+    {
+        return 0U;
+    }
 
     for (i = 0; i < memtblsize[memx]; i++)
     {
@@ -131,6 +144,11 @@ static uint32_t my_mem_malloc(uint8_t memx, uint32_t size)
     uint32_t nmemb;         /* 需要的内存块数 */
     uint32_t cmemb = 0;     /* 连续空内存块数 */
     uint32_t i;
+
+    if (memx >= SRAMBANK)
+    {
+        return 0XFFFFFFFFU;
+    }
 
     if (!mallco_dev.memrdy[memx])
     {
@@ -181,6 +199,11 @@ static uint8_t my_mem_free(uint8_t memx, uint32_t offset)
 {
     int i;
 
+    if (memx >= SRAMBANK)
+    {
+        return 2;
+    }
+
     if (!mallco_dev.memrdy[memx])   /* 未初始化,先执行初始化 */
     {
         mallco_dev.init(memx);
@@ -191,6 +214,11 @@ static uint8_t my_mem_free(uint8_t memx, uint32_t offset)
     {
         int index = offset / memblksize[memx];      /* 偏移所在内存块号码 */
         int nmemb = mallco_dev.memmap[memx][index]; /* 内存块数量 */
+
+        if ((nmemb <= 0) || ((index + nmemb) > (int)memtblsize[memx]))
+        {
+            return 1;
+        }
 
         for (i = 0; i < nmemb; i++)                 /* 内存块清零 */
         {
@@ -215,7 +243,7 @@ void myfree(uint8_t memx, void *ptr)
 {
     uint32_t offset;
 
-    if (ptr == NULL) return;    /* 地址为0. */
+    if ((ptr == NULL) || (memx >= SRAMBANK)) return;    /* 地址为0. */
 
     offset = (uint32_t)ptr - (uint32_t)mallco_dev.membase[memx];
     my_mem_free(memx, offset);  /* 释放内存 */
@@ -229,6 +257,10 @@ void myfree(uint8_t memx, void *ptr)
  */
 void *mymalloc(uint8_t memx, uint32_t size)
 {
+    if (memx >= SRAMBANK)
+    {
+        return NULL;
+    }
     uint32_t offset;
     offset = my_mem_malloc(memx, size);
 
@@ -252,6 +284,47 @@ void *mymalloc(uint8_t memx, uint32_t size)
 void *myrealloc(uint8_t memx, void *ptr, uint32_t size)
 {
     uint32_t offset;
+    uint32_t old_offset;
+    uint32_t old_size;
+    uint32_t copy_size;
+    int index;
+    MT_TYPE old_nmemb;
+
+    if (memx >= SRAMBANK)
+    {
+        return NULL;
+    }
+
+    if (ptr == NULL)
+    {
+        return mymalloc(memx, size);
+    }
+
+    if (size == 0U)
+    {
+        myfree(memx, ptr);
+        return NULL;
+    }
+
+    old_offset = (uint32_t)ptr - (uint32_t)mallco_dev.membase[memx];
+    if (!mallco_dev.memrdy[memx])
+    {
+        mallco_dev.init(memx);
+    }
+
+    if (old_offset >= memsize[memx])
+    {
+        return NULL;
+    }
+
+    index = (int)(old_offset / memblksize[memx]);
+    old_nmemb = mallco_dev.memmap[memx][index];
+    if ((old_nmemb == 0U) || ((uint32_t)index >= memtblsize[memx]))
+    {
+        return NULL;
+    }
+
+    old_size = (uint32_t)old_nmemb * memblksize[memx];
     offset = my_mem_malloc(memx, size);
 
     if (offset == 0XFFFFFFFF)   /* 申请出错 */
@@ -260,7 +333,8 @@ void *myrealloc(uint8_t memx, void *ptr, uint32_t size)
     }
     else                        /* 申请没问题, 返回首地址 */
     {
-        my_mem_copy((void *)((uint32_t)mallco_dev.membase[memx] + offset), ptr, size);  /* 拷贝旧内存内容到新内存 */
+        copy_size = (size < old_size) ? size : old_size;
+        my_mem_copy((void *)((uint32_t)mallco_dev.membase[memx] + offset), ptr, copy_size);  /* 拷贝旧内存内容到新内存 */
         myfree(memx, ptr);      /* 释放旧内存 */
         return (void *)((uint32_t)mallco_dev.membase[memx] + offset);                   /* 返回新内存首地址 */
     }
