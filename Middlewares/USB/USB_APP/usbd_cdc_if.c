@@ -215,23 +215,23 @@ USBD_CDC_ItfTypeDef USBD_CDC_fops =
 
 void usbd_cdc_transmit(uint8_t *data, uint32_t len)
 {
-    uint8_t timeout = USBD_CDC_TX_TIMROUT;
+    uint16_t timeout = USBD_CDC_TX_TIMROUT;
     uint8_t status;
 
-    if ((data == NULL) || (len == 0U))
-    {
-        return;
-    }
+    // if ((data == NULL) || (len == 0U))
+    // {
+    //     return;
+    // }
 
     while ((g_usbd_cdc_tx_done != 1) && (--timeout != 0))
     {
-        delay_ms(1);
+        // delay_ms(1);
     }
 
-    if (g_usbd_cdc_tx_done != 1)
-    {
-        return;
-    }
+    // if (g_usbd_cdc_tx_done != 1)
+    // {
+    //     return;
+    // }
 
     g_usbd_cdc_tx_done = 0;
     USBD_CDC_SetTxBuffer(&g_usbd_handle, data, len);

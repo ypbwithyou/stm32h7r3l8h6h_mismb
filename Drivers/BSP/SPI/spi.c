@@ -204,7 +204,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
     spi_dma_config(&g_spi_dma_tx_handle[idx], spi_get_dma_tx_instance(idx), spi_get_dma_tx_request(idx), DMA_MEMORY_TO_PERIPH);
     __HAL_LINKDMA(hspi, hdmatx, g_spi_dma_tx_handle[idx]);
 
-    HAL_NVIC_SetPriority(spi_get_dma_rx_irqn(idx), 0, 0);
+    HAL_NVIC_SetPriority(spi_get_dma_rx_irqn(idx), 2, 0);
     HAL_NVIC_EnableIRQ(spi_get_dma_rx_irqn(idx));
     HAL_NVIC_SetPriority(spi_get_dma_tx_irqn(idx), 3, 0);
     HAL_NVIC_EnableIRQ(spi_get_dma_tx_irqn(idx));

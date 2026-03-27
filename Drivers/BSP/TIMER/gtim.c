@@ -107,7 +107,14 @@ static void gtim_copy_rx_to_adc_buf(uint8_t spi_idx)
 
 static void gtim_collect_frame_polling(void)
 {
-    ads8319_start_convst();
+    // ads8319_start_convst();
+
+    ADS8319_CONVST_HIGH();
+
+    for (uint16_t i = 0; i < 1000U; i++)
+    {
+        __NOP();
+    }
 
     for (uint8_t spi = 0U; spi < SPI_NUM; spi++)
     {
@@ -120,7 +127,13 @@ static void gtim_collect_frame_polling(void)
         g_dma_cplt_count[spi]++;
     }
 
-    ads8319_stop_transfer();
+    // ads8319_stop_transfer();
+
+    ADS8319_CONVST_LOW();
+    __NOP();
+    __NOP();
+    __NOP();
+    __NOP();
 
     for (uint8_t i = 0U; i < g_write_cnt; i++)
     {
@@ -130,11 +143,11 @@ static void gtim_collect_frame_polling(void)
         cb_write(g_cb_ch[ch], (const char *)&g_adc_buf[spi][pos], ADC_DATA_LEN);
     }
 
-    g_dma_finish_count++;
-    g_dma_busy = 0U;
-    g_dma_pending_mask = 0U;
-    g_dma_done_mask = 0U;
-    g_dma_fail_streak = 0U;
+    // g_dma_finish_count++;
+    // g_dma_busy = 0U;
+    // g_dma_pending_mask = 0U;
+    // g_dma_done_mask = 0U;
+    // g_dma_fail_streak = 0U;
 }
 
 static void gtim_finish_frame_from_isr(void)
@@ -224,7 +237,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
     if (htim->Instance == GTIM_TIMX)
     {
         GTIM_TIMX_CLK_ENABLE();
-        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 1, 0);
+        HAL_NVIC_SetPriority(GTIM_TIMX_IRQn, 4, 0);
         HAL_NVIC_EnableIRQ(GTIM_TIMX_IRQn);
     }
 }
@@ -239,6 +252,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     g_gtim_it_counts++;
     gtim_rebuild_write_map_if_needed();
 
+    if (AdcCollectorGetMode() == ADC_COLLECT_MODE_POLLING)
+    {
+        gtim_collect_frame_polling();
+        return;
+    }
+
     if (g_dma_busy != 0U)
     {
         g_isr_overrun_count++;
@@ -248,12 +267,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     g_dma_busy = 1U;
     g_dma_pending_mask = 0U;
     g_dma_done_mask = 0U;
-
-    if (AdcCollectorGetMode() == ADC_COLLECT_MODE_POLLING)
-    {
-        gtim_collect_frame_polling();
-        return;
-    }
 
     ads8319_start_convst();
 
