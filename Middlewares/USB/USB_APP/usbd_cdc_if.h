@@ -27,7 +27,7 @@
 /* 缓冲区大小定义 */
 #define USBD_CDC_RX_BUF_SIZE        2000
 #define USBD_CDC_PRINTF_BUF_SIZE    200
-#define USBD_CDC_TX_TIMROUT         10
+#define USBD_CDC_TX_TIMROUT         1000
 
 /* 导出相关变量 */
 extern USBD_CDC_ItfTypeDef USBD_CDC_fops;

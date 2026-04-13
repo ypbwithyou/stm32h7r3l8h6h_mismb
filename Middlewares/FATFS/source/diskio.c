@@ -15,6 +15,11 @@
  *   此处对齐要求从 4 字节升级到 32 字节                */
 #define DMA_ALIGN      32U
 #define IS_ALIGNED(p)  (((uint32_t)(p) % DMA_ALIGN) == 0U)
+/* 未对齐缓冲中转时，按多扇区批量搬运，避免 512B 逐扇区严重降速 */
+/* A/B测试建议：
+ * - 16U = 8KB（更保守，RAM占用更小）
+ * - 32U = 16KB（吞吐可能更高，但会显著增加静态RAM占用） */
+#define EMMC_BOUNCE_SECTORS 16U /* 16 * 512 = 8KB */
 
 static DSTATUS g_disk_status = STA_NOINIT;
 
@@ -72,13 +77,19 @@ static uint8_t emmc_read_aligned(uint8_t *buf, uint32_t sector, uint32_t count)
     if (IS_ALIGNED(buf))
         return sd_read_disk(buf, sector, count);
 
-    /* buf 未对齐：逐扇区中转 */
-    static uint8_t align_buf[SECTOR_SIZE] __attribute__((aligned(32)));
-    for (uint32_t i = 0; i < count; i++)
+    /* buf 未对齐：按多扇区批量中转，减少 sd_read_disk 调用次数 */
+    static uint8_t align_buf[SECTOR_SIZE * EMMC_BOUNCE_SECTORS] __attribute__((aligned(32)));
+    uint32_t remain = count;
+    uint32_t done = 0U;
+    while (remain > 0U)
     {
-        if (sd_read_disk(align_buf, sector + i, 1) != 0)
+        uint32_t chunk = (remain > EMMC_BOUNCE_SECTORS) ? EMMC_BOUNCE_SECTORS : remain;
+        uint32_t bytes = chunk * SECTOR_SIZE;
+        if (sd_read_disk(align_buf, sector + done, chunk) != 0)
             return 1;
-        memcpy(buf + i * SECTOR_SIZE, align_buf, SECTOR_SIZE);
+        memcpy(buf + done * SECTOR_SIZE, align_buf, bytes);
+        done += chunk;
+        remain -= chunk;
     }
     return 0;
 }
@@ -91,12 +102,19 @@ static uint8_t emmc_write_aligned(const uint8_t *buf, uint32_t sector, uint32_t 
     if (IS_ALIGNED(buf))
         return sd_write_disk((uint8_t *)buf, sector, count);
 
-    static uint8_t align_buf[SECTOR_SIZE] __attribute__((aligned(32)));
-    for (uint32_t i = 0; i < count; i++)
+    /* buf 未对齐：按多扇区批量中转，减少 sd_write_disk 调用次数 */
+    static uint8_t align_buf[SECTOR_SIZE * EMMC_BOUNCE_SECTORS] __attribute__((aligned(32)));
+    uint32_t remain = count;
+    uint32_t done = 0U;
+    while (remain > 0U)
     {
-        memcpy(align_buf, buf + i * SECTOR_SIZE, SECTOR_SIZE);
-        if (sd_write_disk(align_buf, sector + i, 1) != 0)
+        uint32_t chunk = (remain > EMMC_BOUNCE_SECTORS) ? EMMC_BOUNCE_SECTORS : remain;
+        uint32_t bytes = chunk * SECTOR_SIZE;
+        memcpy(align_buf, buf + done * SECTOR_SIZE, bytes);
+        if (sd_write_disk(align_buf, sector + done, chunk) != 0)
             return 1;
+        done += chunk;
+        remain -= chunk;
     }
     return 0;
 }

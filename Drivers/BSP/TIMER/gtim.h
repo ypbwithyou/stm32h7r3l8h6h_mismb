@@ -31,7 +31,6 @@ void gtim_timx_int_init(unsigned short arr, unsigned short psc);
 void gtim_timx_cfg(uint16_t arr, uint16_t psc);
 void gtim_timx_start(void);
 void gtim_timx_stop(void);
-
 void ticks_timx_start(void);
 uint32_t ticks_timx_get_counter(void);
 void ticks_timx_reset_counter(void);

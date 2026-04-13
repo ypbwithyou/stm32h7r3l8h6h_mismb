@@ -21,6 +21,8 @@ typedef enum ScheduleItemRunStatus
     STATUS_END,
 } ScheduleStatus;
 
+float g_offline_sample_rate;
+
 ChannelTableHeader g_offline_chCfgHeader;
 ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
 DSAGlobalParams g_offline_GlobalParam;
@@ -55,12 +57,21 @@ static void ExecuteScheduleAction(uint8_t idx, uint32_t elapsed_seconds);
 
 static FRESULT cache_write(FIL *fp, const void *data, uint32_t len);
 static FRESULT cache_flush(FIL *fp);
+static FRESULT cache_write_direct(FIL *fp, const uint8_t *buf, uint32_t len);
 
 // ===== 写缓冲区（攒够一次性写入 eMMC）=====
-#define WRITE_CACHE_SIZE (4 * 1024) // 128KB，根据你的 RAM 大小调整
+// 4KB会导致大量小块写，实时记录吞吐会显著下降。
+// 提升到64KB后，进一步减少 FatFs + MMC 事务次数。
+#define WRITE_CACHE_SIZE (64 * 1024)
+// 记录过程中累计写入达到该阈值后执行一次 f_sync
+#define RECORD_SYNC_BYTES (4U * 1024U * 1024U)
+// 记录过程中吞吐日志输出间隔（毫秒）
+#define RECORD_SPEED_LOG_INTERVAL_MS (5000U)
 
 static uint8_t *s_write_cache;
+static uint8_t s_write_cache_pool = SRAMEX;
 static uint32_t s_write_cache_pos = 0;
+static uint32_t s_record_bytes_since_sync = 0U;
 
 FIL g_offline_record_fil; // 离线记录文件指针
 
@@ -69,6 +80,34 @@ FIL g_offline_record_fil; // 离线记录文件指针
 #define DEFAULT_CHANNEL_COUNT 3U
 
 static uint32_t file_num = 0;
+
+/*
+ * 顺序流写优化：
+ * - 优先使用 f_write（连续大块写通常吞吐更高）
+ * - 若失败，再回退到 f_write_dma_safe（兼容原有路径）
+ */
+static FRESULT cache_write_direct(FIL *fp, const uint8_t *buf, uint32_t len)
+{
+    UINT bw = 0U;
+    FRESULT res;
+
+    res = f_write(fp, buf, len, &bw);
+    if ((res == FR_OK) && (bw == len))
+    {
+        s_record_bytes_since_sync += len;
+        return FR_OK;
+    }
+
+    bw = 0U;
+    res = f_write_dma_safe(fp, buf, len, &bw);
+    if ((res == FR_OK) && (bw == len))
+    {
+        s_record_bytes_since_sync += len;
+        return FR_OK;
+    }
+
+    return (res != FR_OK) ? res : FR_DENIED;
+}
 
 // 将数据追加到缓冲区，满了就刷盘
 static FRESULT cache_write(FIL *fp, const void *data, uint32_t len)
@@ -88,11 +127,12 @@ static FRESULT cache_write(FIL *fp, const void *data, uint32_t len)
         // 缓冲区满，刷入 eMMC
         if (s_write_cache_pos >= WRITE_CACHE_SIZE)
         {
-            UINT bw;
-            FRESULT res = f_write_dma_safe(fp, s_write_cache, WRITE_CACHE_SIZE, &bw);
+            FRESULT res = cache_write_direct(fp, s_write_cache, WRITE_CACHE_SIZE);
+            if (res != FR_OK)
+            {
+                return res;
+            }
             s_write_cache_pos = 0;
-            if (res != FR_OK || bw != WRITE_CACHE_SIZE)
-                return res ? res : FR_DENIED;
         }
     }
     return FR_OK;
@@ -103,12 +143,12 @@ static FRESULT cache_flush(FIL *fp)
 {
     if (s_write_cache_pos == 0)
         return FR_OK;
-    UINT bw;
-    FRESULT res = f_write_dma_safe(fp, s_write_cache, s_write_cache_pos, &bw);
+    FRESULT res = cache_write_direct(fp, s_write_cache, s_write_cache_pos);
     uint32_t flushed = s_write_cache_pos;
     s_write_cache_pos = 0;
-    if (res != FR_OK || bw != flushed)
-        return res ? res : FR_DENIED;
+    if (res != FR_OK)
+        return res;
+    (void)flushed;
     return FR_OK;
 }
 
@@ -163,7 +203,15 @@ void OfflineRecordInit(void)
         return;
     }
 
-    s_write_cache = (uint8_t *)mymalloc(SRAMEX, WRITE_CACHE_SIZE);
+    // 写缓存优先放片内 SRAM12，降低 memcpy 与总线访问开销；
+    // 若分配失败，再回退到外部 SRAMEX。
+    s_write_cache_pool = SRAM12;
+    s_write_cache = (uint8_t *)mymalloc(s_write_cache_pool, WRITE_CACHE_SIZE);
+    if (!s_write_cache)
+    {
+        s_write_cache_pool = SRAMEX;
+        s_write_cache = (uint8_t *)mymalloc(s_write_cache_pool, WRITE_CACHE_SIZE);
+    }
     if (!s_write_cache)
     {
         usb_printf("[Record] Failed to allocate memory for s_write_cache\r\n");
@@ -185,6 +233,12 @@ void OfflineRecordDeinit(void)
         myfree(SRAMEX, g_offline_signal_source);
         g_offline_signal_source = NULL;
         usb_printf("[Record] Memory released for signal source\r\n");
+    }
+    if (s_write_cache)
+    {
+        myfree(s_write_cache_pool, s_write_cache);
+        s_write_cache = NULL;
+        s_write_cache_pool = SRAMEX;
     }
 }
 
@@ -250,6 +304,7 @@ static void HandleRecordStart(uint8_t idx)
     g_recorde_file_head.nUseSenserity = 1;
 
     s_write_cache_pos = 0; // 新文件开始前清空缓冲区
+    s_record_bytes_since_sync = 0U;
 
     file_num++;
 
@@ -292,6 +347,15 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     g_enabled_ch_cnt = 0;
     memset(g_spi_adc_cnt, 0, sizeof(g_spi_adc_cnt));
 
+    // --------------测试24通道存储--------------------
+    // g_offline_chCfgHeader.nTotalChannelNum = 24;
+
+    // for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
+    // {
+    //     g_offline_chCfgParam[i].nChannelID = i;
+    // }
+    // // --------------测试24通道存储--------------------
+
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
         int32_t ch_id = g_offline_chCfgParam[i].nChannelID;
@@ -328,17 +392,33 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
 
     uint32_t sample_rate = GetOfflineSampleRate();
 
-    // if (sample_rate > 51200)
-    // {
-    //     sample_rate = 51200;
-    // }
-    // sample_rate = 102400;
     usb_printf("sample_rate:%d", sample_rate);
+
+    g_offline_sample_rate = (float)sample_rate;
 
     // ------------------------启动采集----------------------------------
 
     if (sample_rate > 0)
     {
+        uint32_t requested_rate = sample_rate;
+        AdcCollectMode mode;
+
+        sample_rate = AdcCollectorMatchSampleRate(sample_rate, enabled_cnt);
+        if (sample_rate == 0U)
+        {
+            usb_printf("ACQ_Start: rejected, enable_cnt=%u requested=%lu exceeds mode budget\n",
+                       (unsigned int)enabled_cnt,
+                       (unsigned long)requested_rate);
+            return;
+        }
+
+        mode = AdcCollectorSelectMode(sample_rate);
+        usb_printf("ACQ_Start: enable_cnt=%u requested=%lu actual=%lu mode=%s\n",
+                   (unsigned int)enabled_cnt,
+                   (unsigned long)requested_rate,
+                   (unsigned long)sample_rate,
+                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
+
         CfgAdcSampleRate(sample_rate);
 
         g_IdaSystemStatus.st_dev_run.run_flag = 1;
@@ -867,6 +947,23 @@ static int8_t CheckOfflineCfgParam(void)
 #undef MAX_OFFLINE_CHANNELS
 #undef MAX_OFFLINE_SCHEDULES
 
+    // // --------------24通道测试------------------
+    // g_offline_chCfgHeader.nTotalChannelNum = 24;
+    // g_offline_GlobalParam.nSignalCount = 24;
+
+    // for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
+    // {
+    //     if (i >= 3)
+    //     {
+    //         memcpy(&g_offline_chCfgParam[i], &g_offline_chCfgParam[0], sizeof(ChannelTableElem));
+    //         memcpy(&g_offline_signal_source[i], &g_offline_signal_source[0], sizeof(SignalDataSource));
+    //     }
+
+    //     g_offline_chCfgParam[i].nChannelID = i;
+    //     g_offline_signal_source[i].nSignalID = i;
+    // }
+    // // --------------24通道测试------------------
+
     return 0;
 }
 
@@ -929,12 +1026,12 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
-        if (g_offline_chCfgParam[i].fSampleRateIndex > 51200)
-        {
-            g_offline_chCfgParam[i].fSampleRateIndex = 51200;
-        }
+        const uint8_t sens_idx = g_SubDevicelnfo[i / 3].Sensitivity;
+        const float sensitivity = (sens_idx < 8) ? g_sensitivity_map[sens_idx] : 12.5f;
 
-        g_offline_chCfgParam[i].fSensitivity = 12.5;
+        g_offline_chCfgParam[i].fSampleRateIndex = g_offline_sample_rate;
+
+        g_offline_chCfgParam[i].fSensitivity = sensitivity;
         g_offline_chCfgParam[i].fChRangeTransOffset = -2.5;
         g_offline_chCfgParam[i].fChRangeTransFactor = 5 / 65536.0;
     }
@@ -1034,38 +1131,22 @@ static void OfflineDatasRecord(void)
 
     static uint32_t last_tell = 0;
     static uint32_t last_time = 0;
-    if (HAL_GetTick() - last_time >= 1000)
+    if (HAL_GetTick() - last_time >= RECORD_SPEED_LOG_INTERVAL_MS)
     {
         uint32_t now_tell = f_tell(&g_offline_record_fil) + s_write_cache_pos;
-        uint32_t bytes_per_sec = now_tell - last_tell;
-        usb_printf("Write speed: %lu KB/s\n", bytes_per_sec / 1024U);
+        uint32_t dt_ms = HAL_GetTick() - last_time;
+        uint32_t bytes = now_tell - last_tell;
+        uint32_t bytes_per_sec = (dt_ms > 0U) ? (uint32_t)(((uint64_t)bytes * 1000ULL) / dt_ms) : 0U;
+        usb_printf("Write speed: %lu KB/s (cache=%uKB)\n", bytes_per_sec / 1024U, (unsigned int)(WRITE_CACHE_SIZE / 1024U));
         last_tell = now_tell;
         last_time = HAL_GetTick();
     }
 
-    /* ── 定期刷新文件头（防止异常断电丢失帧数信息）── */
-    static uint32_t last_header_sync_time = 0;
-    if (HAL_GetTick() - last_header_sync_time >= 5000)
+    /* ── 按累计写入字节定期落盘，降低频繁 f_sync 带来的抖动 ── */
+    if (s_record_bytes_since_sync >= RECORD_SYNC_BYTES)
     {
-        last_header_sync_time = HAL_GetTick();
-
-        // g_recorde_file_head.nFrameNum = record_frame_num;
-        // g_recorde_file_head.dRecValidEndTime = dwt_get_ns() / NANOSECONDS_PER_SECOND;
-
-        // // ★ 先把缓冲区数据写完，再 seek
-        // cache_flush(&g_offline_record_fil);
-
-        // uint32_t cur_pos = f_tell(&g_offline_record_fil);
-        // res = f_lseek(&g_offline_record_fil, 0);
-        // if (res == FR_OK)
-        // {
-        //     f_write(&g_offline_record_fil,
-        //             &g_recorde_file_head,
-        //             sizeof(g_recorde_file_head),
-        //             &bw);
-        //     f_lseek(&g_offline_record_fil, cur_pos);
-        // }
         f_sync(&g_offline_record_fil);
+        s_record_bytes_since_sync = 0U;
     }
 
     /* ── 3. 记录停止时的最终处理 ── */

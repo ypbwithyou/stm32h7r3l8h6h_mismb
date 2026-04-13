@@ -55,6 +55,7 @@ static uint32_t USB_CalibrationRead(uint8_t *data_in, uint32_t data_len, FrameHe
 static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
 static uint32_t PackReplyWithoutDatas(uint32_t event_id);
+static uint32_t PackReplyWithoutDatasParam(uint32_t event_id, int32_t param0);
 
 /* 协议处理函数指针类型：
  * @param data_in: 解包后的用户数据
@@ -382,6 +383,20 @@ static uint32_t PackReplyWithoutDatas(uint32_t event_id)
                                                        0);
 
     uint32_t packet_len = 0;
+    pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
+    return packet_len;
+}
+
+static uint32_t PackReplyWithoutDatasParam(uint32_t event_id, int32_t param0)
+{
+    FrameHeadInfo frame_head = create_default_frame_head(0);
+    UserDataHeadInfo user_head = create_user_data_head(event_id,
+                                                       SOURCE_TYPE_NO_DATA,
+                                                       DESTINATION_ARM_TO_PC,
+                                                       0);
+
+    uint32_t packet_len = 0;
+    user_head.nParameters0 = param0;
     pack_data(NULL, 0, &user_head, &frame_head, &packet_len);
     return packet_len;
 }
@@ -916,10 +931,33 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
 
     if (sample_rate > 0)
     {
+        uint32_t requested_rate = sample_rate;
+        AdcCollectMode mode;
+
+        sample_rate = AdcCollectorMatchSampleRate(sample_rate, g_enabled_ch_cnt);
+        if (sample_rate == 0U)
+        {
+            usb_printf("[CollectCfg] rejected: enable_cnt=%u requested=%lu exceeds mode budget\r\n",
+                       (unsigned int)g_enabled_ch_cnt,
+                       (unsigned long)requested_rate);
+            return PackReplyWithoutDatasParam(DVSARM_CSP_START_OK, -1);
+        }
+
+        mode = AdcCollectorSelectMode(sample_rate);
+        usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] requested=%lu actual=%lu mode=%s\r\n",
+                   (unsigned int)g_enabled_ch_cnt,
+                   (unsigned long)g_ch_enable_mask,
+                   (unsigned int)g_spi_adc_cnt[0],
+                   (unsigned int)g_spi_adc_cnt[1],
+                   (unsigned int)g_spi_adc_cnt[2],
+                   (unsigned long)requested_rate,
+                   (unsigned long)sample_rate,
+                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
         CfgAdcSampleRate(sample_rate);
 
         g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+        usb_printf("[CollectCfg] acquisition started\r\n");
     }
 
     return PackReplyWithoutDatas(DVSARM_CSP_START_OK);
@@ -1117,14 +1155,18 @@ static uint32_t USB_Display_Reply(uint8_t *data_in, uint32_t data_len,
 
     // 没有配置通道则直接返回
     if (g_enabled_ch_cnt == 0)
+    {
         return 0;
+    }
 
     // 所有配置通道必须全部就绪，否则等下一次
     for (uint8_t i = 0; i < g_enabled_ch_cnt; i++)
     {
         uint8_t ch = g_enabled_chs[i];
         if (!g_cb_ch[ch] || cb_size(g_cb_ch[ch]) < (int)cb_needed)
+        {
             return 0; // 有通道未就绪，本次不发
+        }
     }
 
     /* 填充帧头 */

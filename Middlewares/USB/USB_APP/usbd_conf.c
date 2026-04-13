@@ -79,7 +79,7 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *hpcd)
         HAL_NVIC_EnableIRQ(OTG_HS_IRQn);
     }
 }
-
+ 
 /**
  * @brief   HAL库PCD反初始化MSP函数
  * @param   hpcd: PCD句柄指针
@@ -581,3 +581,4 @@ void USBD_LL_Delay(uint32_t Delay)
 {
     delay_ms(Delay);
 }
+
