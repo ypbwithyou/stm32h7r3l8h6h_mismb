@@ -12,6 +12,7 @@ enum Event
 {
     DEVINFO_READ_REQ = 0x00,
     DEVINFO_READ_REQ_ACK = 0x01,
+    
     DEVINFO_WRITE_REQ = 0x02,
     DEVINFO_WRITE_REQ_ACK = 0x03,
 
@@ -68,9 +69,10 @@ void rs485_processor_poll(void);
 /* sub-device validity state by slave address 1..8 => index 0..7 */
 extern uint8_t g_subdev_valid[RS485_SUBDEV_MAX];
 extern uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX];
-extern uint8_t g_subdev_write_ack[RS485_SUBDEV_MAX];
+/* write ack status: -1=no response yet, 0=success, >0=error code from device */
+extern int8_t g_subdev_write_ack[RS485_SUBDEV_MAX];
 uint8_t rs485_subdev_is_valid(uint8_t addr);
-uint8_t rs485_subdev_get_write_ack(uint8_t addr);
+int8_t rs485_subdev_get_write_ack(uint8_t addr);
 void rs485_subdev_clear_write_ack(uint8_t addr);
 void rs485_subdev_scan_reset(void);
 void rs485_subdev_scan_once(void);

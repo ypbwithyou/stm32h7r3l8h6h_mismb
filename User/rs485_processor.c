@@ -6,7 +6,8 @@
 
 uint8_t g_subdev_valid[RS485_SUBDEV_MAX] = {0};
 uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX] = {0};
-uint8_t g_subdev_write_ack[RS485_SUBDEV_MAX] = {0};
+/* write ack status: -1=no response yet, 0=success, >0=error code from device */
+int8_t g_subdev_write_ack[RS485_SUBDEV_MAX] = {-1, -1, -1, -1, -1, -1, -1, -1};
 
 static uint8_t rs485_xor_u8(const uint8_t *data, uint16_t len)
 {
@@ -51,22 +52,29 @@ uint8_t rs485_subdev_is_valid(uint8_t addr)
     return g_subdev_valid[addr - 1U];
 }
 
-uint8_t rs485_subdev_get_write_ack(uint8_t addr)
+int8_t rs485_subdev_get_write_ack(uint8_t addr)
 {
     if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
     {
-        return 0U;
+        return -1;
     }
     return g_subdev_write_ack[addr - 1U];
 }
 
 void rs485_subdev_clear_write_ack(uint8_t addr)
 {
-    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    uint8_t i;
+    if ((addr >= RS485_SLAVE_ADDR_MIN) && (addr <= RS485_SLAVE_ADDR_MAX))
     {
-        return;
+        g_subdev_write_ack[addr - 1U] = -1;
     }
-    g_subdev_write_ack[addr - 1U] = 0U;
+    else if (addr == 0) /* addr=0 means clear all */
+    {
+        for (i = 0U; i < RS485_SUBDEV_MAX; i++)
+        {
+            g_subdev_write_ack[i] = -1;
+        }
+    }
 }
 
 void rs485_subdev_scan_reset(void)
@@ -225,7 +233,57 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
         usb_printf("rs485_parse_frame DEVINFO_WRITE_REQ_ACK %d \n", pkt.address);
         if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
         {
-            g_subdev_write_ack[pkt.address - 1U] = 1U;
+            /* data_len=0: legacy mode, no status; data_len=1: with status byte (0=success) */
+            if (pkt.data_len == 1U)
+            {
+                g_subdev_write_ack[pkt.address - 1U] = (int8_t)(pkt.data[0]);
+            }
+            else
+            {
+                g_subdev_write_ack[pkt.address - 1U] = 0; /* legacy: treat as success */
+            }
+        }
+        break;
+    case BRIDGE_SET_ACK:
+        usb_printf("rs485_parse_frame BRIDGE_SET_ACK %d, data_len=%d\n", pkt.address, pkt.data_len);
+        if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
+        {
+            if (pkt.data_len == 1U)
+            {
+                g_subdev_write_ack[pkt.address - 1U] = (int8_t)(pkt.data[0]);
+            }
+            else
+            {
+                g_subdev_write_ack[pkt.address - 1U] = 0;
+            }
+        }
+        break;
+    case GAIN_SET_ACK:
+        usb_printf("rs485_parse_frame GAIN_SET_ACK %d, data_len=%d\n", pkt.address, pkt.data_len);
+        if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
+        {
+            if (pkt.data_len == 1U)
+            {
+                g_subdev_write_ack[pkt.address - 1U] = (int8_t)(pkt.data[0]);
+            }
+            else
+            {
+                g_subdev_write_ack[pkt.address - 1U] = 0;
+            }
+        }
+        break;
+    case DAC_SET_ACK:
+        usb_printf("rs485_parse_frame DAC_SET_ACK %d, data_len=%d\n", pkt.address, pkt.data_len);
+        if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
+        {
+            if (pkt.data_len == 1U)
+            {
+                g_subdev_write_ack[pkt.address - 1U] = (int8_t)(pkt.data[0]);
+            }
+            else
+            {
+                g_subdev_write_ack[pkt.address - 1U] = 0;
+            }
         }
         break;
     default:
@@ -329,6 +387,7 @@ void rs485_subdev_config_test(void)
 {
     uint8_t addr;
     int8_t ret;
+    int8_t ack_status;
 
     usb_printf("\r\n===== RS485 Subdev Config Test Start =====\r\n");
 
@@ -352,12 +411,24 @@ void rs485_subdev_config_test(void)
             while ((HAL_GetTick() - start_tick) < 100)
             {
                 rs485_processor_poll();
-                if (rs485_subdev_get_write_ack(addr))
+                ack_status = rs485_subdev_get_write_ack(addr);
+                if (ack_status >= 0) /* -1=no response, >=0=received */
                 {
-                    usb_printf("DAC_SET_ACK received from addr=%d\r\n", addr);
+                    if (ack_status == 0)
+                    {
+                        usb_printf("DAC_SET_ACK: addr=%d SUCCESS\r\n", addr);
+                    }
+                    else
+                    {
+                        usb_printf("DAC_SET_ACK: addr=%d FAILED, err=0x%02X\r\n", addr, ack_status);
+                    }
                     rs485_subdev_clear_write_ack(addr);
                     break;
                 }
+            }
+            if (rs485_subdev_get_write_ack(addr) < 0)
+            {
+                usb_printf("DAC_SET: addr=%d TIMEOUT (no ACK)\r\n", addr);
             }
         }
     }
@@ -381,12 +452,24 @@ void rs485_subdev_config_test(void)
             while ((HAL_GetTick() - start_tick) < 100)
             {
                 rs485_processor_poll();
-                if (rs485_subdev_get_write_ack(addr))
+                ack_status = rs485_subdev_get_write_ack(addr);
+                if (ack_status >= 0)
                 {
-                    usb_printf("BRIDGE_SET_ACK received from addr=%d\r\n", addr);
+                    if (ack_status == 0)
+                    {
+                        usb_printf("BRIDGE_SET_ACK: addr=%d SUCCESS\r\n", addr);
+                    }
+                    else
+                    {
+                        usb_printf("BRIDGE_SET_ACK: addr=%d FAILED, err=0x%02X\r\n", addr, ack_status);
+                    }
                     rs485_subdev_clear_write_ack(addr);
                     break;
                 }
+            }
+            if (rs485_subdev_get_write_ack(addr) < 0)
+            {
+                usb_printf("BRIDGE_SET: addr=%d TIMEOUT (no ACK)\r\n", addr);
             }
         }
     }
@@ -398,10 +481,8 @@ void rs485_subdev_config_test(void)
         {
             gain_set_payload_t gain_cfg = {
                 .gain = 0x07,  // bit0-2=1, 3个通道都是10倍
-                .pga = 0x01C0  // bit6-8=1 (PGA2), bit3-5=1 (PGA1), bit0-2=0 (PGA0=1倍)
-                               // 修改: .pga = 0x01C7  // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
+                .pga = 0x01C7  // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
             };
-            gain_cfg.pga = 0x01C7; // 3个通道PGA都设置为128倍
             ret = rs485_subdev_set_gain(addr, &gain_cfg);
             usb_printf("GAIN_SET to addr=%d, gain=0x%02X, pga=0x%04X, ret=%d\r\n",
                        addr, gain_cfg.gain, gain_cfg.pga, ret);
@@ -411,12 +492,24 @@ void rs485_subdev_config_test(void)
             while ((HAL_GetTick() - start_tick) < 100)
             {
                 rs485_processor_poll();
-                if (rs485_subdev_get_write_ack(addr))
+                ack_status = rs485_subdev_get_write_ack(addr);
+                if (ack_status >= 0)
                 {
-                    usb_printf("GAIN_SET_ACK received from addr=%d\r\n", addr);
+                    if (ack_status == 0)
+                    {
+                        usb_printf("GAIN_SET_ACK: addr=%d SUCCESS\r\n", addr);
+                    }
+                    else
+                    {
+                        usb_printf("GAIN_SET_ACK: addr=%d FAILED, err=0x%02X\r\n", addr, ack_status);
+                    }
                     rs485_subdev_clear_write_ack(addr);
                     break;
                 }
+            }
+            if (rs485_subdev_get_write_ack(addr) < 0)
+            {
+                usb_printf("GAIN_SET: addr=%d TIMEOUT (no ACK)\r\n", addr);
             }
         }
     }
