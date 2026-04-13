@@ -54,3 +54,7 @@ DeviceInfo g_dev_info;
 
 // 子卡设备信息
 SubDevicelnfo g_SubDevicelnfo[SUBDEV_NUM_MAX];
+
+// 灵敏度映射表：索引 -> 浮点值 (对应SubDevicelnfo.Sensitivity字段)
+// 0: 无, 1: 50.0, 2: 25.0, 3: 12.5, 4: 6.3, 5: 2.50, 6: 1.25, 7: 0.63
+const float g_sensitivity_map[] = {0.0f, 50.0f, 25.0f, 12.5f, 6.3f, 2.50f, 1.25f, 0.63f};

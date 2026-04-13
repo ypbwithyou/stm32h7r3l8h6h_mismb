@@ -1026,10 +1026,12 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
+        const uint8_t sens_idx = g_SubDevicelnfo[i / 3].Sensitivity;
+        const float sensitivity = (sens_idx < 8) ? g_sensitivity_map[sens_idx] : 12.5f;
 
         g_offline_chCfgParam[i].fSampleRateIndex = g_offline_sample_rate;
 
-        g_offline_chCfgParam[i].fSensitivity = 12.5;
+        g_offline_chCfgParam[i].fSensitivity = sensitivity;
         g_offline_chCfgParam[i].fChRangeTransOffset = -2.5;
         g_offline_chCfgParam[i].fChRangeTransFactor = 5 / 65536.0;
     }
