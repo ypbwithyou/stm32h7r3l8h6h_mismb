@@ -21,6 +21,8 @@ typedef enum ScheduleItemRunStatus
     STATUS_END,
 } ScheduleStatus;
 
+float g_offline_sample_rate;
+
 ChannelTableHeader g_offline_chCfgHeader;
 ChannelTableElem g_offline_chCfgParam[24]; // 离线通道配置缓存（最多24通道）
 DSAGlobalParams g_offline_GlobalParam;
@@ -391,6 +393,8 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
     uint32_t sample_rate = GetOfflineSampleRate();
 
     usb_printf("sample_rate:%d", sample_rate);
+
+    g_offline_sample_rate = (float)sample_rate;
 
     // ------------------------启动采集----------------------------------
 
@@ -1022,10 +1026,8 @@ FRESULT CreatOfflineRecordFile(uint32_t file_num)
 
     for (size_t i = 0; i < g_offline_chCfgHeader.nTotalChannelNum; i++)
     {
-        if (g_offline_chCfgParam[i].fSampleRateIndex > 51200)
-        {
-            g_offline_chCfgParam[i].fSampleRateIndex = 51200;
-        }
+
+        g_offline_chCfgParam[i].fSampleRateIndex = g_offline_sample_rate;
 
         g_offline_chCfgParam[i].fSensitivity = 12.5;
         g_offline_chCfgParam[i].fChRangeTransOffset = -2.5;
