@@ -271,3 +271,155 @@ void rs485_processor_poll(void)
         rs485_parse_frame(frame, frame_len);
     }
 }
+
+/* 子板配置命令发送接口实现 */
+
+/**
+ * @brief 发送DAC校准设置命令到子板
+ * @param addr 子板地址 (1-8)
+ * @param dac_cfg DAC配置参数
+ * @return 0=成功, -1=失败
+ */
+int8_t rs485_subdev_set_dac(uint8_t addr, const dac_set_payload_t *dac_cfg)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX) || (dac_cfg == NULL))
+    {
+        return -1;
+    }
+    return rs485_send_frame(addr, DAC_SET, (const uint8_t *)dac_cfg, sizeof(dac_set_payload_t));
+}
+
+/**
+ * @brief 发送桥路设置命令到子板
+ * @param addr 子板地址 (1-8)
+ * @param bridge_cfg 桥路配置参数
+ * @return 0=成功, -1=失败
+ */
+int8_t rs485_subdev_set_bridge(uint8_t addr, const bridge_set_payload_t *bridge_cfg)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX) || (bridge_cfg == NULL))
+    {
+        return -1;
+    }
+    return rs485_send_frame(addr, BRIDGE_SET, (const uint8_t *)bridge_cfg, sizeof(bridge_set_payload_t));
+}
+
+/**
+ * @brief 发送增益设置命令到子板
+ * @param addr 子板地址 (1-8)
+ * @param gain_cfg 增益配置参数
+ * @return 0=成功, -1=失败
+ */
+int8_t rs485_subdev_set_gain(uint8_t addr, const gain_set_payload_t *gain_cfg)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX) || (gain_cfg == NULL))
+    {
+        return -1;
+    }
+    return rs485_send_frame(addr, GAIN_SET, (const uint8_t *)gain_cfg, sizeof(gain_set_payload_t));
+}
+
+/* 测试函数实现 */
+
+/**
+ * @brief 测试子板配置命令
+ * @note 调用此函数测试DAC、桥路、增益设置命令
+ */
+void rs485_subdev_config_test(void)
+{
+    uint8_t addr;
+    int8_t ret;
+
+    usb_printf("\r\n===== RS485 Subdev Config Test Start =====\r\n");
+
+    /* 测试DAC设置 - 统一设置3个通道为2.5V */
+    for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
+    {
+        if (rs485_subdev_is_valid(addr))
+        {
+            dac_set_payload_t dac_cfg = {
+                .bitflag = 0x07,  // 全1, 统一设置3个通道
+                .voltage0 = 2.5f,
+                .voltage1 = 2.5f,
+                .voltage2 = 2.5f
+            };
+            ret = rs485_subdev_set_dac(addr, &dac_cfg);
+            usb_printf("DAC_SET to addr=%d, bitflag=0x%02X, voltages={%.2f,%.2f,%.2f}, ret=%d\r\n",
+                       addr, dac_cfg.bitflag, dac_cfg.voltage0, dac_cfg.voltage1, dac_cfg.voltage2, ret);
+
+            /* 等待ACK */
+            uint32_t start_tick = HAL_GetTick();
+            while ((HAL_GetTick() - start_tick) < 100)
+            {
+                rs485_processor_poll();
+                if (rs485_subdev_get_write_ack(addr))
+                {
+                    usb_printf("DAC_SET_ACK received from addr=%d\r\n", addr);
+                    rs485_subdev_clear_write_ack(addr);
+                    break;
+                }
+            }
+        }
+    }
+
+    /* 测试桥路设置 - 使能激励，全桥，接入分流电阻 */
+    for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
+    {
+        if (rs485_subdev_is_valid(addr))
+        {
+            bridge_set_payload_t bridge_cfg = {
+                .exc_en = 1,        // 使能激励
+                .bridge = 0x00,     // bit0-2=0, 全桥
+                .bridgeShunt = 0x07 // bit0-2=1, 3个通道都接入分流电阻
+            };
+            ret = rs485_subdev_set_bridge(addr, &bridge_cfg);
+            usb_printf("BRIDGE_SET to addr=%d, exc_en=%d, bridge=0x%02X, bridgeShunt=0x%02X, ret=%d\r\n",
+                       addr, bridge_cfg.exc_en, bridge_cfg.bridge, bridge_cfg.bridgeShunt, ret);
+
+            /* 等待ACK */
+            uint32_t start_tick = HAL_GetTick();
+            while ((HAL_GetTick() - start_tick) < 100)
+            {
+                rs485_processor_poll();
+                if (rs485_subdev_get_write_ack(addr))
+                {
+                    usb_printf("BRIDGE_SET_ACK received from addr=%d\r\n", addr);
+                    rs485_subdev_clear_write_ack(addr);
+                    break;
+                }
+            }
+        }
+    }
+
+    /* 测试增益设置 - 10倍增益，PGA放大128倍 */
+    for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
+    {
+        if (rs485_subdev_is_valid(addr))
+        {
+            gain_set_payload_t gain_cfg = {
+                .gain = 0x07,  // bit0-2=1, 3个通道都是10倍
+                .pga = 0x01C0  // bit6-8=1 (PGA2), bit3-5=1 (PGA1), bit0-2=0 (PGA0=1倍)
+                               // 修改: .pga = 0x01C7  // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
+            };
+            gain_cfg.pga = 0x01C7; // 3个通道PGA都设置为128倍
+            ret = rs485_subdev_set_gain(addr, &gain_cfg);
+            usb_printf("GAIN_SET to addr=%d, gain=0x%02X, pga=0x%04X, ret=%d\r\n",
+                       addr, gain_cfg.gain, gain_cfg.pga, ret);
+
+            /* 等待ACK */
+            uint32_t start_tick = HAL_GetTick();
+            while ((HAL_GetTick() - start_tick) < 100)
+            {
+                rs485_processor_poll();
+                if (rs485_subdev_get_write_ack(addr))
+                {
+                    usb_printf("GAIN_SET_ACK received from addr=%d\r\n", addr);
+                    rs485_subdev_clear_write_ack(addr);
+                    break;
+                }
+            }
+        }
+    }
+
+    usb_printf("===== RS485 Subdev Config Test End =====\r\n");
+}
