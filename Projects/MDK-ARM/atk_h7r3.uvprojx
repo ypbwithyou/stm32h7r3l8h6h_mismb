@@ -444,6 +444,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\Drivers\LIBS\lib_file_utils\file_utils_disk.c</FilePath>
             </File>
+            <File>
+              <FileName>bridge_config.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\User\bridge_config.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

@@ -12,6 +12,7 @@
 #include "usbd_cdc_if.h"
 #include "./LIBS/lib_file_utils/file_utils.h"
 #include "dataType.h"
+#include "bridge_config.h"
 
 #define OFFLINE_SCHEDULE_ITEM_MAX 32
 typedef enum ScheduleItemRunStatus
@@ -412,16 +413,32 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
             return;
         }
 
-        mode = AdcCollectorSelectMode(sample_rate);
-        usb_printf("ACQ_Start: enable_cnt=%u requested=%lu actual=%lu mode=%s\n",
-                   (unsigned int)enabled_cnt,
-                   (unsigned long)requested_rate,
-                   (unsigned long)sample_rate,
-                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
+    mode = AdcCollectorSelectMode(sample_rate);
+    usb_printf("ACQ_Start: enable_cnt=%u requested=%lu actual=%lu mode=%s\n",
+               (unsigned int)enabled_cnt,
+               (unsigned long)requested_rate,
+               (unsigned long)sample_rate,
+               (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
 
-        CfgAdcSampleRate(sample_rate);
+    CfgAdcSampleRate(sample_rate);
 
-        g_IdaSystemStatus.st_dev_run.run_flag = 1;
+    /* ---------- 配置桥路子设备 ---------- */
+    {
+        int8_t bridge_ret;
+        bridge_ret = bridge_config_all_subdevs(g_offline_chCfgParam, g_offline_chCfgHeader.nTotalChannelNum);
+        if (bridge_ret != 0)
+        {
+            usb_printf("[Offline ACQ_Start] Bridge subdev config failed, ret=%d\r\n", bridge_ret);
+            /* 桥路配置失败不阻塞采集启动，仅记录日志 */
+        }
+        else
+        {
+            usb_printf("[Offline ACQ_Start] Bridge subdev config success\r\n");
+        }
+    }
+    /* ----------------------------------- */
+
+    g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
     }
     // ----------------------------------

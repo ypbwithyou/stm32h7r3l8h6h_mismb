@@ -44,19 +44,40 @@ typedef struct
     float voltage2;  // 通道2电压值
 } __attribute__((packed)) dac_set_payload_t;
 
-/* 桥路设置结构体 (BRIDGE_SET) */
+/* 桥路设置结构体 (BRIDGE_SET)
+ * @note 桥路类型映射 (nVar1 bit15-0, 1-8):
+ *       bridge字段编码: bit0-1=通道0, bit2-3=通道1, bit4-5=通道2
+ *       每个通道2bits: 0=全桥, 1=半桥, 2=1/4桥
+ *       nVar1映射: 1-2(1/4桥) -> 2, 3-4(1/2桥) -> 1, 5-8(全桥) -> 0
+ * @note 分流校准类型映射 (nVar1 bit31-16, 0-10):
+ *       bridgeShunt字段: bit0=通道0, bit1=通道1, bit2=通道2
+ *       每个通道1bit: 0=不接, 1=接入
+ *       只允许设置R2(值为2)，其他值视为不接
+ */
 typedef struct
 {
-    uint8_t exc_en;      // 激励使能: 0=失能, 1=使能
-    uint8_t bridge;      // bit0-2: 通道0-2的桥路类型, 0=全桥, 1=半桥，1=1/4桥
-    uint8_t bridgeShunt; // bit0-2: 通道0-2的分流电阻接入, 0=不接, 1=接入
+    uint8_t exc_en;        // 激励使能: 0=失能, 1=使能
+    uint8_t bridge;        // bit0-1:通道0, bit2-3:通道1, bit4-5:通道2; 0=全桥, 1=半桥, 2=1/4桥
+    uint8_t bridgeShunt;   // bit0:通道0, bit1:通道1, bit2:通道2; 0=不接, 1=接入R2
 } __attribute__((packed)) bridge_set_payload_t;
 
-/* 增益设置结构体 (GAIN_SET) */
+/* 增益设置结构体 (GAIN_SET)
+ * @note 量程增益映射 (nInputRange 0-5):
+ *       gain字段: bit0=通道0, bit1=通道1, bit2=通道2; 0=1倍, 1=10倍
+ *       pga字段: bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2
+ *       PGA编码: 0=1倍, 1=2倍, 2=4倍, 4=8倍, 7=128倍
+ *       nInputRange映射:
+ *         0 -> gain=0(1倍), pga=1 (2.5V)
+ *         1 -> gain=0(1倍), pga=2 (1.25V)
+ *         2 -> gain=1(10倍), pga=10 (0.25V)
+ *         3 -> gain=1(10倍), pga=20 (0.125V)
+ *         4 -> gain=1(10倍), pga=128 (0.01953125V)
+ *         5 -> gain=1(10倍), pga=1280 (0.001953125V)
+ */
 typedef struct
 {
-    uint8_t gain; // bit0-2分别表示三通道, 0=1倍, 1=10倍
-    uint16_t pga; // bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2; 全0=1倍, 全1=128倍  1 2 4 8 16 32 64 128 
+    uint8_t gain;   // bit0=通道0, bit1=通道1, bit2=通道2; 0=1倍, 1=10倍
+    uint16_t pga;   // bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2; 编码0-7对应1,2,4,8,16,32,64,128倍
 } __attribute__((packed)) gain_set_payload_t;
 
 /* Protocol layer */

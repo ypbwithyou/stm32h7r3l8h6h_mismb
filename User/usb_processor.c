@@ -23,6 +23,7 @@
 #include "./FATFS/source/ff.h"
 #include "./BSP/RS485/rs485.h"
 #include "dataType.h"
+#include "bridge_config.h"
 
 /*********************************************************************************/
 
@@ -943,19 +944,35 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
             return PackReplyWithoutDatasParam(DVSARM_CSP_START_OK, -1);
         }
 
-        mode = AdcCollectorSelectMode(sample_rate);
-        usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] requested=%lu actual=%lu mode=%s\r\n",
-                   (unsigned int)g_enabled_ch_cnt,
-                   (unsigned long)g_ch_enable_mask,
-                   (unsigned int)g_spi_adc_cnt[0],
-                   (unsigned int)g_spi_adc_cnt[1],
-                   (unsigned int)g_spi_adc_cnt[2],
-                   (unsigned long)requested_rate,
-                   (unsigned long)sample_rate,
-                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
-        CfgAdcSampleRate(sample_rate);
+    mode = AdcCollectorSelectMode(sample_rate);
+    usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] requested=%lu actual=%lu mode=%s\r\n",
+               (unsigned int)g_enabled_ch_cnt,
+               (unsigned long)g_ch_enable_mask,
+               (unsigned int)g_spi_adc_cnt[0],
+               (unsigned int)g_spi_adc_cnt[1],
+               (unsigned int)g_spi_adc_cnt[2],
+               (unsigned long)requested_rate,
+               (unsigned long)sample_rate,
+               (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
+    CfgAdcSampleRate(sample_rate);
 
-        g_IdaSystemStatus.st_dev_run.run_flag = 1;
+    /* ---------- 配置桥路子设备 ---------- */
+    {
+        int8_t bridge_ret;
+        bridge_ret = bridge_config_all_subdevs(channelTableElem, channelTableHeader->nTotalChannelNum);
+        if (bridge_ret != 0)
+        {
+            usb_printf("[CollectCfg] Bridge subdev config failed, ret=%d\r\n", bridge_ret);
+            /* 桥路配置失败不阻塞采集启动，仅记录日志 */
+        }
+        else
+        {
+            usb_printf("[CollectCfg] Bridge subdev config success\r\n");
+        }
+    }
+    /* ----------------------------------- */
+
+    g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
         usb_printf("[CollectCfg] acquisition started\r\n");
     }
