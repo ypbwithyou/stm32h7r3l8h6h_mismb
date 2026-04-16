@@ -106,6 +106,8 @@ void RS485_UARTX_IRQHandler(void)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     uint32_t now_tick;
+    uint16_t payload_len;
+    uint8_t min_header_len;
 
     if (huart->Instance != RS485_UARTX)
     {
@@ -139,10 +141,52 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
         s_rx_buf[s_rx_len++] = s_rx_byte;
 
-        if ((s_rx_len >= 5U) && (s_expected_len == 0U))
+        /* 
+         * Auto-detect frame format based on minimum header received
+         * We need at least 5 bytes for old format (Header + Addr + Func + Len(2))
+         * We need at least 6 bytes for new format (Header + SrcAddr + DstAddr + Func + Len(2))
+         * Try to detect format by checking if addresses are valid in new format
+         */
+        if ((s_rx_len >= 6U) && (s_expected_len == 0U))
         {
-            uint16_t payload_len = (uint16_t)(((uint16_t)s_rx_buf[4] << 8) | s_rx_buf[3]);
-            s_expected_len = (uint16_t)(7U + payload_len);
+            /* Check if could be new format: SrcAddr and DstAddr should be valid */
+            uint8_t possible_src = s_rx_buf[1];
+            uint8_t possible_dst = s_rx_buf[2];
+            uint8_t is_new_format = 0;
+            
+            if (rs485_is_valid_address(possible_src) && rs485_is_valid_address(possible_dst))
+            {
+                /* Likely new format: Header(1) + SrcAddr(1) + DstAddr(1) + Func(1) + Len(2) */
+                payload_len = (uint16_t)(((uint16_t)s_rx_buf[5] << 8) | s_rx_buf[4]);
+                s_expected_len = (uint16_t)(8U + payload_len);  /* New: 8 + payload */
+                is_new_format = 1;
+            }
+            else
+            {
+                /* Likely old format: Header(1) + Addr(1) + Func(1) + Len(2) */
+                /* But we need at least 5 bytes, check if s_rx_len >= 5 */
+                if (s_rx_len >= 5U)
+                {
+                    payload_len = (uint16_t)(((uint16_t)s_rx_buf[4] << 8) | s_rx_buf[3]);
+                    s_expected_len = (uint16_t)(7U + payload_len);  /* Old: 7 + payload */
+                }
+            }
+            
+            if (s_expected_len > 0U)
+            {
+                if ((s_expected_len < 7U) || (s_expected_len > RS485_RX_BUF_LEN))
+                {
+                    rs485_reset_parser();
+                    goto restart_rx_it;
+                }
+            }
+        }
+        else if ((s_rx_len >= 5U) && (s_expected_len == 0U))
+        {
+            /* Only have 5 bytes, must be old format */
+            payload_len = (uint16_t)(((uint16_t)s_rx_buf[4] << 8) | s_rx_buf[3]);
+            s_expected_len = (uint16_t)(7U + payload_len);  /* Old: 7 + payload */
+            
             if ((s_expected_len < 7U) || (s_expected_len > RS485_RX_BUF_LEN))
             {
                 rs485_reset_parser();

@@ -27,12 +27,22 @@ enum Event
 
 };
 
+/* Protocol format version */
+typedef enum
+{
+    RS485_PROTO_FMT_AUTO = 0,   /* Auto detect */
+    RS485_PROTO_FMT_OLD = 1,    /* Old format: Header + Addr + Func + Len + Data + XOR + Tail */
+    RS485_PROTO_FMT_NEW = 2,    /* New format: Header + SrcAddr + DstAddr + Func + Len + Data + XOR + Tail */
+} rs485_proto_format_t;
+
 typedef struct
 {
-    uint8_t address;
+    uint8_t src_addr;           /* Source address */
+    uint8_t dst_addr;           /* Destination address */
     uint8_t function;
     uint16_t data_len;
     const uint8_t *data;
+    uint8_t proto_format;       /* RS485_PROTO_FMT_OLD or RS485_PROTO_FMT_NEW */
 } rs485_packet_t;
 
 /* 校准设置结构体 (DAC_SET) */
@@ -80,10 +90,23 @@ typedef struct
     uint16_t pga;   // bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2; 编码0-7对应1,2,4,8,16,32,64,128倍
 } __attribute__((packed)) gain_set_payload_t;
 
-/* Protocol layer */
-int8_t rs485_build_frame(const rs485_packet_t *packet, uint8_t *out, uint16_t out_size, uint16_t *out_len);
+/* Protocol layer - build frame with format selection */
+int8_t rs485_build_frame_ex(const rs485_packet_t *packet, uint8_t *out, uint16_t out_size, uint16_t *out_len, rs485_proto_format_t format);
+
+/* Backward compatible wrapper - always uses new format */
+static inline int8_t rs485_build_frame(const rs485_packet_t *packet, uint8_t *out, uint16_t out_size, uint16_t *out_len)
+{
+    return rs485_build_frame_ex(packet, out, out_size, out_len, RS485_PROTO_FMT_NEW);
+}
+
+/* Parse packet - auto detect format */
 int8_t rs485_parse_packet(const uint8_t *frame, uint16_t frame_len, rs485_packet_t *packet_out);
+
+/* Send frame with legacy interface (backward compatible) */
 int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, const uint8_t *data, uint16_t len);
+
+/* Send frame with extended interface - supports format selection */
+int8_t rs485_send_frame_ex(uint8_t src_addr, uint8_t dst_addr, uint8_t cmd, const uint8_t *data, uint16_t len, rs485_proto_format_t format);
 void rs485_parse_frame(uint8_t *frame, uint16_t frame_len);
 void rs485_processor_poll(void);
 
@@ -103,7 +126,15 @@ int8_t rs485_subdev_set_dac(uint8_t addr, const dac_set_payload_t *dac_cfg);
 int8_t rs485_subdev_set_bridge(uint8_t addr, const bridge_set_payload_t *bridge_cfg);
 int8_t rs485_subdev_set_gain(uint8_t addr, const gain_set_payload_t *gain_cfg);
 
+/* 广播发送便捷接口 - 需包含 rs485.h 以使用 RS485_MASTER_ADDR 和 RS485_BROADCAST_ADDR */
+#define rs485_send_broadcast(cmd, data, len) \
+    rs485_send_frame_ex(RS485_MASTER_ADDR, RS485_BROADCAST_ADDR, cmd, data, len, RS485_PROTO_FMT_NEW)
+
+/* 使用旧格式发送（向后兼容） */
+#define rs485_send_frame_legacy(dev_num, cmd, data, len) \
+    rs485_send_frame_ex(RS485_MASTER_ADDR, dev_num, cmd, data, len, RS485_PROTO_FMT_OLD)
+
 /* 测试函数 */
 void rs485_subdev_config_test(void);
 
-#endif
+#endif /* __RS485_PROCESSOR_H */
