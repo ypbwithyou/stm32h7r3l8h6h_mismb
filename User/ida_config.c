@@ -607,7 +607,7 @@ int8_t IdaDeviceInit(void)
 
     test_filesystem();
 
-    rs485_subdev_scan_once();
+    // rs485_subdev_scan_once();
  
     return RET_OK;
 }

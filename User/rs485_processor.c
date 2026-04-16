@@ -110,6 +110,12 @@ void rs485_subdev_scan_once(void)
      * Old devices only understand old format
      * New devices can auto-detect old format and respond correctly
      */
+    // usb_printf("[Phase 1] Sending 512 bytes 0x00 to flush old protocol buffer...\r\n");
+    // {
+    //     uint8_t flush_buf[512];
+    //     memset(flush_buf, 0x00, sizeof(flush_buf));
+    //     (void)rs485_send_raw(flush_buf, sizeof(flush_buf));
+    // }
     usb_printf("[Phase 1] Scanning with OLD protocol...\r\n");
     for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
     {
@@ -136,10 +142,17 @@ void rs485_subdev_scan_once(void)
         }
     }
 
-    /* 
+
+    /*
      * Phase 2: Scan remaining addresses with NEW protocol
      * Only scan addresses that didn't respond in Phase 1
      */
+    // usb_printf("[Phase 2] Sending 512 bytes 0x00 to flush old protocol buffer...\r\n");
+    // {
+    //     uint8_t flush_buf[512];
+    //     memset(flush_buf, 0x00, sizeof(flush_buf));
+    //     (void)rs485_send_raw(flush_buf, sizeof(flush_buf));
+    // }
     usb_printf("[Phase 2] Scanning remaining addresses with NEW protocol...\r\n");
     for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
     {

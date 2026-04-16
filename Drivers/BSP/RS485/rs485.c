@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "usbd_cdc_if.h"
 #include "./MALLOC/malloc.h"
+#include "./SYSTEM/delay/delay.h"
 
 UART_HandleTypeDef rs485_uartx_handle = {0};
 
@@ -107,7 +108,16 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     uint32_t now_tick;
     uint16_t payload_len;
-    uint8_t min_header_len;
+    uint16_t old_expected_len = 0U;
+    uint16_t new_expected_len = 0U;
+
+    /* Debug: confirm entering interrupt */
+    static uint32_t rx_irq_cnt = 0;
+    rx_irq_cnt++;
+    if ((rx_irq_cnt % 10) == 0)  /* 每10次打印一次，避免刷屏 */
+    {
+        usb_printf("[DBG] Rx IRQ cnt=%lu, byte=0x%02X\r\n", rx_irq_cnt, s_rx_byte);
+    }
 
     if (huart->Instance != RS485_UARTX)
     {
@@ -141,52 +151,128 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
         s_rx_buf[s_rx_len++] = s_rx_byte;
 
-        /* 
-         * Auto-detect frame format based on minimum header received
-         * We need at least 5 bytes for old format (Header + Addr + Func + Len(2))
-         * We need at least 6 bytes for new format (Header + SrcAddr + DstAddr + Func + Len(2))
-         * Try to detect format by checking if addresses are valid in new format
+        /*
+         * Try to calculate expected frame length for both old and new formats
+         * Old format: Header(1) + Addr(1) + Func(1) + Len(2) + Data(n) + XOR(1) + Tail(1) = 7 + n
+         * New format: Header(1) + SrcAddr(1) + DstAddr(1) + Func(1) + Len(2) + Data(n) + XOR(1) + Tail(1) = 8 + n
+         *
+         * We need at least 5 bytes to calculate old format expected length
+         * We need at least 6 bytes to calculate new format expected length
+         *
+         * The approach: calculate BOTH possible expected lengths, then check if received
+         * data matches either one (ending with FRAME_END)
          */
         if ((s_rx_len >= 6U) && (s_expected_len == 0U))
         {
-            /* Check if could be new format: SrcAddr and DstAddr should be valid */
-            uint8_t possible_src = s_rx_buf[1];
-            uint8_t possible_dst = s_rx_buf[2];
-            uint8_t is_new_format = 0;
-            
-            if (rs485_is_valid_address(possible_src) && rs485_is_valid_address(possible_dst))
+            /* Try old format: Len is at bytes 3-4 */
+            payload_len = (uint16_t)(((uint16_t)s_rx_buf[4] << 8) | s_rx_buf[3]);
+            old_expected_len = (uint16_t)(7U + payload_len); /* Old: 7 + payload */
+
+            /* Try new format: Len is at bytes 4-5 */
+            payload_len = (uint16_t)(((uint16_t)s_rx_buf[5] << 8) | s_rx_buf[4]);
+            new_expected_len = (uint16_t)(8U + payload_len); /* New: 8 + payload */
+
+            /* Debug: print received bytes */
+            usb_printf("[RX] %02X %02X %02X %02X %02X %02X old_exp=%u new_exp=%u\r\n",
+                       s_rx_buf[0], s_rx_buf[1], s_rx_buf[2],
+                       s_rx_buf[3], s_rx_buf[4], s_rx_buf[5],
+                       old_expected_len, new_expected_len);
+
+            /* Validate expected lengths */
+            if ((old_expected_len >= 7U) && (old_expected_len <= RS485_RX_BUF_LEN))
             {
-                /* Likely new format: Header(1) + SrcAddr(1) + DstAddr(1) + Func(1) + Len(2) */
-                payload_len = (uint16_t)(((uint16_t)s_rx_buf[5] << 8) | s_rx_buf[4]);
-                s_expected_len = (uint16_t)(8U + payload_len);  /* New: 8 + payload */
-                is_new_format = 1;
+                /* Old format looks valid */
             }
             else
             {
-                /* Likely old format: Header(1) + Addr(1) + Func(1) + Len(2) */
-                /* But we need at least 5 bytes, check if s_rx_len >= 5 */
-                if (s_rx_len >= 5U)
-                {
-                    payload_len = (uint16_t)(((uint16_t)s_rx_buf[4] << 8) | s_rx_buf[3]);
-                    s_expected_len = (uint16_t)(7U + payload_len);  /* Old: 7 + payload */
-                }
+                old_expected_len = 0U; /* Invalid */
             }
-            
-            if (s_expected_len > 0U)
+
+            if ((new_expected_len >= 8U) && (new_expected_len <= RS485_RX_BUF_LEN))
             {
-                if ((s_expected_len < 7U) || (s_expected_len > RS485_RX_BUF_LEN))
+                /* New format looks valid */
+            }
+            else
+            {
+                new_expected_len = 0U; /* Invalid */
+            }
+
+            /* Choose the expected length:
+             * - If both are valid, wait until one matches
+             * - If only one is valid, use that one
+             * - If neither is valid, keep waiting for more data or timeout
+             */
+            if ((old_expected_len > 0U) && (new_expected_len > 0U))
+            {
+                /* Both could be valid - prefer the one that ends with FRAME_END */
+                /* Check if we've received exactly the old format length */
+                if (s_rx_len == old_expected_len)
                 {
-                    rs485_reset_parser();
-                    goto restart_rx_it;
+                    if (s_rx_buf[s_rx_len - 1U] == RS485_FRAME_END)
+                    {
+                        /* Old format frame complete */
+                        s_expected_len = old_expected_len;
+                    }
+                    else
+                    {
+                        /* Not old format, try new format if possible */
+                        if (s_rx_len >= new_expected_len)
+                        {
+                            if (s_rx_buf[new_expected_len - 1U] == RS485_FRAME_END)
+                            {
+                                s_expected_len = new_expected_len;
+                            }
+                        }
+                        else
+                        {
+                            /* Need more data for new format */
+                            s_expected_len = new_expected_len;
+                        }
+                    }
+                }
+                else if (s_rx_len == new_expected_len)
+                {
+                    if (s_rx_buf[s_rx_len - 1U] == RS485_FRAME_END)
+                    {
+                        /* New format frame complete */
+                        s_expected_len = new_expected_len;
+                    }
+                    else
+                    {
+                        /* Not new format, maybe old format has extra bytes? */
+                        if (old_expected_len < s_rx_len && s_rx_buf[old_expected_len - 1U] == RS485_FRAME_END)
+                        {
+                            s_expected_len = old_expected_len;
+                        }
+                    }
+                }
+                else if (old_expected_len < new_expected_len)
+                {
+                    /* Old format is shorter, set it first and wait for bytes */
+                    s_expected_len = old_expected_len;
+                }
+                else
+                {
+                    /* New format is shorter or equal */
+                    s_expected_len = new_expected_len;
                 }
             }
+            else if (old_expected_len > 0U)
+            {
+                s_expected_len = old_expected_len;
+            }
+            else if (new_expected_len > 0U)
+            {
+                s_expected_len = new_expected_len;
+            }
+            /* else: keep s_expected_len = 0, wait for more data */
         }
         else if ((s_rx_len >= 5U) && (s_expected_len == 0U))
         {
-            /* Only have 5 bytes, must be old format */
+            /* Only have 5 bytes, can only calculate old format */
             payload_len = (uint16_t)(((uint16_t)s_rx_buf[4] << 8) | s_rx_buf[3]);
-            s_expected_len = (uint16_t)(7U + payload_len);  /* Old: 7 + payload */
-            
+            s_expected_len = (uint16_t)(7U + payload_len); /* Old: 7 + payload */
+
             if ((s_expected_len < 7U) || (s_expected_len > RS485_RX_BUF_LEN))
             {
                 rs485_reset_parser();
@@ -200,6 +286,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
             {
                 rs485_publish_frame(s_rx_buf, s_rx_len);
             }
+            rs485_reset_parser();
+        }
+        else if ((s_expected_len > 0U) && (s_rx_len > s_expected_len))
+        {
+            /* Received more than expected - frame error */
             rs485_reset_parser();
         }
     }
@@ -240,6 +331,27 @@ int8_t rs485_send_raw(const uint8_t *buf, uint16_t len)
 
     RS485_RE(1);
     hret = HAL_UART_Transmit(&rs485_uartx_handle, (uint8_t *)buf, len, 1000U);
+
+    /* Wait for transmission complete (TC flag) before switching to RX mode.
+     * This ensures the last byte has left the shift register and is on the bus.
+     * Critical for RS485 half-duplex communication.
+     */
+    if (hret == HAL_OK)
+    {
+        uint32_t tc_start = HAL_GetTick();
+        while (!__HAL_UART_GET_FLAG(&rs485_uartx_handle, UART_FLAG_TC))
+        {
+            if ((HAL_GetTick() - tc_start) > 100U)  /* 100ms timeout for TC */
+            {
+                hret = HAL_TIMEOUT;
+                break;
+            }
+        }
+    }
+
+    /* Add small delay for RS485 transceiver direction change */
+    delay_us(100);  /* 100us delay, adjust based on your transceiver specs */
+
     RS485_RE(0);
 
     return (hret == HAL_OK) ? 0 : -1;
@@ -309,12 +421,21 @@ int8_t rs485_read_raw_frame(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
     }
 
     /* 调试：打印从驱动层读取到的原始帧数据 */
-    usb_printf("[DBG] rs485_read_raw_frame: s_ready_flag=%d, len=%d, data=", s_ready_flag, len);
-    for (i = 0U; i < len; i++)
     {
-        usb_printf("%02X ", s_ready_buf[i]);
+        char dbg_buf[512];
+        int dbg_pos = 0;
+        dbg_pos += sprintf(dbg_buf + dbg_pos, "[DBG] rs485_read_raw_frame: s_ready_flag=%d, len=%d, data=", s_ready_flag, len);
+        for (i = 0U; i < len; i++)
+        {
+            dbg_pos += sprintf(dbg_buf + dbg_pos, "%02X ", s_ready_buf[i]);
+            if (dbg_pos >= sizeof(dbg_buf) - 10) /* 预留空间避免溢出 */
+            {
+                break;
+            }
+        }
+        dbg_pos += sprintf(dbg_buf + dbg_pos, "\r\n");
+        usb_printf("%s", dbg_buf);
     }
-    usb_printf("\r\n");
 
     *out_len = len;
     s_ready_flag = 0U;
