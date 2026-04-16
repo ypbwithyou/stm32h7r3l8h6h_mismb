@@ -414,7 +414,7 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
     switch (pkt.function)
     {
     case DEVINFO_READ_REQ_ACK:
-        usb_printf("rs485_parse_frame DEVINFO_READ_REQ_ACK src=%d dst=%d\n", pkt.src_addr, pkt.dst_addr);
+        usb_printf("rs485_parse_frame DEVINFO_READ_REQ_ACK src=%d dst=%d\r\n", pkt.src_addr, pkt.dst_addr);
         if (pkt.data_len == sizeof(SubDevicelnfo))
         {
             const SubDevicelnfo *info = (const SubDevicelnfo *)pkt.data;
@@ -423,7 +423,26 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
                 memcpy(&g_SubDevicelnfo[device_addr - 1U], info, sizeof(SubDevicelnfo));
                 g_subdev_valid[device_addr - 1U] = 1U;
                 g_subdev_last_tick[device_addr - 1U] = HAL_GetTick();
+                
+                /* Print sub-device info */
+                usb_printf("  [SubDev Info] Addr=%d\r\n", device_addr);
+                usb_printf("    - SerialNumber: %s\r\n", (char *)info->SerialNumber);
+                usb_printf("    - DeviceName: %s\r\n", (char *)info->DeviceName);
+                usb_printf("    - DeviceType: %d\r\n", info->DeviceType);
+                usb_printf("    - SlotId: %d\r\n", info->SlotId);
+                usb_printf("    - Version: %s\r\n", (char *)info->Version);
+                usb_printf("    - Sensitivity: %d\r\n", info->Sensitivity);
+                usb_printf("  [SubDev Info End]\r\n");
             }
+            else
+            {
+                usb_printf("  [SubDev Info] Invalid payload for addr=%d\r\n", device_addr);
+            }
+        }
+        else
+        {
+            usb_printf("  [SubDev Info] Data length mismatch: got %d, expected %d\r\n", 
+                       pkt.data_len, sizeof(SubDevicelnfo));
         }
         break;
     case DEVINFO_WRITE_REQ_ACK:
