@@ -645,20 +645,20 @@ static uint32_t USB_SubDevConfig_Read(uint8_t *data_in, uint32_t data_len, Frame
     SubDevicelnfo read_info;
 
     addr = (uint8_t)user_head->nParameters0;
-    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
-    {
-        usb_printf("USB_SubDevConfig_Read err: invalid addr=%d\n", addr);
-        FrameHeadInfo reply_frame_head = create_default_frame_head(0);
-        UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_READ_Done_OK,
-                                                                  SOURCE_TYPE_NO_DATA,
-                                                                  DESTINATION_ARM_TO_PC,
-                                                                  0);
-        reply_user_head.nParameters0 = -1;
+    // if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX))
+    // {
+    //     usb_printf("USB_SubDevConfig_Read err: invalid addr=%d\n", addr);
+    //     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    //     UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_READ_Done_OK,
+    //                                                               SOURCE_TYPE_NO_DATA,
+    //                                                               DESTINATION_ARM_TO_PC,
+    //                                                               0);
+    //     reply_user_head.nParameters0 = -1;
 
-        uint32_t packet_len = 0;
-        pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
-        return packet_len;
-    }
+    //     uint32_t packet_len = 0;
+    //     pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+    //     return packet_len;
+    // }
 
     usb_printf("USB_SubDevConfig_Read addr:%d \n", addr);
     g_subdev_valid[addr - 1U] = 0U;

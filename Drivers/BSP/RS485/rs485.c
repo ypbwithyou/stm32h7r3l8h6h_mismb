@@ -1,5 +1,8 @@
 #include "./BSP/RS485/rs485.h"
 #include <string.h>
+#include <stdio.h>
+#include "usbd_cdc_if.h"
+#include "./MALLOC/malloc.h"
 
 UART_HandleTypeDef rs485_uartx_handle = {0};
 
@@ -164,10 +167,31 @@ restart_rx_it:
 int8_t rs485_send_raw(const uint8_t *buf, uint16_t len)
 {
     HAL_StatusTypeDef hret;
+    uint16_t i;
+    char *hex_str = NULL;
+    int pos;
+    int str_size;
 
     if ((buf == NULL) || (len == 0U))
     {
         return -1;
+    }
+
+    /* 动态申请内存构建 hex 字符串 */
+    str_size = len * 3 + 32;
+    hex_str = (char *)mymalloc(SRAMIN, str_size);
+    if (hex_str != NULL)
+    {
+        /* 构建 hex 字符串 */
+        pos = snprintf(hex_str, str_size, "RS485 TX [len=%d]: ", len);
+        for (i = 0U; i < len && pos < str_size - 4; i++)
+        {
+            pos += snprintf(hex_str + pos, str_size - pos, "%02X ", buf[i]);
+        }
+        strcat(hex_str, "\r\n");
+        usb_printf("%s", hex_str);
+
+        myfree(SRAMIN, hex_str);
     }
 
     RS485_RE(1);
@@ -203,6 +227,7 @@ int8_t rs485_read_raw_frame(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
     uint32_t seq1;
     uint32_t seq2;
     uint16_t len;
+    uint16_t i;
 
     if ((buf == NULL) || (out_len == NULL))
     {
@@ -238,6 +263,14 @@ int8_t rs485_read_raw_frame(uint8_t *buf, uint16_t buf_size, uint16_t *out_len)
             break;
         }
     }
+
+    /* 调试：打印从驱动层读取到的原始帧数据 */
+    usb_printf("[DBG] rs485_read_raw_frame: s_ready_flag=%d, len=%d, data=", s_ready_flag, len);
+    for (i = 0U; i < len; i++)
+    {
+        usb_printf("%02X ", s_ready_buf[i]);
+    }
+    usb_printf("\r\n");
 
     *out_len = len;
     s_ready_flag = 0U;

@@ -2,7 +2,9 @@
 #include "./BSP/RS485/rs485.h"
 #include "usb_processor.h"
 #include <string.h>
+#include <stdio.h>
 #include "usbd_cdc_if.h"
+#include "./MALLOC/malloc.h"
 
 uint8_t g_subdev_valid[RS485_SUBDEV_MAX] = {0};
 uint32_t g_subdev_last_tick[RS485_SUBDEV_MAX] = {0};
@@ -209,10 +211,10 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
         return;
     }
 
-    if ((pkt.address < RS485_SLAVE_ADDR_MIN) || (pkt.address > RS485_SLAVE_ADDR_MAX))
-    {
-        return;
-    }
+    // if ((pkt.address < RS485_SLAVE_ADDR_MIN) || (pkt.address > RS485_SLAVE_ADDR_MAX))
+    // {
+    //     return;
+    // }
 
     switch (pkt.function)
     {
@@ -301,10 +303,10 @@ int8_t rs485_send_frame(uint8_t dev_num, uint8_t cmd, const uint8_t *data, uint1
     {
         return -1;
     }
-    if ((dev_num < RS485_SLAVE_ADDR_MIN) || (dev_num > RS485_SLAVE_ADDR_MAX))
-    {
-        return -1;
-    }
+    // if ((dev_num < RS485_SLAVE_ADDR_MIN) || (dev_num > RS485_SLAVE_ADDR_MAX))
+    // {
+    //     return -1;
+    // }
 
     pkt.address = dev_num;
     pkt.function = cmd;
@@ -397,11 +399,10 @@ void rs485_subdev_config_test(void)
         if (rs485_subdev_is_valid(addr))
         {
             dac_set_payload_t dac_cfg = {
-                .bitflag = 0x07,  // 全1, 统一设置3个通道
+                .bitflag = 0x07, // 全1, 统一设置3个通道
                 .voltage0 = 2.5f,
                 .voltage1 = 2.5f,
-                .voltage2 = 2.5f
-            };
+                .voltage2 = 2.5f};
             ret = rs485_subdev_set_dac(addr, &dac_cfg);
             usb_printf("DAC_SET to addr=%d, bitflag=0x%02X, voltages={%.2f,%.2f,%.2f}, ret=%d\r\n",
                        addr, dac_cfg.bitflag, dac_cfg.voltage0, dac_cfg.voltage1, dac_cfg.voltage2, ret);
@@ -480,8 +481,8 @@ void rs485_subdev_config_test(void)
         if (rs485_subdev_is_valid(addr))
         {
             gain_set_payload_t gain_cfg = {
-                .gain = 0x07,  // bit0-2=1, 3个通道都是10倍
-                .pga = 0x01C7  // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
+                .gain = 0x07, // bit0-2=1, 3个通道都是10倍
+                .pga = 0x01C7 // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
             };
             ret = rs485_subdev_set_gain(addr, &gain_cfg);
             usb_printf("GAIN_SET to addr=%d, gain=0x%02X, pga=0x%04X, ret=%d\r\n",
