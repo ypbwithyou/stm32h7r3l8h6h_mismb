@@ -19,12 +19,14 @@ enum Event
     BRIDGE_SET = 0x04,
     BRIDGE_SET_ACK = 0x05,
 
-    GAIN_SET = 0x06,
-    GAIN_SET_ACK = 0x07,
+    BRIDGE_GAIN_SET = 0x06,
+    BRIDGE_GAIN_SET_ACK = 0x07,
 
-    DAC_SET = 0x08,
-    DAC_SET_ACK = 0x09,
+    BRIDGE_DAC_SET = 0x08,
+    BRIDGE_DAC_SET_ACK = 0x09,
 
+    BRIDGE_PWM_SET = 0x0A,
+    BRIDGE_PWM_SET_ACK = 0x0B,
 };
 
 typedef struct

@@ -437,7 +437,6 @@ static void CheckMcuPwrStatus(void);
 static void CheckMcuRunStatus(void);
 
 static int8_t format_emmc(void);
- 
 
 FRESULT safe_f_mount(FATFS *fs, const TCHAR *drive, BYTE opt, uint8_t max_retries);
 int8_t check_filesystem_status(const TCHAR *drive);
@@ -608,7 +607,10 @@ int8_t IdaDeviceInit(void)
     test_filesystem();
 
     rs485_subdev_scan_once();
- 
+
+    // 测试桥路配置
+    rs485_subdev_config_test();
+
     return RET_OK;
 }
 
@@ -719,7 +721,7 @@ static int8_t format_emmc(void)
 /**
  * @brief 创建测试文件和目录，验证文件系统功能
  */
-  int8_t test_filesystem(void)
+int8_t test_filesystem(void)
 {
     FRESULT fres; /* FatFs function result */
     FIL fil;
@@ -1147,7 +1149,7 @@ int8_t app_processor(void)
 
     // 离线初始化
     SysRunStatusInit();
- 
+
     uint8_t *frame_copy = (uint8_t *)mymalloc(SRAMEX, SWR_BUFFER_SIZE);
     if (!frame_copy)
     {
