@@ -268,7 +268,7 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
             }
         }
         break;
-        case BRIDGE_GAIN_SET_ACK:
+    case BRIDGE_GAIN_SET_ACK:
         usb_printf("rs485_parse_frame BRIDGE_GAIN_SET_ACK %d, data_len=%d\n", pkt.address, pkt.data_len);
         if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
         {
@@ -282,7 +282,7 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
             }
         }
         break;
-        case BRIDGE_DAC_SET_ACK:
+    case BRIDGE_DAC_SET_ACK:
         usb_printf("rs485_parse_frame BRIDGE_DAC_SET_ACK %d, data_len=%d\n", pkt.address, pkt.data_len);
         if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
         {
@@ -411,18 +411,21 @@ void rs485_subdev_config_test(void)
                 .voltage0 = 2.5f,
                 .voltage1 = 2.5f,
                 .voltage2 = 2.5f};
+            rs485_subdev_clear_write_ack(addr); /* 清ACK状态，避免旧数据干扰 */
             ret = rs485_subdev_set_dac(addr, &dac_cfg);
             usb_printf("BRIDGE_DAC_SET to addr=%d, bitflag=0x%02X, voltages={%.2f,%.2f,%.2f}, ret=%d\r\n",
                        addr, dac_cfg.bitflag, dac_cfg.voltage0, dac_cfg.voltage1, dac_cfg.voltage2, ret);
 
-            /* 等待ACK */
+            /* 等待ACK - 最多200ms */
             uint32_t start_tick = HAL_GetTick();
-            while ((HAL_GetTick() - start_tick) < 100)
+            uint8_t ack_received = 0;
+            while ((HAL_GetTick() - start_tick) < 200)
             {
                 rs485_processor_poll();
                 ack_status = rs485_subdev_get_write_ack(addr);
                 if (ack_status >= 0) /* -1=no response, >=0=received */
                 {
+                    ack_received = 1;
                     if (ack_status == 0)
                     {
                         usb_printf("BRIDGE_DAC_SET_ACK: addr=%d SUCCESS\r\n", addr);
@@ -435,12 +438,14 @@ void rs485_subdev_config_test(void)
                     break;
                 }
             }
-            if (rs485_subdev_get_write_ack(addr) < 0)
+            if (!ack_received)
             {
                 usb_printf("BRIDGE_DAC_SET: addr=%d TIMEOUT (no ACK)\r\n", addr);
             }
+            HAL_Delay(20); /* 命令间延时，给子板处理时间 */
         }
     }
+    HAL_Delay(50); /* 命令类型间延时 */
 
     /* 测试桥路设置 - 使能激励，全桥，接入分流电阻 */
     for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
@@ -452,18 +457,21 @@ void rs485_subdev_config_test(void)
                 .bridge = 0x00,     // bit0-2=0, 全桥
                 .bridgeShunt = 0x07 // bit0-2=1, 3个通道都接入分流电阻
             };
+            rs485_subdev_clear_write_ack(addr); /* 清ACK状态，避免旧数据干扰 */
             ret = rs485_subdev_set_bridge(addr, &bridge_cfg);
             usb_printf("BRIDGE_SET to addr=%d, exc_en=%d, bridge=0x%02X, bridgeShunt=0x%02X, ret=%d\r\n",
                        addr, bridge_cfg.exc_en, bridge_cfg.bridge, bridge_cfg.bridgeShunt, ret);
 
-            /* 等待ACK */
+            /* 等待ACK - 最多200ms */
             uint32_t start_tick = HAL_GetTick();
-            while ((HAL_GetTick() - start_tick) < 100)
+            uint8_t ack_received = 0;
+            while ((HAL_GetTick() - start_tick) < 200)
             {
                 rs485_processor_poll();
                 ack_status = rs485_subdev_get_write_ack(addr);
                 if (ack_status >= 0)
                 {
+                    ack_received = 1;
                     if (ack_status == 0)
                     {
                         usb_printf("BRIDGE_SET_ACK: addr=%d SUCCESS\r\n", addr);
@@ -476,12 +484,14 @@ void rs485_subdev_config_test(void)
                     break;
                 }
             }
-            if (rs485_subdev_get_write_ack(addr) < 0)
+            if (!ack_received)
             {
                 usb_printf("BRIDGE_SET: addr=%d TIMEOUT (no ACK)\r\n", addr);
             }
+            HAL_Delay(20); /* 命令间延时，给子板处理时间 */
         }
     }
+    HAL_Delay(50); /* 命令类型间延时 */
 
     /* 测试增益设置 - 10倍增益，PGA放大128倍 */
     for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
@@ -492,18 +502,21 @@ void rs485_subdev_config_test(void)
                 .gain = 0x07, // bit0-2=1, 3个通道都是10倍
                 .pga = 0x01C7 // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
             };
+            rs485_subdev_clear_write_ack(addr); /* 清ACK状态，避免旧数据干扰 */
             ret = rs485_subdev_set_gain(addr, &gain_cfg);
             usb_printf("BRIDGE_GAIN_SET to addr=%d, gain=0x%02X, pga=0x%04X, ret=%d\r\n",
                        addr, gain_cfg.gain, gain_cfg.pga, ret);
 
-            /* 等待ACK */
+            /* 等待ACK - 最多200ms */
             uint32_t start_tick = HAL_GetTick();
-            while ((HAL_GetTick() - start_tick) < 100)
+            uint8_t ack_received = 0;
+            while ((HAL_GetTick() - start_tick) < 200)
             {
                 rs485_processor_poll();
                 ack_status = rs485_subdev_get_write_ack(addr);
                 if (ack_status >= 0)
                 {
+                    ack_received = 1;
                     if (ack_status == 0)
                     {
                         usb_printf("BRIDGE_GAIN_SET_ACK: addr=%d SUCCESS\r\n", addr);
@@ -516,12 +529,14 @@ void rs485_subdev_config_test(void)
                     break;
                 }
             }
-            if (rs485_subdev_get_write_ack(addr) < 0)
+            if (!ack_received)
             {
                 usb_printf("BRIDGE_GAIN_SET: addr=%d TIMEOUT (no ACK)\r\n", addr);
             }
+            HAL_Delay(20); /* 命令间延时，给子板处理时间 */
         }
     }
+    HAL_Delay(50); /* 命令类型间延时 */
 
     usb_printf("===== RS485 Subdev Config Test End =====\r\n");
 }
