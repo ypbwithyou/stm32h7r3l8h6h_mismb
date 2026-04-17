@@ -226,6 +226,16 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
                 memcpy(&g_SubDevicelnfo[pkt.address - 1U], info, sizeof(SubDevicelnfo));
                 g_subdev_valid[pkt.address - 1U] = 1U;
                 g_subdev_last_tick[pkt.address - 1U] = HAL_GetTick();
+
+                /* Print sub-device info */
+                usb_printf("  [SubDev Info] Addr=%d\r\n", pkt.address);
+                usb_printf("    - SerialNumber: %s\r\n", (char *)info->SerialNumber);
+                usb_printf("    - DeviceName: %s\r\n", (char *)info->DeviceName);
+                usb_printf("    - DeviceType: %d\r\n", info->DeviceType);
+                usb_printf("    - SlotId: %d\r\n", info->SlotId);
+                usb_printf("    - Version: %s\r\n", (char *)info->Version);
+                usb_printf("    - Sensitivity: %d\r\n", info->Sensitivity);
+                usb_printf("  [SubDev Info End]\r\n");
             }
         }
         break;
@@ -397,11 +407,10 @@ void rs485_subdev_config_test(void)
         if (rs485_subdev_is_valid(addr))
         {
             dac_set_payload_t dac_cfg = {
-                .bitflag = 0x07,  // 全1, 统一设置3个通道
+                .bitflag = 0x07, // 全1, 统一设置3个通道
                 .voltage0 = 2.5f,
                 .voltage1 = 2.5f,
-                .voltage2 = 2.5f
-            };
+                .voltage2 = 2.5f};
             ret = rs485_subdev_set_dac(addr, &dac_cfg);
             usb_printf("DAC_SET to addr=%d, bitflag=0x%02X, voltages={%.2f,%.2f,%.2f}, ret=%d\r\n",
                        addr, dac_cfg.bitflag, dac_cfg.voltage0, dac_cfg.voltage1, dac_cfg.voltage2, ret);
@@ -480,8 +489,8 @@ void rs485_subdev_config_test(void)
         if (rs485_subdev_is_valid(addr))
         {
             gain_set_payload_t gain_cfg = {
-                .gain = 0x07,  // bit0-2=1, 3个通道都是10倍
-                .pga = 0x01C7  // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
+                .gain = 0x07, // bit0-2=1, 3个通道都是10倍
+                .pga = 0x01C7 // bit6-8=1, bit3-5=1, bit0-2=1 (全部128倍)
             };
             ret = rs485_subdev_set_gain(addr, &gain_cfg);
             usb_printf("GAIN_SET to addr=%d, gain=0x%02X, pga=0x%04X, ret=%d\r\n",
