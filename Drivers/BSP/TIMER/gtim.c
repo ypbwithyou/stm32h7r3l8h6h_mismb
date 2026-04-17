@@ -107,11 +107,9 @@ static void gtim_copy_rx_to_adc_buf(uint8_t spi_idx)
 
 static void gtim_collect_frame_polling(void)
 {
-    // ads8319_start_convst();
-
     ADS8319_CONVST_HIGH();
 
-    for (uint16_t i = 0; i < 1000U; i++)
+    for (uint16_t i = 0; i < 1100U; i++)
     {
         __NOP();
     }
@@ -126,14 +124,8 @@ static void gtim_collect_frame_polling(void)
         ads8319_read_daisy_chain_fast((unsigned int)(spi + 1U), g_spi_adc_cnt[spi], g_adc_buf[spi]);
         g_dma_cplt_count[spi]++;
     }
-
-    // ads8319_stop_transfer();
-
+ 
     ADS8319_CONVST_LOW();
-    for (uint16_t i = 0; i < 20; i++)
-    {
-        __NOP();
-    }
 
     for (uint8_t i = 0U; i < g_write_cnt; i++)
     {
@@ -142,12 +134,6 @@ static void gtim_collect_frame_polling(void)
         uint8_t ch = g_write_ch[i];
         cb_write(g_cb_ch[ch], (const char *)&g_adc_buf[spi][pos], ADC_DATA_LEN);
     }
-
-    // g_dma_finish_count++;
-    // g_dma_busy = 0U;
-    // g_dma_pending_mask = 0U;
-    // g_dma_done_mask = 0U;
-    // g_dma_fail_streak = 0U;
 }
 
 static void gtim_finish_frame_from_isr(void)
