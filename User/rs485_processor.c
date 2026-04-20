@@ -567,5 +567,48 @@ void rs485_subdev_config_test(void)
     }
     HAL_Delay(50); /* 命令类型间延时 */
 
+    /* 测试PWM频率设置 - 设置为25600Hz */
+    for (addr = RS485_SLAVE_ADDR_MIN; addr <= RS485_SLAVE_ADDR_MAX; addr++)
+    {
+        if (rs485_subdev_is_valid(addr))
+        {
+            pwm_set_payload_t pwm_cfg = {
+                .pwm_freq = 25600 // 25600Hz PWM频率
+            };
+            rs485_subdev_clear_write_ack(addr); /* 清ACK状态，避免旧数据干扰 */
+            ret = rs485_subdev_set_pwm(addr, &pwm_cfg);
+            usb_printf("BRIDGE_PWM_SET to addr=%d, pwm_freq=%d, ret=%d\r\n", addr, pwm_cfg.pwm_freq, ret);
+
+            /* 等待ACK - 最多200ms */
+            uint32_t start_tick = HAL_GetTick();
+            uint8_t ack_received = 0;
+            while ((HAL_GetTick() - start_tick) < 200)
+            {
+                rs485_processor_poll();
+                ack_status = rs485_subdev_get_write_ack(addr);
+                if (ack_status >= 0) /* -1=no response, >=0=received */
+                {
+                    ack_received = 1;
+                    if (ack_status == 0)
+                    {
+                        usb_printf("BRIDGE_PWM_SET_ACK: addr=%d SUCCESS\r\n", addr);
+                    }
+                    else
+                    {
+                        usb_printf("BRIDGE_PWM_SET_ACK: addr=%d FAILED, err=0x%02X\r\n", addr, ack_status);
+                    }
+                    rs485_subdev_clear_write_ack(addr);
+                    break;
+                }
+            }
+            if (!ack_received)
+            {
+                usb_printf("BRIDGE_PWM_SET: addr=%d TIMEOUT (no ACK)\r\n", addr);
+            }
+            HAL_Delay(20); /* 命令间延时，给子板处理时间 */
+        }
+    }
+    HAL_Delay(50); /* 命令类型间延时 */
+
     usb_printf("===== RS485 Subdev Config Test End =====\r\n");
 }
