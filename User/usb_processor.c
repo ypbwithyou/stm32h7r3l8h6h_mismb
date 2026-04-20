@@ -814,10 +814,26 @@ static uint32_t USB_SubDevId_Update(uint8_t *data_in, uint32_t data_len, FrameHe
 // 处理PC->ARM的DVSARM_CSP_START事件
 static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
-    (void)frame_head;
-    (void)user_head;
+	(void)frame_head;
+	(void)user_head;
 
-    int userDataLoc = 0;
+	// 判断是否是离线模式，如果是离线模式直接返回错误
+	if (g_offline_mode == 1)
+	{
+		usb_printf("[CollectChCfg] Rejected: device is in offline mode\r\n");
+		return PackReplyWithoutDatasParam(DVSARM_CSP_START_OK, -1);
+	}
+
+	// 如果正在运行，先停止采集
+	if (g_IdaSystemStatus.st_dev_run.run_flag == 1)
+	{
+		g_IdaSystemStatus.st_dev_run.run_flag = 0;
+		AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+		AdcCbClear();
+		usb_printf("[CollectChCfg] Acquisition stopped for reconfiguration\r\n");
+	}
+
+	int userDataLoc = 0;
 
     // ---------------- 解析ChannelTableHeader ----------------
     if (data_len < userDataLoc + sizeof(ChannelTableHeader))
