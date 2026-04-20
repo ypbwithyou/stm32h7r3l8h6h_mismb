@@ -574,6 +574,7 @@ void rs485_subdev_config_test(void)
         {
             pwm_set_payload_t pwm_cfg = {
                 .pwm_freq = 25600 // 25600Hz PWM频率
+                // .pwm_freq = 0x3C3E // 测试命令解析
             };
             rs485_subdev_clear_write_ack(addr); /* 清ACK状态，避免旧数据干扰 */
             ret = rs485_subdev_set_pwm(addr, &pwm_cfg);
