@@ -39,11 +39,12 @@
  */
 typedef struct
 {
-    uint8_t  bridge_type[BRIDGE_CHANNELS_PER_SUBDEV];   /* 每个通道的桥路类型 */
-    uint8_t  shunt_calib[BRIDGE_CHANNELS_PER_SUBDEV];   /* 每个通道的分流校准类型 */
-    uint16_t pga[BRIDGE_CHANNELS_PER_SUBDEV];           /* 每个通道的PGA增益值 */
-    uint8_t  gain[BRIDGE_CHANNELS_PER_SUBDEV];          /* 每个通道的增益值 (0=1倍, 1=10倍) */
-    float    voltage[BRIDGE_CHANNELS_PER_SUBDEV];       /* 每个通道的DAC电压值 */
+    uint8_t bridge_type[BRIDGE_CHANNELS_PER_SUBDEV];  /* 每个通道的桥路类型 */
+    uint8_t shunt_calib[BRIDGE_CHANNELS_PER_SUBDEV];  /* 每个通道的分流校准类型 */
+    uint16_t pga[BRIDGE_CHANNELS_PER_SUBDEV];         /* 每个通道的PGA增益值 */
+    uint8_t gain[BRIDGE_CHANNELS_PER_SUBDEV];       /* 每个通道的增益值 (0=1倍, 1=10倍) */
+    float voltage[BRIDGE_CHANNELS_PER_SUBDEV];        /* 每个通道的DAC电压值 */
+    uint32_t pwm_freq;                                /* PWM频率，单位Hz */
 } bridge_subdev_cfg_t;
 
 /**
@@ -112,12 +113,14 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
 /**
  * @brief 配置所有桥路子设备
  * @param channel_table_elem 通道配置表数组指针
- * @param total_channel_num  总通道数
+ * @param total_channel_num 总通道数
+ * @param pwm_freq PWM频率值，单位Hz (来自USB_CollectChCfg_Reply中的sample_rate)
  * @return 0=全部成功, -1=配置失败
  * @note 依次配置每个子设备，一个失败即返回错误
  */
 int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
-                                  uint32_t total_channel_num);
+                                  uint32_t total_channel_num,
+                                  uint32_t pwm_freq);
 
 /**
  * @brief 等待子设备配置ACK

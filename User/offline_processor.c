@@ -422,21 +422,21 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
 
     CfgAdcSampleRate(sample_rate);
 
-    /* ---------- 配置桥路子设备 ---------- */
-    {
-        int8_t bridge_ret;
-        bridge_ret = bridge_config_all_subdevs(g_offline_chCfgParam, g_offline_chCfgHeader.nTotalChannelNum);
-        if (bridge_ret != 0)
+        /* ---------- 配置桥路子设备 ---------- */
         {
-            usb_printf("[Offline ACQ_Start] Bridge subdev config failed, ret=%d\r\n", bridge_ret);
-            /* 桥路配置失败不阻塞采集启动，仅记录日志 */
+            int8_t bridge_ret;
+            bridge_ret = bridge_config_all_subdevs(g_offline_chCfgParam, g_offline_chCfgHeader.nTotalChannelNum, sample_rate);
+            if (bridge_ret != 0)
+            {
+                usb_printf("[Offline ACQ_Start] Bridge subdev config failed, ret=%d\r\n", bridge_ret);
+                /* 桥路配置失败不阻塞采集启动，仅记录日志 */
+            }
+            else
+            {
+                usb_printf("[Offline ACQ_Start] Bridge subdev config success\r\n");
+            }
         }
-        else
-        {
-            usb_printf("[Offline ACQ_Start] Bridge subdev config success\r\n");
-        }
-    }
-    /* ----------------------------------- */
+        /* ----------------------------------- */
 
     g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);

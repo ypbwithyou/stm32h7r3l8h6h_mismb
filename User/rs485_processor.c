@@ -296,6 +296,20 @@ void rs485_parse_frame(uint8_t *frame, uint16_t frame_len)
             }
         }
         break;
+    case BRIDGE_PWM_SET_ACK:
+        usb_printf("rs485_parse_frame BRIDGE_PWM_SET_ACK %d, data_len=%d\n", pkt.address, pkt.data_len);
+        if ((pkt.address >= RS485_SLAVE_ADDR_MIN) && (pkt.address <= RS485_SLAVE_ADDR_MAX))
+        {
+            if (pkt.data_len == 1U)
+            {
+                g_subdev_write_ack[pkt.address - 1U] = (int8_t)(pkt.data[0]);
+            }
+            else
+            {
+                g_subdev_write_ack[pkt.address - 1U] = 0;
+            }
+        }
+        break;
     default:
         break;
     }
@@ -385,6 +399,21 @@ int8_t rs485_subdev_set_gain(uint8_t addr, const gain_set_payload_t *gain_cfg)
         return -1;
     }
     return rs485_send_frame(addr, BRIDGE_GAIN_SET, (const uint8_t *)gain_cfg, sizeof(gain_set_payload_t));
+}
+
+/**
+ * @brief 发送PWM频率设置命令到子板
+ * @param addr 子板地址 (1-8)
+ * @param pwm_cfg PWM频率配置参数
+ * @return 0=成功, -1=失败
+ */
+int8_t rs485_subdev_set_pwm(uint8_t addr, const pwm_set_payload_t *pwm_cfg)
+{
+    if ((addr < RS485_SLAVE_ADDR_MIN) || (addr > RS485_SLAVE_ADDR_MAX) || (pwm_cfg == NULL))
+    {
+        return -1;
+    }
+    return rs485_send_frame(addr, BRIDGE_PWM_SET, (const uint8_t *)pwm_cfg, sizeof(pwm_set_payload_t));
 }
 
 /* 测试函数实现 */

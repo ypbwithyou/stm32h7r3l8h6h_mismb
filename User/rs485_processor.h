@@ -65,22 +65,31 @@ typedef struct
 
 /* 增益设置结构体 (GAIN_SET)
  * @note 量程增益映射 (nInputRange 0-5):
- *       gain字段: bit0=通道0, bit1=通道1, bit2=通道2; 0=1倍, 1=10倍
- *       pga字段: bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2
- *       PGA编码: 0=1倍, 1=2倍, 2=4倍, 4=8倍, 7=128倍
- *       nInputRange映射:
- *         0 -> gain=0(1倍), pga=1 (2.5V)
- *         1 -> gain=0(1倍), pga=2 (1.25V)
- *         2 -> gain=1(10倍), pga=10 (0.25V)
- *         3 -> gain=1(10倍), pga=20 (0.125V)
- *         4 -> gain=1(10倍), pga=128 (0.01953125V)
- *         5 -> gain=1(10倍), pga=1280 (0.001953125V)
+ * gain字段: bit0=通道0, bit1=通道1, bit2=通道2; 0=1倍, 1=10倍
+ * pga字段: bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2
+ * PGA编码: 0=1倍, 1=2倍, 2=4倍, 4=8倍, 7=128倍
+ * nInputRange映射:
+ * 0 -> gain=0(1倍), pga=1 (2.5V)
+ * 1 -> gain=0(1倍), pga=2 (1.25V)
+ * 2 -> gain=1(10倍), pga=10 (0.25V)
+ * 3 -> gain=1(10倍), pga=20 (0.125V)
+ * 4 -> gain=1(10倍), pga=128 (0.01953125V)
+ * 5 -> gain=1(10倍), pga=1280 (0.001953125V)
  */
 typedef struct
 {
-    uint8_t gain;   // bit0=通道0, bit1=通道1, bit2=通道2; 0=1倍, 1=10倍
-    uint16_t pga;   // bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2; 编码0-7对应1,2,4,8,16,32,64,128倍
+    uint8_t gain;  // bit0=通道0, bit1=通道1, bit2=通道2; 0=1倍, 1=10倍
+    uint16_t pga;  // bit0-2=PGA0, bit3-5=PGA1, bit6-8=PGA2; 编码0-7对应1,2,4,8,16,32,64,128倍
 } __attribute__((packed)) gain_set_payload_t;
+
+/* PWM频率设置结构体 (BRIDGE_PWM_SET)
+ * @note PWM频率值，单位Hz，小端字节序传输
+ * 从USB_CollectChCfg_Reply中的fHardwareSampleRate转换而来
+ */
+typedef struct
+{
+    uint32_t pwm_freq;  // PWM频率，单位Hz（小端字节序）
+} __attribute__((packed)) pwm_set_payload_t;
 
 /* Protocol layer */
 int8_t rs485_build_frame(const rs485_packet_t *packet, uint8_t *out, uint16_t out_size, uint16_t *out_len);
@@ -104,6 +113,7 @@ void rs485_subdev_scan_once(void);
 int8_t rs485_subdev_set_dac(uint8_t addr, const dac_set_payload_t *dac_cfg);
 int8_t rs485_subdev_set_bridge(uint8_t addr, const bridge_set_payload_t *bridge_cfg);
 int8_t rs485_subdev_set_gain(uint8_t addr, const gain_set_payload_t *gain_cfg);
+int8_t rs485_subdev_set_pwm(uint8_t addr, const pwm_set_payload_t *pwm_cfg);
 
 /* 测试函数 */
 void rs485_subdev_config_test(void);

@@ -6,7 +6,7 @@
 /**
  * @brief 获取通道所属的子设备索引
  * @note 子设备1对应通道0-2，子设备2对应通道3-5，依此类推
- *      共8个子设备，24个通道 (0-23)
+ *       共8个子设备，24个通道 (0-23)
  */
 int8_t bridge_get_subdev_idx_from_channel(int32_t channel_id)
 {
@@ -69,23 +69,23 @@ uint8_t bridge_type_map(uint8_t nvar1_bridge_type)
 {
     switch (nvar1_bridge_type)
     {
-        case 1:  /* 1/4桥 */
-        case 2:  /* 1/4桥 */
-            return 2;  /* 1/4桥 */
+        case 1: /* 1/4桥 */
+        case 2: /* 1/4桥 */
+            return 2; /* 1/4桥 */
 
-        case 3:  /* 1/2桥 */
-        case 4:  /* 1/2桥 */
-        case 9:  /* 1/2桥 */
-            return 1;  /* 半桥 */
+        case 3: /* 1/2桥 */
+        case 4: /* 1/2桥 */
+        case 9: /* 1/2桥 */
+            return 1; /* 半桥 */
 
-        case 5:  /* 全桥 */
-        case 6:  /* 全桥 */
-        case 7:  /* 全桥 */
-            return 0;  /* 全桥 */
+        case 5: /* 全桥 */
+        case 6: /* 全桥 */
+        case 7: /* 全桥 */
+            return 0; /* 全桥 */
 
-        case 8:  /* 配置错误 */
+        case 8: /* 配置错误 */
         default:
-            return 2;  /* 默认1/4桥 */
+            return 2; /* 默认1/4桥 */
     }
 }
 
@@ -98,10 +98,10 @@ uint8_t bridge_shunt_type_map(uint16_t nvar1_shunt_type)
     /* 只允许设置R2 */
     if (nvar1_shunt_type == SHUNT_CALIB_R2)
     {
-        return 2;  /* 接入R2 */
+        return 2; /* 接入R2 */
     }
     /* 其他情况(包括R1)都视为不接入 */
-    return 0;  /* 不接分流电阻 */
+    return 0; /* 不接分流电阻 */
 }
 
 /**
@@ -112,13 +112,13 @@ int8_t bridge_validate_shunt_r(float fShuntR)
 {
     /* 允许40K电阻，允许一定误差 */
     const float target_r = 40000.0f;
-    const float tolerance = 1000.0f;  /* 1K误差范围 */
+    const float tolerance = 1000.0f; /* 1K误差范围 */
 
     if (fShuntR >= (target_r - tolerance) && fShuntR <= (target_r + tolerance))
     {
-        return 0;  /* 有效 */
+        return 0; /* 有效 */
     }
-    return -1;  /* 无效 */
+    return -1; /* 无效 */
 }
 
 /**
@@ -141,27 +141,27 @@ int8_t bridge_gain_pga_map(int32_t nInputRange, uint8_t *out_gain, uint16_t *out
     switch (nInputRange)
     {
         case 0:
-            *out_gain = 0;  /* 1倍 */
-            *out_pga = 1;   /* 2.5V */
+            *out_gain = 0; /* 1倍 */
+            *out_pga = 1;  /* 2.5V */
             break;
         case 1:
-            *out_gain = 0;  /* 1倍 */
-            *out_pga = 2;   /* 1.25V */
+            *out_gain = 0; /* 1倍 */
+            *out_pga = 2;  /* 1.25V */
             break;
         case 2:
-            *out_gain = 1;  /* 10倍 */
-            *out_pga = 10;  /* 0.25V */
+            *out_gain = 1; /* 10倍 */
+            *out_pga = 10; /* 0.25V */
             break;
         case 3:
-            *out_gain = 1;  /* 10倍 */
-            *out_pga = 20;  /* 0.125V */
+            *out_gain = 1; /* 10倍 */
+            *out_pga = 20; /* 0.125V */
             break;
         case 4:
             *out_gain = 1;  /* 10倍 */
             *out_pga = 128; /* 0.01953125V */
             break;
         case 5:
-            *out_gain = 1;  /* 10倍 */
+            *out_gain = 1;   /* 10倍 */
             *out_pga = 1280; /* 0.001953125V */
             break;
         default:
@@ -189,12 +189,12 @@ int8_t bridge_wait_ack(uint8_t subdev_addr, uint32_t timeout_ms)
     {
         rs485_processor_poll();
         ack_status = rs485_subdev_get_write_ack(subdev_addr);
-        if (ack_status >= 0)  /* -1=no response, >=0=received */
+        if (ack_status >= 0) /* -1=no response, >=0=received */
         {
-            return (ack_status == 0) ? 0 : ack_status;  /* 0=success, >0=error code */
+            return (ack_status == 0) ? 0 : ack_status; /* 0=success, >0=error code */
         }
     }
-    return -1;  /* 超时 */
+    return -1; /* 超时 */
 }
 
 /**
@@ -222,7 +222,7 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
 
     /* ---------- 1. 配置DAC (DAC参数暂时没有，预留) ---------- */
     dac_set_payload_t dac_cfg = {0};
-    dac_cfg.bitflag = 0x07;  /* 设置三个通道 */
+    dac_cfg.bitflag = 0x07; /* 设置三个通道 */
     for (i = 0; i < BRIDGE_CHANNELS_PER_SUBDEV; i++)
     {
         switch (i)
@@ -238,18 +238,18 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
     ret = rs485_subdev_set_dac(subdev_addr, &dac_cfg);
     if (ret != 0)
     {
-        return -1;  /* 发送失败 */
+        return -1; /* 发送失败 */
     }
 
     ret = bridge_wait_ack(subdev_addr, timeout_ms);
     if (ret != 0)
     {
-        return -2;  /* 超时或设备错误 */
+        return -2; /* 超时或设备错误 */
     }
 
     /* ---------- 2. 配置桥路 ---------- */
     bridge_set_payload_t bridge_cfg = {0};
-    bridge_cfg.exc_en = 1;  /* 使能激励 */
+    bridge_cfg.exc_en = 1; /* 使能激励 */
 
     /* 构建bridge字段 (每个通道2bits，共6bits用于3个通道)
      * bit0-1: 通道0桥路类型
@@ -279,7 +279,7 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
     for (i = 0; i < BRIDGE_CHANNELS_PER_SUBDEV; i++)
     {
         local_ch = bridge_get_local_ch_idx(i);
-        if (local_ch >= 0 && cfg->shunt_calib[i] == 2)  /* R2接入 */
+        if (local_ch >= 0 && cfg->shunt_calib[i] == 2) /* R2接入 */
         {
             bridge_cfg.bridgeShunt |= (1 << local_ch);
         }
@@ -334,13 +334,13 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
             uint8_t pga_code = 0;
             switch (pga_val)
             {
-                case 1:   pga_code = 0; break;  /* 1倍 */
-                case 2:   pga_code = 1; break;  /* 2倍 */
-                case 10:  pga_code = 2; break;  /* 10倍 */
-                case 20:  pga_code = 4; break;  /* 20倍 */
-                case 128: pga_code = 7; break;  /* 128倍 */
+                case 1: pga_code = 0; break;   /* 1倍 */
+                case 2: pga_code = 1; break;   /* 2倍 */
+                case 10: pga_code = 2; break;  /* 10倍 */
+                case 20: pga_code = 4; break;  /* 20倍 */
+                case 128: pga_code = 7; break; /* 128倍 */
                 case 1280: pga_code = 7; break; /* 1280倍(实际是128*10) */
-                default:  pga_code = 0; break;
+                default: pga_code = 0; break;
             }
             gain_cfg.pga |= ((uint16_t)pga_code << (local_ch * 3));
         }
@@ -359,7 +359,24 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
         return -2;
     }
 
-    return 0;  /* 全部配置成功 */
+    /* ---------- 4. 配置PWM频率 ---------- */
+    pwm_set_payload_t pwm_cfg = {0};
+    pwm_cfg.pwm_freq = cfg->pwm_freq; /* 来自USB_CollectChCfg_Reply的sample_rate */
+
+    rs485_subdev_clear_write_ack(subdev_addr);
+    ret = rs485_subdev_set_pwm(subdev_addr, &pwm_cfg);
+    if (ret != 0)
+    {
+        return -1;
+    }
+
+    ret = bridge_wait_ack(subdev_addr, timeout_ms);
+    if (ret != 0)
+    {
+        return -2;
+    }
+
+    return 0; /* 全部配置成功 */
 }
 
 /**
@@ -386,7 +403,7 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
     /* 检查该子设备是否为桥路类型 */
     if (!bridge_is_bridge_subdev(subdev_idx))
     {
-        return -1;  /* 不是桥路子设备，无需配置 */
+        return -1; /* 不是桥路子设备，无需配置 */
     }
 
     /* 初始化输出配置为默认值 */
@@ -398,7 +415,7 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
         ch_subdev_idx = bridge_get_subdev_idx_from_channel(channel_table_elem[i].nChannelID);
         if (ch_subdev_idx != subdev_idx)
         {
-            continue;  /* 不是该子设备的通道 */
+            continue; /* 不是该子设备的通道 */
         }
 
         local_ch_idx = bridge_get_local_ch_idx(channel_table_elem[i].nChannelID);
@@ -409,7 +426,7 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
 
         /* 提取nVar1中的参数 */
         nVar1 = (uint32_t)channel_table_elem[i].nVar1;
-        bridge_type = (uint16_t)(nVar1 & 0xFFFF);        /* bit15-0 */
+        bridge_type = (uint16_t)(nVar1 & 0xFFFF);       /* bit15-0 */
         shunt_type = (uint16_t)((nVar1 >> 16) & 0xFFFF); /* bit31-16 */
 
         /* 映射桥路类型 */
@@ -450,7 +467,8 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
  * @brief 配置所有桥路子设备
  */
 int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
-                                  uint32_t total_channel_num)
+                                  uint32_t total_channel_num,
+                                  uint32_t pwm_freq)
 {
     uint8_t subdev_idx;
     int8_t ret;
@@ -467,7 +485,7 @@ int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
         /* 检查是否为桥路子设备 */
         if (!bridge_is_bridge_subdev(subdev_idx))
         {
-            continue;  /* 不是桥路子设备，跳过 */
+            continue; /* 不是桥路子设备，跳过 */
         }
 
         /* 提取该子设备的配置 */
@@ -478,8 +496,11 @@ int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
             continue;
         }
 
+        /* 设置PWM频率 (来自USB_CollectChCfg_Reply中的sample_rate) */
+        cfg.pwm_freq = pwm_freq;
+
         /* 配置该子设备 */
-        ret = bridge_config_subdev(subdev_idx + 1, &cfg, 100);  /* 地址从1开始，超时100ms */
+        ret = bridge_config_subdev(subdev_idx + 1, &cfg, 100); /* 地址从1开始，超时100ms */
         if (ret != 0)
         {
             /* 配置失败，返回错误 */
@@ -487,5 +508,5 @@ int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
         }
     }
 
-    return 0;  /* 全部配置成功 */
+    return 0; /* 全部配置成功 */
 }
