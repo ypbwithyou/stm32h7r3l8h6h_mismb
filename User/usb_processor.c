@@ -538,8 +538,6 @@ static uint32_t USB_DevConfig_Done(uint8_t *data_in, uint32_t data_len, FrameHea
     (void)device_info_save_to_bin(&g_dev_info);
     device_info_print_detail("DeviceInfo-Update");
 
-    
-
     return PackReplyWithoutDatas(DVS_INIT_DEVCONFIG_UPDATE_Done_OK);
 }
 
@@ -559,9 +557,9 @@ static uint32_t USB_SubDevConfig_Update(uint8_t *data_in, uint32_t data_len, Fra
         usb_printf("USB_SubDevConfig_Update err: data_len=%lu, expected=%lu\n", (unsigned long)data_len, (unsigned long)sizeof(SubDevicelnfo));
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_UPDATE_Done_OK,
-                                                                  SOURCE_TYPE_NO_DATA,
-                                                                  DESTINATION_ARM_TO_PC,
-                                                                  0);
+                                                                 SOURCE_TYPE_NO_DATA,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 0);
         reply_user_head.nParameters0 = -1;
 
         uint32_t packet_len = 0;
@@ -575,9 +573,9 @@ static uint32_t USB_SubDevConfig_Update(uint8_t *data_in, uint32_t data_len, Fra
         usb_printf("USB_SubDevConfig_Update err: invalid addr=%d\n", addr);
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_UPDATE_Done_OK,
-                                                                  SOURCE_TYPE_NO_DATA,
-                                                                  DESTINATION_ARM_TO_PC,
-                                                                  0);
+                                                                 SOURCE_TYPE_NO_DATA,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 0);
         reply_user_head.nParameters0 = -1;
 
         uint32_t packet_len = 0;
@@ -620,9 +618,9 @@ static uint32_t USB_SubDevConfig_Update(uint8_t *data_in, uint32_t data_len, Fra
 
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
     UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_UPDATE_Done_OK,
-                                                              SOURCE_TYPE_NO_DATA,
-                                                              DESTINATION_ARM_TO_PC,
-                                                              0);
+                                                             SOURCE_TYPE_NO_DATA,
+                                                             DESTINATION_ARM_TO_PC,
+                                                             0);
     reply_user_head.nParameters0 = result_code;
 
     uint32_t packet_len = 0;
@@ -650,9 +648,9 @@ static uint32_t USB_SubDevConfig_Read(uint8_t *data_in, uint32_t data_len, Frame
         usb_printf("USB_SubDevConfig_Read err: invalid addr=%d\n", addr);
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_READ_Done_OK,
-                                                                  SOURCE_TYPE_NO_DATA,
-                                                                  DESTINATION_ARM_TO_PC,
-                                                                  0);
+                                                                 SOURCE_TYPE_NO_DATA,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 0);
         reply_user_head.nParameters0 = -1;
 
         uint32_t packet_len = 0;
@@ -696,9 +694,9 @@ static uint32_t USB_SubDevConfig_Read(uint8_t *data_in, uint32_t data_len, Frame
         memcpy(&read_info, &g_SubDevicelnfo[addr - 1U], sizeof(SubDevicelnfo));
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_READ_Done_OK,
-                                                                  SOURCE_TYPE_WITH_DATAS,
-                                                                  DESTINATION_ARM_TO_PC,
-                                                                  sizeof(SubDevicelnfo));
+                                                                 SOURCE_TYPE_WITH_DATAS,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 sizeof(SubDevicelnfo));
         reply_user_head.nParameters0 = 0;
 
         uint32_t packet_len = 0;
@@ -709,9 +707,9 @@ static uint32_t USB_SubDevConfig_Read(uint8_t *data_in, uint32_t data_len, Frame
     {
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_DEVCONFIG_READ_Done_OK,
-                                                                  SOURCE_TYPE_NO_DATA,
-                                                                  DESTINATION_ARM_TO_PC,
-                                                                  0);
+                                                                 SOURCE_TYPE_NO_DATA,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 0);
         reply_user_head.nParameters0 = result_code;
 
         uint32_t packet_len = 0;
@@ -740,9 +738,9 @@ static uint32_t USB_SubDevId_Update(uint8_t *data_in, uint32_t data_len, FrameHe
         usb_printf("USB_SubDevId_Update err: invalid addr=%d\n", addr);
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_ID_UPDATE_Done_OK,
-                                                                   SOURCE_TYPE_NO_DATA,
-                                                                   DESTINATION_ARM_TO_PC,
-                                                                   0);
+                                                                 SOURCE_TYPE_NO_DATA,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 0);
         reply_user_head.nParameters0 = -1;
 
         uint32_t packet_len = 0;
@@ -755,9 +753,9 @@ static uint32_t USB_SubDevId_Update(uint8_t *data_in, uint32_t data_len, FrameHe
         usb_printf("USB_SubDevId_Update err: subdev addr=%d not valid\n", addr);
         FrameHeadInfo reply_frame_head = create_default_frame_head(0);
         UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_ID_UPDATE_Done_OK,
-                                                                   SOURCE_TYPE_NO_DATA,
-                                                                   DESTINATION_ARM_TO_PC,
-                                                                   0);
+                                                                 SOURCE_TYPE_NO_DATA,
+                                                                 DESTINATION_ARM_TO_PC,
+                                                                 0);
         reply_user_head.nParameters0 = -1;
 
         uint32_t packet_len = 0;
@@ -801,9 +799,9 @@ static uint32_t USB_SubDevId_Update(uint8_t *data_in, uint32_t data_len, FrameHe
 
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
     UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_SUB_ID_UPDATE_Done_OK,
-                                                               SOURCE_TYPE_NO_DATA,
-                                                               DESTINATION_ARM_TO_PC,
-                                                               0);
+                                                             SOURCE_TYPE_NO_DATA,
+                                                             DESTINATION_ARM_TO_PC,
+                                                             0);
     reply_user_head.nParameters0 = result_code;
 
     uint32_t packet_len = 0;
@@ -814,26 +812,26 @@ static uint32_t USB_SubDevId_Update(uint8_t *data_in, uint32_t data_len, FrameHe
 // 处理PC->ARM的DVSARM_CSP_START事件
 static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
 {
-	(void)frame_head;
-	(void)user_head;
+    (void)frame_head;
+    (void)user_head;
 
-	// 判断是否是离线模式，如果是离线模式直接返回错误
-	if (g_offline_mode == 1)
-	{
-		usb_printf("[CollectChCfg] Rejected: device is in offline mode\r\n");
-		return PackReplyWithoutDatasParam(DVSARM_CSP_START_OK, -1);
-	}
+    // 判断是否是离线模式，如果是离线模式直接返回错误
+    if (g_offline_mode == 1)
+    {
+        usb_printf("[CollectChCfg] Rejected: device is in offline mode\r\n");
+        return PackReplyWithoutDatasParam(DVSARM_CSP_START_OK, -1);
+    }
 
-	// 如果正在运行，先停止采集
-	if (g_IdaSystemStatus.st_dev_run.run_flag == 1)
-	{
-		g_IdaSystemStatus.st_dev_run.run_flag = 0;
-		AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
-		AdcCbClear();
-		usb_printf("[CollectChCfg] Acquisition stopped for reconfiguration\r\n");
-	}
+    // 如果正在运行，先停止采集
+    if (g_IdaSystemStatus.st_dev_run.run_flag == 1)
+    {
+        g_IdaSystemStatus.st_dev_run.run_flag = 0;
+        AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+        AdcCbClear();
+        usb_printf("[CollectChCfg] Acquisition stopped for reconfiguration\r\n");
+    }
 
-	int userDataLoc = 0;
+    int userDataLoc = 0;
 
     // ---------------- 解析ChannelTableHeader ----------------
     if (data_len < userDataLoc + sizeof(ChannelTableHeader))
@@ -960,17 +958,17 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
             return PackReplyWithoutDatasParam(DVSARM_CSP_START_OK, -1);
         }
 
-    mode = AdcCollectorSelectMode(sample_rate);
-    usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] requested=%lu actual=%lu mode=%s\r\n",
-               (unsigned int)g_enabled_ch_cnt,
-               (unsigned long)g_ch_enable_mask,
-               (unsigned int)g_spi_adc_cnt[0],
-               (unsigned int)g_spi_adc_cnt[1],
-               (unsigned int)g_spi_adc_cnt[2],
-               (unsigned long)requested_rate,
-               (unsigned long)sample_rate,
-               (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
-    CfgAdcSampleRate(sample_rate);
+        mode = AdcCollectorSelectMode(sample_rate);
+        usb_printf("[CollectCfg] enable_cnt=%u mask=0x%06lX spi_adc_cnt=[%u,%u,%u] requested=%lu actual=%lu mode=%s\r\n",
+                   (unsigned int)g_enabled_ch_cnt,
+                   (unsigned long)g_ch_enable_mask,
+                   (unsigned int)g_spi_adc_cnt[0],
+                   (unsigned int)g_spi_adc_cnt[1],
+                   (unsigned int)g_spi_adc_cnt[2],
+                   (unsigned long)requested_rate,
+                   (unsigned long)sample_rate,
+                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
+        CfgAdcSampleRate(sample_rate);
 
         /* ---------- 配置桥路子设备 ---------- */
         {
@@ -988,7 +986,7 @@ static uint32_t USB_CollectChCfg_Reply(uint8_t *data_in, uint32_t data_len, Fram
         }
         /* ----------------------------------- */
 
-    g_IdaSystemStatus.st_dev_run.run_flag = 1;
+        g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
         usb_printf("[CollectCfg] acquisition started\r\n");
     }
@@ -2093,7 +2091,7 @@ static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameH
     FIL fil;
     UINT bw;
 
-    usb_printf("[CalibrationWrite] Writing calibration file: %s, size=%u bytes\r\n", 
+    usb_printf("[CalibrationWrite] Writing calibration file: %s, size=%u bytes\r\n",
                CALIBRATION_FILE_PATH, data_len);
 
     // 确保目录存在
@@ -2150,7 +2148,7 @@ static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameH
 
 send_reply:
     // 构造应答帧
-		;
+    ;
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
     UserDataHeadInfo reply_user_head = {0};
     reply_user_head.nIsValidFlag = 0x12345678;

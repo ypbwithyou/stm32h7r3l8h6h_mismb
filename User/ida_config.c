@@ -609,7 +609,7 @@ int8_t IdaDeviceInit(void)
     rs485_subdev_scan_once();
 
     // 测试桥路配置
-    rs485_subdev_config_test();
+    // rs485_subdev_config_test();
 
     return RET_OK;
 }

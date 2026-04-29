@@ -413,14 +413,14 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
             return;
         }
 
-    mode = AdcCollectorSelectMode(sample_rate);
-    usb_printf("ACQ_Start: enable_cnt=%u requested=%lu actual=%lu mode=%s\n",
-               (unsigned int)enabled_cnt,
-               (unsigned long)requested_rate,
-               (unsigned long)sample_rate,
-               (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
+        mode = AdcCollectorSelectMode(sample_rate);
+        usb_printf("ACQ_Start: enable_cnt=%u requested=%lu actual=%lu mode=%s\n",
+                   (unsigned int)enabled_cnt,
+                   (unsigned long)requested_rate,
+                   (unsigned long)sample_rate,
+                   (mode == ADC_COLLECT_MODE_DMA) ? "DMA" : "POLL");
 
-    CfgAdcSampleRate(sample_rate);
+        CfgAdcSampleRate(sample_rate);
 
         /* ---------- 配置桥路子设备 ---------- */
         {
@@ -438,7 +438,7 @@ static void HandleAcqStart(uint8_t idx, uint32_t elapsed_seconds)
         }
         /* ----------------------------------- */
 
-    g_IdaSystemStatus.st_dev_run.run_flag = 1;
+        g_IdaSystemStatus.st_dev_run.run_flag = 1;
         AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
     }
     // ----------------------------------
