@@ -144,7 +144,7 @@ static void copy_text_field(char *dst, uint32_t dst_size, const char *src, uint3
 static void device_info_set_defaults(void)
 {
     memset(&g_dev_info, 0, sizeof(g_dev_info));
-    strcpy((char *)g_dev_info.Version, DEFAULT_VERSION);
+    strcpy((char *)g_dev_info.Version, FIRMWARE_VERSION);
     strcpy((char *)g_dev_info.DeviceName, DEFAULT_DEVICENAME);
     strcpy((char *)g_dev_info.AccessCode, DEFAULT_ACCESSCODE);
     strcpy((char *)g_dev_info.SerialNumber, DEFAULT_SERIALNUMBER);
@@ -276,6 +276,7 @@ static int8_t device_info_load_from_bin(DeviceInfo *info)
     info->DeviceName[STR_32 - 1] = '\0';
     info->AccessCode[STR_32 - 1] = '\0';
     info->SerialNumber[STR_32 - 1] = '\0';
+    strcpy((char *)info->Version, FIRMWARE_VERSION);
     return RET_OK;
 }
 
@@ -301,6 +302,7 @@ static void device_info_update_from_detail(const DeviceDetailInfo *dev_detail)
     }
 
     copy_text_field((char *)g_dev_info.Version, STR_32, dev_detail->SoftwareVersion, STR_32);
+    strcpy((char *)g_dev_info.Version, FIRMWARE_VERSION);
     copy_text_field((char *)g_dev_info.DeviceName, STR_32, dev_detail->DeviceName, STR_32);
     copy_text_field((char *)g_dev_info.AccessCode, STR_32, dev_detail->AccessCode, STR_32);
     copy_text_field((char *)g_dev_info.SerialNumber, STR_32, dev_detail->SerialNumber, STR_32);

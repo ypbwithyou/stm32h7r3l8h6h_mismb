@@ -34,6 +34,7 @@
 #define Name_Mini_SliceNano ""        // mini nano slice
 
 // 设备信息默认值
+#define FIRMWARE_VERSION "1.0.0.1_202605070923"
 #define DEFAULT_VERSION "0.0.0.1_20260301"
 #define DEFAULT_ACCESSCODE "NTS2026"
 #define DEFAULT_ID (0)
