@@ -157,7 +157,7 @@ int8_t bridge_gain_pga_map(int32_t nInputRange, uint8_t *out_gain, uint16_t *out
             *out_pga = 20; /* 0.125V */
             break;
         case 4:
-            *out_gain = 1;  /* 10倍 */
+            *out_gain = 0;  /* 10倍 */
             *out_pga = 128; /* 0.01953125V */
             break;
         case 5:
@@ -249,7 +249,15 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
 
     /* ---------- 2. 配置桥路 ---------- */
     bridge_set_payload_t bridge_cfg = {0};
-    bridge_cfg.exc_en = 1; /* 使能激励 */
+    bridge_cfg.exc_en = 0;
+    for (i = 0; i < BRIDGE_CHANNELS_PER_SUBDEV; i++)
+    {
+        if (cfg->nGroupID[i] == GROUP_STRESS_STRAIN)
+        {
+            bridge_cfg.exc_en = 1;
+            break;
+        }
+    }
 
     /* 构建bridge字段 (每个通道2bits，共6bits用于3个通道)
      * bit0-1: 通道0桥路类型
@@ -423,6 +431,9 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
         {
             continue;
         }
+
+        /* 提取分组类型 */
+        out_cfg->nGroupID[local_ch_idx] = channel_table_elem[i].nGroupID;
 
         /* 提取nVar1中的参数 */
         nVar1 = (uint32_t)channel_table_elem[i].nVar1;
