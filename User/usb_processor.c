@@ -54,6 +54,7 @@ static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameH
 static uint32_t USB_DownloadFileDataAck(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 static uint32_t USB_CalibrationRead(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 static uint32_t USB_CalibrationWrite(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
+static uint32_t USB_Zeroing_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head);
 
 static uint32_t PackReplyWithoutDatas(uint32_t event_id);
 static uint32_t PackReplyWithoutDatasParam(uint32_t event_id, int32_t param0);
@@ -96,6 +97,8 @@ static const USB_ProtocoItems protocol_getdata[] =
         {DVS_FILE_DOWNLOAD_DATA_ACK, USB_DownloadFileDataAck},
         {DVS_FILE_CALIBRATION_READ, USB_CalibrationRead},
         {DVS_FILE_CALIBRATION_WRITE, USB_CalibrationWrite},
+
+        {DVS_INIT_ZEROING, USB_Zeroing_Reply},
 };
 
 /*********************************************************************************/
@@ -1968,6 +1971,29 @@ FRESULT clear_file_content(const char *path)
     res = f_unlink(path);
     res = ((res == FR_NO_FILE) || (res == FR_OK)) ? FR_OK : res;
     return res;
+}
+
+// 处理PC->ARM的DVS_INIT_ZEROING事件（留待后续模块添加）
+static uint32_t USB_Zeroing_Reply(uint8_t *data_in, uint32_t data_len, FrameHeadInfo *frame_head, UserDataHeadInfo *user_head)
+{
+    (void)data_in;
+    (void)data_len;
+    (void)frame_head;
+
+    int32_t result = user_head->nParameters0;
+    int32_t channel = user_head->nParameters1;
+
+    FrameHeadInfo reply_frame_head = create_default_frame_head(0);
+    UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_ZEROING_OK,
+                                                             SOURCE_TYPE_NO_DATA,
+                                                             DESTINATION_ARM_TO_PC,
+                                                             0);
+    reply_user_head.nParameters0 = result;
+    reply_user_head.nParameters1 = channel;
+
+    uint32_t packet_len = 0;
+    pack_data(NULL, 0, &reply_user_head, &reply_frame_head, &packet_len);
+    return packet_len;
 }
 
 // 处理PC->ARM的DVS_FILE_CALIBRATION_READ事件
