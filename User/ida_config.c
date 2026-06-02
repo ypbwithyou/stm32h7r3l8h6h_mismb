@@ -485,6 +485,15 @@ int8_t IdaDeviceInit(void)
     PCA9554A_init();
     external_io_init();
 
+    // 系统运行参数初始化
+    SystemStatusInit();
+
+    // 离线初始化
+    SysRunStatusInit();
+
+    CheckMcuPwrStatus();
+    CheckMcuRunStatus();
+
     // RS485初始化
     rs485_init(RS485_BAUDRATE);
 

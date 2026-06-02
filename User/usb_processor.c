@@ -1980,8 +1980,8 @@ static uint32_t USB_Zeroing_Reply(uint8_t *data_in, uint32_t data_len, FrameHead
     (void)data_len;
     (void)frame_head;
 
-    int32_t result = user_head->nParameters0;
-    int32_t channel = user_head->nParameters1;
+    int32_t result = 0;
+    int32_t channel = user_head->nParameters0;
 
     FrameHeadInfo reply_frame_head = create_default_frame_head(0);
     UserDataHeadInfo reply_user_head = create_user_data_head(DVS_INIT_ZEROING_OK,
