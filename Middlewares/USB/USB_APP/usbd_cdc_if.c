@@ -53,6 +53,7 @@ static int8_t CDC_Init(void)
 {
     USBD_CDC_SetRxBuffer(&g_usbd_handle, g_usbd_cdc_rx_buffer);
     SWR_Init(&g_slidingWindow_receiver, NULL, NULL);
+    g_usbd_cdc_tx_done = 1;
 
     return USBD_OK;
 }
@@ -219,6 +220,11 @@ void usbd_cdc_transmit(uint8_t *data, uint32_t len)
     uint8_t status;
 
     if ((data == NULL) || (len == 0U))
+    {
+        return;
+    }
+
+    if (g_usbd_handle.dev_state != USBD_STATE_CONFIGURED)
     {
         return;
     }
