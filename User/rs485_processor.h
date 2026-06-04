@@ -48,9 +48,9 @@ typedef struct
 
 /* 桥路设置结构体 (BRIDGE_SET)
  * @note 桥路类型映射 (nVar1 bit15-0, 1-8):
- *       bridge字段编码: bit0-1=通道0, bit2-3=通道1, bit4-5=通道2
- *       每个通道2bits: 0=全桥, 1=半桥, 2=1/4桥
- *       nVar1映射: 1-2(1/4桥) -> 2, 3-4(1/2桥) -> 1, 5-8(全桥) -> 0
+ *       bridge字段编码: bit0=通道0, bit1=通道1, bit2=通道2
+ *       每个通道1bit: 0=全桥, 1=半桥/1/4桥
+ *       nVar1映射: 1-4(1/4桥或1/2桥) -> 1, 5-8(全桥) -> 0
  * @note 分流校准类型映射 (nVar1 bit31-16, 0-10):
  *       bridgeShunt字段: bit0=通道0, bit1=通道1, bit2=通道2
  *       每个通道1bit: 0=不接, 1=接入
@@ -59,7 +59,7 @@ typedef struct
 typedef struct
 {
     uint8_t exc_en;        // 激励使能: 0=失能, 1=使能
-    uint8_t bridge;        // bit0-1:通道0, bit2-3:通道1, bit4-5:通道2; 0=全桥, 1=半桥, 2=1/4桥
+    uint8_t bridge;        // bit0:通道0, bit1:通道1, bit2:通道2; 0=全桥, 1=半桥/1/4桥
     uint8_t bridgeShunt;   // bit0:通道0, bit1:通道1, bit2:通道2; 0=不接, 1=接入R2
 } __attribute__((packed)) bridge_set_payload_t;
 

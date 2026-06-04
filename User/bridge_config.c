@@ -2,6 +2,7 @@
 #include "rs485_processor.h"
 #include <string.h>
 #include "./BSP/RS485/rs485.h"
+#include "usbd_cdc_if.h"
 
 /**
  * @brief 获取通道所属的子设备索引
@@ -71,12 +72,12 @@ uint8_t bridge_type_map(uint8_t nvar1_bridge_type)
     {
         case 1: /* 1/4桥 */
         case 2: /* 1/4桥 */
-            return 2; /* 1/4桥 */
+            return 1; /* 非全桥 */
 
         case 3: /* 1/2桥 */
         case 4: /* 1/2桥 */
         case 9: /* 1/2桥 */
-            return 1; /* 半桥 */
+            return 1; /* 非全桥 */
 
         case 5: /* 全桥 */
         case 6: /* 全桥 */
@@ -85,7 +86,7 @@ uint8_t bridge_type_map(uint8_t nvar1_bridge_type)
 
         case 8: /* 配置错误 */
         default:
-            return 2; /* 默认1/4桥 */
+            return 1; /* 默认非全桥 */
     }
 }
 
@@ -207,18 +208,28 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
     int8_t ret;
     uint8_t i;
     uint8_t local_ch;
-    uint8_t bit_mask;
 
     if (subdev_addr < RS485_SLAVE_ADDR_MIN || subdev_addr > RS485_SLAVE_ADDR_MAX || cfg == NULL)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): invalid param\r\n", subdev_addr);
         return -1;
     }
 
     /* 检查子设备是否有效 */
     if (!rs485_subdev_is_valid(subdev_addr))
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): subdev not valid\r\n", subdev_addr);
         return -1;
     }
+
+    usb_printf("[Bridge]  config_subdev(addr=%u): ch0={bridge=%u,shunt=%u,gain=%u,pga=%u,voltage=%.2f,nGroup=%ld}, "
+               "ch1={bridge=%u,shunt=%u,gain=%u,pga=%u,voltage=%.2f,nGroup=%ld}, "
+               "ch2={bridge=%u,shunt=%u,gain=%u,pga=%u,voltage=%.2f,nGroup=%ld}, pwm_freq=%lu\r\n",
+               subdev_addr,
+               cfg->bridge_type[0], cfg->shunt_calib[0], cfg->gain[0], cfg->pga[0], cfg->voltage[0], (long)cfg->nGroupID[0],
+               cfg->bridge_type[1], cfg->shunt_calib[1], cfg->gain[1], cfg->pga[1], cfg->voltage[1], (long)cfg->nGroupID[1],
+               cfg->bridge_type[2], cfg->shunt_calib[2], cfg->gain[2], cfg->pga[2], cfg->voltage[2], (long)cfg->nGroupID[2],
+               (unsigned long)cfg->pwm_freq);
 
     /* ---------- 1. 配置DAC (DAC参数暂时没有，预留) ---------- */
     dac_set_payload_t dac_cfg = {0};
@@ -234,18 +245,23 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
         }
     }
 
+    usb_printf("[Bridge]  config_subdev(addr=%u): setting DAC (v0=%.2f, v1=%.2f, v2=%.2f)\r\n",
+               subdev_addr, dac_cfg.voltage0, dac_cfg.voltage1, dac_cfg.voltage2);
     rs485_subdev_clear_write_ack(subdev_addr);
     ret = rs485_subdev_set_dac(subdev_addr, &dac_cfg);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): DAC send failed\r\n", subdev_addr);
         return -1; /* 发送失败 */
     }
 
     ret = bridge_wait_ack(subdev_addr, timeout_ms);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): DAC ack timeout\r\n", subdev_addr);
         return -2; /* 超时或设备错误 */
     }
+    usb_printf("[Bridge]  config_subdev(addr=%u): DAC OK\r\n", subdev_addr);
 
     /* ---------- 2. 配置桥路 ---------- */
     bridge_set_payload_t bridge_cfg = {0};
@@ -259,21 +275,20 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
         }
     }
 
-    /* 构建bridge字段 (每个通道2bits，共6bits用于3个通道)
-     * bit0-1: 通道0桥路类型
-     * bit2-3: 通道1桥路类型
-     * bit4-5: 通道2桥路类型
-     * 0=全桥, 1=半桥, 2=1/4桥
+    /* 构建bridge字段 (每个通道1bit，共3bits用于3个通道)
+     * bit0: 通道0电压信号来源
+     * bit1: 通道1电压信号来源
+     * bit2: 通道2电压信号来源
+     * 0=全桥, 1=半桥/1/4桥
      */
     bridge_cfg.bridge = 0;
     for (i = 0; i < BRIDGE_CHANNELS_PER_SUBDEV; i++)
     {
         local_ch = bridge_get_local_ch_idx(i);
-        if (local_ch >= 0)
+        if (local_ch >= 0 && cfg->bridge_type[i] != 0)
         {
-            /* 根据通道配置设置对应的bits */
-            bit_mask = (cfg->bridge_type[i] & 0x03) << (local_ch * 2);
-            bridge_cfg.bridge |= bit_mask;
+            /* 非全桥（半桥或1/4桥）时置1 */
+            bridge_cfg.bridge |= (1 << local_ch);
         }
     }
 
@@ -293,18 +308,23 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
         }
     }
 
+    usb_printf("[Bridge]  config_subdev(addr=%u): setting bridge (exc_en=%u, bridge=0x%02x, shunt=0x%02x)\r\n",
+               subdev_addr, bridge_cfg.exc_en, bridge_cfg.bridge, bridge_cfg.bridgeShunt);
     rs485_subdev_clear_write_ack(subdev_addr);
     ret = rs485_subdev_set_bridge(subdev_addr, &bridge_cfg);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): bridge send failed\r\n", subdev_addr);
         return -1;
     }
 
     ret = bridge_wait_ack(subdev_addr, timeout_ms);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): bridge ack timeout\r\n", subdev_addr);
         return -2;
     }
+    usb_printf("[Bridge]  config_subdev(addr=%u): bridge OK\r\n", subdev_addr);
 
     /* ---------- 3. 配置增益 ---------- */
     gain_set_payload_t gain_cfg = {0};
@@ -354,36 +374,47 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
         }
     }
 
+    usb_printf("[Bridge]  config_subdev(addr=%u): setting gain (gain=0x%02x, pga=0x%04x)\r\n",
+               subdev_addr, gain_cfg.gain, gain_cfg.pga);
     rs485_subdev_clear_write_ack(subdev_addr);
     ret = rs485_subdev_set_gain(subdev_addr, &gain_cfg);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): gain send failed\r\n", subdev_addr);
         return -1;
     }
 
     ret = bridge_wait_ack(subdev_addr, timeout_ms);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): gain ack timeout\r\n", subdev_addr);
         return -2;
     }
+    usb_printf("[Bridge]  config_subdev(addr=%u): gain OK\r\n", subdev_addr);
 
     /* ---------- 4. 配置PWM频率 ---------- */
     pwm_set_payload_t pwm_cfg = {0};
     pwm_cfg.pwm_freq = cfg->pwm_freq; /* 来自USB_CollectChCfg_Reply的sample_rate */
 
+    usb_printf("[Bridge]  config_subdev(addr=%u): setting PWM (freq=%lu Hz)\r\n",
+               subdev_addr, (unsigned long)pwm_cfg.pwm_freq);
     rs485_subdev_clear_write_ack(subdev_addr);
     ret = rs485_subdev_set_pwm(subdev_addr, &pwm_cfg);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): PWM send failed\r\n", subdev_addr);
         return -1;
     }
 
     ret = bridge_wait_ack(subdev_addr, timeout_ms);
     if (ret != 0)
     {
+        usb_printf("[Bridge]  config_subdev(addr=%u): PWM ack timeout\r\n", subdev_addr);
         return -2;
     }
+    usb_printf("[Bridge]  config_subdev(addr=%u): PWM OK\r\n", subdev_addr);
 
+    usb_printf("[Bridge]  config_subdev(addr=%u): all done\r\n", subdev_addr);
     return 0; /* 全部配置成功 */
 }
 
@@ -466,7 +497,7 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
         }
 
         /* 设置DAC电压 (默认2.5V，根据PGA调整) */
-        out_cfg->voltage[local_ch_idx] = 2.5f;
+        out_cfg->voltage[local_ch_idx] = 0.0f;
 
         found_bridge_ch = 1;
     }
@@ -487,8 +518,13 @@ int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
 
     if (channel_table_elem == NULL || total_channel_num == 0)
     {
+        usb_printf("[Bridge] bridge_config_all_subdevs: invalid param (elem=%p, total=%lu)\r\n",
+                   (void *)channel_table_elem, (unsigned long)total_channel_num);
         return -1;
     }
+
+    usb_printf("[Bridge] bridge_config_all_subdevs: start, total_ch=%lu, pwm_freq=%lu Hz\r\n",
+               (unsigned long)total_channel_num, (unsigned long)pwm_freq);
 
     /* 依次配置每个子设备 */
     for (subdev_idx = 0; subdev_idx < SUBDEV_NUM_MAX; subdev_idx++)
@@ -496,14 +532,15 @@ int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
         /* 检查是否为桥路子设备 */
         if (!bridge_is_bridge_subdev(subdev_idx))
         {
-            continue; /* 不是桥路子设备，跳过 */
+            usb_printf("[Bridge]  subdev[%u]: not bridge subdev, skip\r\n", subdev_idx);
+            continue;
         }
 
         /* 提取该子设备的配置 */
         ret = bridge_extract_subdev_cfg(channel_table_elem, total_channel_num, subdev_idx, &cfg);
         if (ret != 0)
         {
-            /* 该子设备没有桥路通道配置，跳过 */
+            usb_printf("[Bridge]  subdev[%u]: no bridge channel cfg, skip\r\n", subdev_idx);
             continue;
         }
 
@@ -511,13 +548,17 @@ int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
         cfg.pwm_freq = pwm_freq;
 
         /* 配置该子设备 */
+        usb_printf("[Bridge]  subdev[%u]: configuring, addr=%u, pwm_freq=%lu\r\n",
+                   subdev_idx, subdev_idx + 1, (unsigned long)pwm_freq);
         ret = bridge_config_subdev(subdev_idx + 1, &cfg, 100); /* 地址从1开始，超时100ms */
         if (ret != 0)
         {
-            /* 配置失败，返回错误 */
+            usb_printf("[Bridge]  subdev[%u]: config FAILED\r\n", subdev_idx);
             return -1;
         }
+        usb_printf("[Bridge]  subdev[%u]: config OK\r\n", subdev_idx);
     }
 
+    usb_printf("[Bridge] bridge_config_all_subdevs: all done\r\n");
     return 0; /* 全部配置成功 */
 }
