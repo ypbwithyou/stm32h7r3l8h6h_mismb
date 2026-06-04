@@ -70,23 +70,23 @@ uint8_t bridge_type_map(uint8_t nvar1_bridge_type)
 {
     switch (nvar1_bridge_type)
     {
-        case 1: /* 1/4桥 */
-        case 2: /* 1/4桥 */
-            return 1; /* 非全桥 */
+    case 1:       /* 1/4桥 */
+    case 2:       /* 1/4桥 */
+        return 1; /* 非全桥 */
 
-        case 3: /* 1/2桥 */
-        case 4: /* 1/2桥 */
-        case 9: /* 1/2桥 */
-            return 1; /* 非全桥 */
+    case 3:       /* 1/2桥 */
+    case 4:       /* 1/2桥 */
+    case 9:       /* 1/2桥 */
+        return 1; /* 非全桥 */
 
-        case 5: /* 全桥 */
-        case 6: /* 全桥 */
-        case 7: /* 全桥 */
-            return 0; /* 全桥 */
+    case 5:       /* 全桥 */
+    case 6:       /* 全桥 */
+    case 7:       /* 全桥 */
+        return 0; /* 全桥 */
 
-        case 8: /* 配置错误 */
-        default:
-            return 1; /* 默认非全桥 */
+    case 8: /* 配置错误 */
+    default:
+        return 1; /* 默认非全桥 */
     }
 }
 
@@ -141,33 +141,33 @@ int8_t bridge_gain_pga_map(int32_t nInputRange, uint8_t *out_gain, uint16_t *out
 
     switch (nInputRange)
     {
-        case 0:
-            *out_gain = 0; /* 1倍 */
-            *out_pga = 1;  /* 2.5V */
-            break;
-        case 1:
-            *out_gain = 0; /* 1倍 */
-            *out_pga = 2;  /* 1.25V */
-            break;
-        case 2:
-            *out_gain = 1; /* 10倍 */
-            *out_pga = 10; /* 0.25V */
-            break;
-        case 3:
-            *out_gain = 1; /* 10倍 */
-            *out_pga = 20; /* 0.125V */
-            break;
-        case 4:
-            *out_gain = 0;  /* 10倍 */
-            *out_pga = 128; /* 0.01953125V */
-            break;
-        case 5:
-            *out_gain = 1;   /* 10倍 */
-            *out_pga = 1280; /* 0.001953125V */
-            break;
-        default:
-            /* 无效量程 */
-            return -1;
+    case 0:
+        *out_gain = 0; /* 1倍 */
+        *out_pga = 1;  /* 2.5V */
+        break;
+    case 1:
+        *out_gain = 0; /* 1倍 */
+        *out_pga = 2;  /* 1.25V */
+        break;
+    case 2:
+        *out_gain = 1; /* 10倍 */
+        *out_pga = 10; /* 0.25V */
+        break;
+    case 3:
+        *out_gain = 1; /* 10倍 */
+        *out_pga = 20; /* 0.125V */
+        break;
+    case 4:
+        *out_gain = 0;  /* 10倍 */
+        *out_pga = 128; /* 0.01953125V */
+        break;
+    case 5:
+        *out_gain = 1;   /* 10倍 */
+        *out_pga = 1280; /* 0.001953125V */
+        break;
+    default:
+        /* 无效量程 */
+        return -1;
     }
     return 0;
 }
@@ -238,10 +238,17 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
     {
         switch (i)
         {
-            case 0: dac_cfg.voltage0 = cfg->voltage[i]; break;
-            case 1: dac_cfg.voltage1 = cfg->voltage[i]; break;
-            case 2: dac_cfg.voltage2 = cfg->voltage[i]; break;
-            default: break;
+        case 0:
+            dac_cfg.voltage0 = cfg->voltage[i];
+            break;
+        case 1:
+            dac_cfg.voltage1 = cfg->voltage[i];
+            break;
+        case 2:
+            dac_cfg.voltage2 = cfg->voltage[i];
+            break;
+        default:
+            break;
         }
     }
 
@@ -362,13 +369,27 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
             uint8_t pga_code = 0;
             switch (pga_val)
             {
-                case 1: pga_code = 0; break;   /* 1倍 */
-                case 2: pga_code = 1; break;   /* 2倍 */
-                case 10: pga_code = 2; break;  /* 10倍 */
-                case 20: pga_code = 4; break;  /* 20倍 */
-                case 128: pga_code = 7; break; /* 128倍 */
-                case 1280: pga_code = 7; break; /* 1280倍(实际是128*10) */
-                default: pga_code = 0; break;
+            case 1:
+                pga_code = 0;
+                break; /* 1倍 */
+            case 2:
+                pga_code = 1;
+                break; /* 2倍 */
+            case 10:
+                pga_code = 2;
+                break; /* 10倍 */
+            case 20:
+                pga_code = 4;
+                break; /* 20倍 */
+            case 128:
+                pga_code = 7;
+                break; /* 128倍 */
+            case 1280:
+                pga_code = 7;
+                break; /* 1280倍(实际是128*10) */
+            default:
+                pga_code = 0;
+                break;
             }
             gain_cfg.pga |= ((uint16_t)pga_code << (local_ch * 3));
         }
@@ -422,9 +443,9 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
  * @brief 从通道配置提取一个子设备的桥路配置参数
  */
 int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
-                                  uint32_t total_channel_num,
-                                  uint8_t subdev_idx,
-                                  bridge_subdev_cfg_t *out_cfg)
+                                 uint32_t total_channel_num,
+                                 uint8_t subdev_idx,
+                                 bridge_subdev_cfg_t *out_cfg)
 {
     uint32_t i;
     int8_t ch_subdev_idx;
@@ -436,52 +457,76 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
 
     if (channel_table_elem == NULL || out_cfg == NULL || subdev_idx >= SUBDEV_NUM_MAX)
     {
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u): invalid param\r\n", subdev_idx);
         return -1;
     }
 
     /* 检查该子设备是否为桥路类型 */
     if (!bridge_is_bridge_subdev(subdev_idx))
     {
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u): not bridge subdev\r\n", subdev_idx);
         return -1; /* 不是桥路子设备，无需配置 */
     }
 
     /* 初始化输出配置为默认值 */
     memset(out_cfg, 0, sizeof(bridge_subdev_cfg_t));
 
+    usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u): total_ch=%lu\r\n",
+               subdev_idx, (unsigned long)total_channel_num);
+
     /* 遍历所有通道，找到属于该子设备的通道 */
     for (i = 0; i < total_channel_num; i++)
     {
-        ch_subdev_idx = bridge_get_subdev_idx_from_channel(channel_table_elem[i].nChannelID);
+
+        int32_t nChannelID = channel_table_elem[i].nChannelID - 1;
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   ch loop i=%lu, nChannelID=%ld\r\n",
+                   subdev_idx, (unsigned long)i, (long)nChannelID);
+        ch_subdev_idx = bridge_get_subdev_idx_from_channel(nChannelID);
         if (ch_subdev_idx != subdev_idx)
         {
             continue; /* 不是该子设备的通道 */
         }
 
-        local_ch_idx = bridge_get_local_ch_idx(channel_table_elem[i].nChannelID);
+        local_ch_idx = bridge_get_local_ch_idx(nChannelID);
         if (local_ch_idx < 0 || local_ch_idx >= BRIDGE_CHANNELS_PER_SUBDEV)
         {
             continue;
         }
+
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u): ch%u found, nChannelID=%ld, nGroupID=%ld, "
+                   "nVar1=0x%08lx, nInputRange=%ld, fVar7=%.2f\r\n",
+                   subdev_idx, local_ch_idx,
+                   (long)nChannelID,
+                   (long)channel_table_elem[i].nGroupID,
+                   (unsigned long)channel_table_elem[i].nVar1,
+                   (long)channel_table_elem[i].nInputRange,
+                   channel_table_elem[i].fVar7);
 
         /* 提取分组类型 */
         out_cfg->nGroupID[local_ch_idx] = channel_table_elem[i].nGroupID;
 
         /* 提取nVar1中的参数 */
         nVar1 = (uint32_t)channel_table_elem[i].nVar1;
-        bridge_type = (uint16_t)(nVar1 & 0xFFFF);       /* bit15-0 */
+        bridge_type = (uint16_t)(nVar1 & 0xFFFF);        /* bit15-0 */
         shunt_type = (uint16_t)((nVar1 >> 16) & 0xFFFF); /* bit31-16 */
 
         /* 映射桥路类型 */
         out_cfg->bridge_type[local_ch_idx] = bridge_type_map((uint8_t)bridge_type);
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   bridge_type_raw=%u -> %u\r\n",
+                   subdev_idx, bridge_type, out_cfg->bridge_type[local_ch_idx]);
 
         /* 映射分流校准类型 (只允许R2) */
         out_cfg->shunt_calib[local_ch_idx] = bridge_shunt_type_map(shunt_type);
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   shunt_raw=%u -> %u\r\n",
+                   subdev_idx, shunt_type, out_cfg->shunt_calib[local_ch_idx]);
 
         /* 验证分流器电阻 (只允许40K) */
         if (channel_table_elem[i].fVar7 > 0)
         {
             if (bridge_validate_shunt_r(channel_table_elem[i].fVar7) != 0)
             {
+                usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   shunt R invalid (%.2f), disable\r\n",
+                           subdev_idx, channel_table_elem[i].fVar7);
                 /* 电阻值无效，设为不接入 */
                 out_cfg->shunt_calib[local_ch_idx] = 0;
             }
@@ -495,13 +540,19 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
             out_cfg->gain[local_ch_idx] = gain;
             out_cfg->pga[local_ch_idx] = pga;
         }
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   gain=%u, pga=%u\r\n",
+                   subdev_idx, out_cfg->gain[local_ch_idx], out_cfg->pga[local_ch_idx]);
 
         /* 设置DAC电压 (默认2.5V，根据PGA调整) */
-        out_cfg->voltage[local_ch_idx] = 0.0f;
+        out_cfg->voltage[local_ch_idx] = 2.5f;
+        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   voltage[%u]=%.2f\r\n",
+                   subdev_idx, local_ch_idx, out_cfg->voltage[local_ch_idx]);
 
         found_bridge_ch = 1;
     }
 
+    usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u): %s\r\n",
+               subdev_idx, found_bridge_ch ? "found bridge ch" : "no bridge ch found");
     return found_bridge_ch ? 0 : -1;
 }
 
@@ -509,8 +560,8 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
  * @brief 配置所有桥路子设备
  */
 int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
-                                  uint32_t total_channel_num,
-                                  uint32_t pwm_freq)
+                                 uint32_t total_channel_num,
+                                 uint32_t pwm_freq)
 {
     uint8_t subdev_idx;
     int8_t ret;
