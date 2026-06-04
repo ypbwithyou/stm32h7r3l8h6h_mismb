@@ -75,7 +75,7 @@ void rs485_init(uint32_t baudrate)
     gpio_init_struct.Speed = GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(RS485_RE_GPIO_PORT, &gpio_init_struct);
 
-    HAL_NVIC_SetPriority(RS485_UARTX_IRQn, 4, 0);
+    HAL_NVIC_SetPriority(RS485_UARTX_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(RS485_UARTX_IRQn);
 
     rs485_uartx_handle.Instance = RS485_UARTX;

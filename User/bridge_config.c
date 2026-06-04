@@ -601,7 +601,7 @@ int8_t bridge_config_all_subdevs(const ChannelTableElem *channel_table_elem,
         /* 配置该子设备 */
         usb_printf("[Bridge]  subdev[%u]: configuring, addr=%u, pwm_freq=%lu\r\n",
                    subdev_idx, subdev_idx + 1, (unsigned long)pwm_freq);
-        ret = bridge_config_subdev(subdev_idx + 1, &cfg, 100); /* 地址从1开始，超时100ms */
+        ret = bridge_config_subdev(subdev_idx + 1, &cfg, 500); /* 地址从1开始，超时100ms */
         if (ret != 0)
         {
             usb_printf("[Bridge]  subdev[%u]: config FAILED\r\n", subdev_idx);
