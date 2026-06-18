@@ -124,13 +124,19 @@ int8_t bridge_validate_shunt_r(float fShuntR)
 
 /**
  * @brief 量程增益映射: nInputRange -> gain/pga
+ * @param nInputRange 输入量程 (0-7)
+ * @param out_gain    输出gain值 (0=1倍, 1=10倍)
+ * @param out_pga     输出PGA值 (1, 2, 16, 32, 128)
+ * @return 0=成功, -1=无效量程
  * @note nInputRange映射:
- *       0 -> gain=0(1倍), pga=1 (2.5V)
- *       1 -> gain=0(1倍), pga=2 (1.25V)
- *       2 -> gain=1(10倍), pga=10 (0.25V)
- *       3 -> gain=1(10倍), pga=20 (0.125V)
- *       4 -> gain=1(10倍), pga=128 (0.01953125V)
- *       5 -> gain=1(10倍), pga=1280 (0.001953125V)
+ *       0 -> gain=0(1倍), pga=1   (2.5V)
+ *       1 -> gain=0(1倍), pga=2   (1.25V)
+ *       2 -> gain=1(10倍), pga=1  (0.25V)
+ *       3 -> gain=0(1倍), pga=16  (0.15625V)
+ *       4 -> gain=1(10倍), pga=2  (0.125V)
+ *       5 -> gain=0(1倍), pga=32  (0.078125V)
+ *       6 -> gain=0(1倍), pga=128 (0.01953125V)
+ *       7 -> gain=1(10倍), pga=128 (0.001953125V)
  */
 int8_t bridge_gain_pga_map(int32_t nInputRange, uint8_t *out_gain, uint16_t *out_pga)
 {
@@ -141,28 +147,36 @@ int8_t bridge_gain_pga_map(int32_t nInputRange, uint8_t *out_gain, uint16_t *out
 
     switch (nInputRange)
     {
-    case 0:
+    case 0:            // 1
         *out_gain = 0; /* 1倍 */
         *out_pga = 1;  /* 2.5V */
         break;
-    case 1:
+    case 1:            // 2
         *out_gain = 0; /* 1倍 */
         *out_pga = 2;  /* 1.25V */
         break;
-    case 2:
+    case 2:            // 10
         *out_gain = 1; /* 10倍 */
-        *out_pga = 1; /* 0.25V */
+        *out_pga = 1;  /* 0.25V */
         break;
-    case 3:
+    case 3:            // 16
+        *out_gain = 0; /* 1倍 */
+        *out_pga = 16; /* 0.15625V */
+        break;
+    case 4:            // 20
         *out_gain = 1; /* 10倍 */
-        *out_pga = 2; /* 0.125V */
+        *out_pga = 2;  /* 0.125V */
         break;
-    case 4:
+    case 5:            // 32
+        *out_gain = 0; /* 1倍 */
+        *out_pga = 32; /* 0.078125V */
+        break;
+    case 6:             // 128
         *out_gain = 0;  /* 1倍 */
         *out_pga = 128; /* 0.01953125V */
         break;
-    case 5:
-        *out_gain = 1;   /* 10倍 */
+    case 7:             // 1280
+        *out_gain = 1;  /* 10倍 */
         *out_pga = 128; /* 0.001953125V */
         break;
     default:
@@ -376,11 +390,17 @@ int8_t bridge_config_subdev(uint8_t subdev_addr,
                 pga_code = 1;
                 break; /* 2倍 */
             case 10:
-                pga_code = 2;
+                pga_code = 0;
                 break; /* 10倍 */
-            case 20:
+            case 16:
                 pga_code = 4;
+                break; /* 16倍 */
+            case 20:
+                pga_code = 1;
                 break; /* 20倍 */
+            case 32:
+                pga_code = 5;
+                break; /* 32倍 */
             case 128:
                 pga_code = 7;
                 break; /* 128倍 */

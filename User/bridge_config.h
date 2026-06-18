@@ -86,17 +86,19 @@ int8_t bridge_validate_shunt_r(float fShuntR);
 
 /**
  * @brief 量程增益映射: nInputRange -> gain/pga
- * @param nInputRange 输入量程 (0-5)
+ * @param nInputRange 输入量程 (0-7)
  * @param out_gain    输出gain值 (0=1倍, 1=10倍)
- * @param out_pga     输出PGA值 (1, 2, 10, 20, 128, 1280)
+ * @param out_pga     输出PGA值 (1, 2, 16, 32, 128)
  * @return 0=成功, -1=无效量程
  * @note nInputRange映射:
- *       0 -> gain=0(1倍), pga=1 (2.5V)
- *       1 -> gain=0(1倍), pga=2 (1.25V)
- *       2 -> gain=1(10倍), pga=1 (0.25V)
- *       3 -> gain=1(10倍), pga=2 (0.125V)
- *       4 -> gain=0(1倍), pga=128 (0.01953125V)
- *       5 -> gain=1(10倍), pga=128 (0.001953125V)
+ *       0 -> gain=0(1倍), pga=1   (2.5V)
+ *       1 -> gain=0(1倍), pga=2   (1.25V)
+ *       2 -> gain=1(10倍), pga=1  (0.25V)
+ *       3 -> gain=0(1倍), pga=16  (0.15625V)
+ *       4 -> gain=1(10倍), pga=2  (0.125V)
+ *       5 -> gain=0(1倍), pga=32  (0.078125V)
+ *       6 -> gain=0(1倍), pga=128 (0.01953125V)
+ *       7 -> gain=1(10倍), pga=128 (0.001953125V)
  */
 int8_t bridge_gain_pga_map(int32_t nInputRange, uint8_t *out_gain, uint16_t *out_pga);
 
