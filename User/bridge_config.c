@@ -158,7 +158,7 @@ int8_t bridge_gain_pga_map(int32_t nInputRange, uint8_t *out_gain, uint16_t *out
         *out_pga = 2; /* 0.125V */
         break;
     case 4:
-        *out_gain = 0;  /* 10倍 */
+        *out_gain = 0;  /* 1倍 */
         *out_pga = 128; /* 0.01953125V */
         break;
     case 5:
