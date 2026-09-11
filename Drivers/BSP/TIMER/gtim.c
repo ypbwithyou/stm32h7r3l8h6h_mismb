@@ -109,7 +109,7 @@ static void gtim_collect_frame_polling(void)
 {
     ADS8319_CONVST_HIGH();
 
-    for (uint16_t i = 0; i < 1100U; i++)
+    for (uint16_t i = 0; i < 1200U; i++)
     {
         __NOP();
     }
