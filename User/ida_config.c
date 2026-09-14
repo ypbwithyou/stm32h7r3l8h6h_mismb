@@ -1122,6 +1122,39 @@ void WriteSubDevicelnfo_test(void)
         usb_printf("rs485_send_frame err.\n");
     }
 }
+
+/* ---- GPIO 测试: PB4 / PB7 / PB8 配置为推挽输出, 每 500ms 翻转一次 ---- */
+/* 注意: 这三个引脚可能已被其他外设占用(PB4=SPI1_MISO, PB7=ADS8319_2_IRQ, PB8=ADS8319_3_IRQ),
+   这里先 DeInit 再重新配置为输出, 仅用于测试 */
+#define GPIO_TEST_PORT           GPIOB
+#define GPIO_TEST_PINS           (GPIO_PIN_4 | GPIO_PIN_7 | GPIO_PIN_8)
+#define GPIO_TEST_CLK_ENABLE()   do { __HAL_RCC_GPIOB_CLK_ENABLE(); } while (0)
+#define GPIO_TEST_TOGGLE_MS      500U
+
+static void gpio_test_init(void)
+{
+    GPIO_InitTypeDef gpio_init_struct = {0};
+
+    GPIO_TEST_CLK_ENABLE();
+
+    /* 解除引脚上既有的复用/输入配置, 避免冲突 */
+    HAL_GPIO_DeInit(GPIO_TEST_PORT, GPIO_TEST_PINS);
+
+    gpio_init_struct.Pin = GPIO_TEST_PINS;
+    gpio_init_struct.Mode = GPIO_MODE_OUTPUT_PP;
+    gpio_init_struct.Pull = GPIO_NOPULL;
+    gpio_init_struct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIO_TEST_PORT, &gpio_init_struct);
+
+    /* 初始拉低 */
+    HAL_GPIO_WritePin(GPIO_TEST_PORT, GPIO_TEST_PINS, GPIO_PIN_RESET);
+}
+
+static void gpio_test_toggle(void)
+{
+    HAL_GPIO_TogglePin(GPIO_TEST_PORT, GPIO_TEST_PINS);
+}
+
 /**
  * @brief   核心处理函数
  * @param   无
@@ -1139,6 +1172,7 @@ int8_t app_processor(void)
     uint32_t t_last = 0;
     uint32_t t_now = 0;
     uint32_t t_off = 0;
+    uint32_t gpio_t_last = 0;
 
     g_tx_packet = (uint8_t *)mymalloc(SRAMEX, (sizeof(FrameHeadInfo) +
                                                sizeof(uint32_t) +
@@ -1166,6 +1200,9 @@ int8_t app_processor(void)
         return RET_ERROR;
     }
 
+    /* GPIO 测试: 将 PB4/PB7/PB8 配置为推挽输出, 供主循环每 500ms 翻转 */
+    gpio_test_init();
+
     while (1)
     {
 
@@ -1187,6 +1224,13 @@ int8_t app_processor(void)
             CheckMcuPwrStatus();
             CheckMcuRunStatus();
             LED0_TOGGLE();
+        }
+
+        // GPIO 测试: PB4/PB7/PB8 每 500ms 翻转一次
+        if ((t_now - gpio_t_last) >= GPIO_TEST_TOGGLE_MS)
+        {
+            gpio_t_last = t_now;
+            gpio_test_toggle();
         }
 
         soft_time_periodic_sync();
