@@ -522,6 +522,15 @@ static uint32_t USB_Disconnect_Reply(uint8_t *data_in, uint32_t data_len, FrameH
     (void)frame_head;
     (void)user_head;
 
+    // 如果正在运行，先停止采集
+    if (g_IdaSystemStatus.st_dev_run.run_flag == 1)
+    {
+        g_IdaSystemStatus.st_dev_run.run_flag = 0;
+        AdcCollectorContrl(g_IdaSystemStatus.st_dev_run.run_flag);
+        AdcCbClear();
+        usb_printf("[CollectChCfg] Acquisition stopped for reconfiguration\r\n");
+    }
+    
     g_IdaSystemStatus.st_dev_link.link_status = USB_DISCONNECTED;
 
     return PackReplyWithoutDatas(DVS_INIT_DISCONNECT_OK);

@@ -1065,7 +1065,7 @@ static void CheckMcuRunStatus(void)
         // 已连接但未运行时蓝灯常亮
         PCA9554_Set(PCA9544A_STS_B(read_val));
     }
-    else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_link.link_status != USB_CONNECTED))
+    else if ((g_IdaSystemStatus.st_dev_run.run_flag == 1) && (g_IdaSystemStatus.st_dev_link.link_status == USB_CONNECTED))
     {
         t_off = t_now - t_last;
         if (t_off > 500)
