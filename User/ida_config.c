@@ -1123,6 +1123,7 @@ void WriteSubDevicelnfo_test(void)
     }
 }
 
+#if 0
 /* ---- GPIO 测试: PB4 / PB7 / PB8 配置为推挽输出, 每 500ms 翻转一次 ---- */
 /* 注意: 这三个引脚可能已被其他外设占用(PB4=SPI1_MISO, PB7=ADS8319_2_IRQ, PB8=ADS8319_3_IRQ),
    这里先 DeInit 再重新配置为输出, 仅用于测试 */
@@ -1153,6 +1154,86 @@ static void gpio_test_init(void)
 static void gpio_test_toggle(void)
 {
     HAL_GPIO_TogglePin(GPIO_TEST_PORT, GPIO_TEST_PINS);
+}
+#endif
+
+/* ---- GPIO 测试1: PB5/PC1/PE14/PB6/PB7/PB8 配置为输入, 每 500ms 打印电平 ---- */
+/* 注意: 这些引脚可能已被其他外设占用:
+   PB5 = SPI1_MOSI, PC1 = SPI2_MOSI, PE14 = SPI3_MOSI,
+   PB6 = ADS8319_1_IRQ, PB7 = ADS8319_2_IRQ, PB8 = ADS8319_3_IRQ,
+   这里先 DeInit 再重新配置为输入, 仅用于测试 */
+typedef struct
+{
+    GPIO_TypeDef *port;
+    uint16_t pin;
+    const char *name;
+} gpio_input_pin_t;
+
+static const gpio_input_pin_t g_gpio_test1_pins[6] = {
+    {GPIOB, GPIO_PIN_5,  "PB5"},
+    {GPIOC, GPIO_PIN_1,  "PC1"},
+    {GPIOE, GPIO_PIN_14, "PE14"},
+    {GPIOB, GPIO_PIN_6,  "PB6"},
+    {GPIOB, GPIO_PIN_7,  "PB7"},
+    {GPIOB, GPIO_PIN_8,  "PB8"},
+};
+
+#define GPIO_TEST1_POLL_MS      500U
+
+static void gpio_test1_init(void)
+{
+    GPIO_InitTypeDef gpio_init_struct = {0};
+    uint8_t i;
+
+    /* 使能所有相关端口时钟 */
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+
+    /* 解除引脚上既有的复用/输入配置, 避免冲突 */
+    for (i = 0; i < 6; i++)
+    {
+        HAL_GPIO_DeInit(g_gpio_test1_pins[i].port, g_gpio_test1_pins[i].pin);
+    }
+
+    /* 配置为输入, 下拉避免浮空误读 */
+    gpio_init_struct.Mode = GPIO_MODE_INPUT;
+    gpio_init_struct.Pull = GPIO_PULLDOWN;
+    gpio_init_struct.Speed = GPIO_SPEED_FREQ_LOW;
+    for (i = 0; i < 6; i++)
+    {
+        gpio_init_struct.Pin = g_gpio_test1_pins[i].pin;
+        HAL_GPIO_Init(g_gpio_test1_pins[i].port, &gpio_init_struct);
+    }
+}
+
+static void gpio_test1_poll(void)
+{
+    uint8_t i;
+    GPIO_PinState state;
+    uint8_t any_high = 0U;
+
+    usb_printf("[GPIO_TEST1] ");
+    for (i = 0; i < 6; i++)
+    {
+        state = HAL_GPIO_ReadPin(g_gpio_test1_pins[i].port, g_gpio_test1_pins[i].pin);
+        usb_printf("%s=%d ", g_gpio_test1_pins[i].name, (state == GPIO_PIN_SET) ? 1 : 0);
+        if (state == GPIO_PIN_SET)
+        {
+            any_high = 1U;
+        }
+    }
+    usb_printf("| any_high=%d\r\n", any_high);
+
+    /* 任一为高 -> LED0 亮; 全低 -> LED0 灭 (LED0 低电平点亮: LED0(0)=亮, LED0(1)=灭) */
+    if (any_high)
+    {
+        LED0(0);
+    }
+    else
+    {
+        LED0(1);
+    }
 }
 
 /**
@@ -1200,8 +1281,8 @@ int8_t app_processor(void)
         return RET_ERROR;
     }
 
-    /* GPIO 测试: 将 PB4/PB7/PB8 配置为推挽输出, 供主循环每 500ms 翻转 */
-    gpio_test_init();
+    /* GPIO 测试1: 将 PB5/PC1/PE14/PB6/PB7/PB8 配置为输入, 供主循环每 500ms 打印电平并控制 LED0 */
+    gpio_test1_init();
 
     while (1)
     {
@@ -1217,20 +1298,20 @@ int8_t app_processor(void)
         t_now = HAL_GetTick();
 
         t_off = t_now - t_last;
-        // 系统指示灯控制
+        // 系统指示灯控制 (LED0_TOGGLE 已停用, 改由 gpio_test1 根据输入电平控制 LED0)
         if (t_off > 100)
         {
             t_last = t_now;
             CheckMcuPwrStatus();
             CheckMcuRunStatus();
-            LED0_TOGGLE();
+            // LED0_TOGGLE();  /* 停止: 由 gpio_test1_poll 接管 LED0 */
         }
 
-        // GPIO 测试: PB4/PB7/PB8 每 500ms 翻转一次
-        if ((t_now - gpio_t_last) >= GPIO_TEST_TOGGLE_MS)
+        // GPIO 测试1: PB5/PC1/PE14/PB6/PB7/PB8 每 500ms 打印电平, 任一为高则 LED0 亮
+        if ((t_now - gpio_t_last) >= GPIO_TEST1_POLL_MS)
         {
             gpio_t_last = t_now;
-            gpio_test_toggle();
+            gpio_test1_poll();
         }
 
         soft_time_periodic_sync();
