@@ -1055,7 +1055,39 @@ static void CheckMcuRunStatus(void)
         // printf("PCA9554A_ReadReg err.\n");
     }
 
-    if ((g_IdaSystemStatus.st_dev_run.run_flag != 1) && (g_IdaSystemStatus.st_dev_link.link_status != USB_CONNECTED))
+    if (g_offline_mode == 1)
+    {
+        // 离线模式优先处理
+        if (g_IdaSystemStatus.st_dev_record.record_status == RECORD_RUN)
+        {
+            // 离线记录中，绿灯闪烁
+            t_off = t_now - t_last;
+            if (t_off > 500)
+            {
+                t_last = t_now;
+                led_state = !led_state;
+            }
+            if (led_state)
+            {
+                PCA9554_Set(PCA9544A_STS_G(read_val));
+            }
+            else
+            {
+                PCA9554_Set(PCA9544A_STS_I(read_val));
+            }
+        }
+        else if (g_IdaSystemStatus.st_dev_run.collect_cfg_flag == COLLECT_CFG_OK)
+        {
+            // 配置加载成功，绿灯常亮
+            PCA9554_Set(PCA9544A_STS_G(read_val));
+        }
+        else
+        {
+            // 离线未就绪，红灯常亮
+            PCA9554_Set(PCA9544A_STS_R(read_val));
+        }
+    }
+    else if ((g_IdaSystemStatus.st_dev_run.run_flag != 1) && (g_IdaSystemStatus.st_dev_link.link_status != USB_CONNECTED))
     {
         // 未连接且未运行时红灯常亮
         PCA9554_Set(PCA9544A_STS_R(read_val));
