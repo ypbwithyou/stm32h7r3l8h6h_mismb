@@ -62,31 +62,31 @@ uint8_t bridge_is_bridge_channel(int32_t channel_id)
 }
 
 /**
- * @brief 桥路类型映射: nVar1(1-9) -> bridge_set_payload_t.bridge值
- * @note 1-2: 1/4桥, 3-4,9: 1/2桥, 5-7: 全桥, 8: 配置错误
+ * @brief 桥路类型映射: nVar1(0-8) -> bridge_set_payload_t.bridge值
+ * @note 0-1: 1/4桥, 2-3,8: 1/2桥, 4-6: 全桥, 7: 配置错误
  *       bridge_set_payload_t.bridge: 0=全桥, 1=半桥, 2=1/4桥
  */
 uint8_t bridge_type_map(uint8_t nvar1_bridge_type)
 {
     switch (nvar1_bridge_type)
     {
-    case 1:       /* 1/4桥 */
-    case 2:       /* 1/4桥 */
+    case 0: /* 1/4桥 */
+    case 1: /* 1/4桥 */
         return 1; /* 非全桥 */
 
-    case 3:       /* 1/2桥 */
-    case 4:       /* 1/2桥 */
-    case 9:       /* 1/2桥 */
+    case 2: /* 1/2桥 */
+    case 3: /* 1/2桥 */
+    case 8: /* 1/2桥 */
         return 1; /* 非全桥 */
 
-    case 5:       /* 全桥 */
-    case 6:       /* 全桥 */
-    case 7:       /* 全桥 */
+    case 4: /* 全桥 */
+    case 5: /* 全桥 */
+    case 6: /* 全桥 */
         return 0; /* 全桥 */
 
-    case 8: /* 配置错误 */
+    case 7: /* 配置错误 */
     default:
-        return 1; /* 默认非全桥 */
+        return 1; /* 默认1/4桥 */
     }
 }
 
@@ -498,7 +498,9 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
     for (i = 0; i < total_channel_num; i++)
     {
 
-        int32_t nChannelID = channel_table_elem[i].nChannelID - 1;
+        int32_t nChannelID = channel_table_elem[i].nChannelID;
+        if (channel_table_elem[0].nChannelID == 1)
+            nChannelID -= 1;
         usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   ch loop i=%lu, nChannelID=%ld\r\n",
                    subdev_idx, (unsigned long)i, (long)nChannelID);
         ch_subdev_idx = bridge_get_subdev_idx_from_channel(nChannelID);
@@ -535,19 +537,20 @@ int8_t bridge_extract_subdev_cfg(const ChannelTableElem *channel_table_elem,
         usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   bridge_type_raw=%u -> %u\r\n",
                    subdev_idx, bridge_type, out_cfg->bridge_type[local_ch_idx]);
 
-        /* 映射分流校准类型 (只允许R2) */
+        /* 映射分流校准类型: shunt_raw非0且阻值有效则接入R2 */
         out_cfg->shunt_calib[local_ch_idx] = bridge_shunt_type_map(shunt_type);
-        usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   shunt_raw=%u -> %u\r\n",
-                   subdev_idx, shunt_type, out_cfg->shunt_calib[local_ch_idx]);
 
         /* 验证分流器电阻 (只允许40K) */
         if (channel_table_elem[i].fVar7 > 0)
         {
-            if (bridge_validate_shunt_r(channel_table_elem[i].fVar7) != 0)
+            if (bridge_validate_shunt_r(channel_table_elem[i].fVar7) == 0 && shunt_type != 0)
             {
-                usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   shunt R invalid (%.2f), disable\r\n",
+                out_cfg->shunt_calib[local_ch_idx] = 2; /* R2接入 */
+            }
+            else
+            {
+                usb_printf("[Bridge]  extract_subdev_cfg(subdev=%u):   shunt R invalid (%.2f) or shunt_raw=0, disable\r\n",
                            subdev_idx, channel_table_elem[i].fVar7);
-                /* 电阻值无效，设为不接入 */
                 out_cfg->shunt_calib[local_ch_idx] = 0;
             }
         }

@@ -7,20 +7,20 @@
 
 /* 桥路类型定义 (对应 nVar1 bit15-0)
  * 映射规则:
- *   1-2  -> 1/4桥
- *   3-4,9-> 1/2桥
- *   5-7  -> 全桥
- *   8    -> 配置错误 (默认按1/4桥处理)
+ *   0-1  -> 1/4桥
+ *   2-3,8-> 1/2桥
+ *   4-6  -> 全桥
+ *   7    -> 配置错误 (默认按1/4桥处理)
  */
-#define BRIDGE_TYPE_1_4_CH1     1   /* 1/4桥 */
-#define BRIDGE_TYPE_1_4_CH2     2   /* 1/4桥 */
-#define BRIDGE_TYPE_1_2_CH1     3   /* 1/2桥 */
-#define BRIDGE_TYPE_1_2_CH2     4   /* 1/2桥 */
-#define BRIDGE_TYPE_FULL_1      5   /* 全桥 */
-#define BRIDGE_TYPE_FULL_2      6   /* 全桥 */
-#define BRIDGE_TYPE_FULL_3      7   /* 全桥 */
-#define BRIDGE_TYPE_ERR         8   /* 配置错误 */
-#define BRIDGE_TYPE_1_2_CH3     9   /* 1/2桥 */
+#define BRIDGE_TYPE_1_4_CH1     0   /* 1/4桥 */
+#define BRIDGE_TYPE_1_4_CH2     1   /* 1/4桥 */
+#define BRIDGE_TYPE_1_2_CH1     2   /* 1/2桥 */
+#define BRIDGE_TYPE_1_2_CH2     3   /* 1/2桥 */
+#define BRIDGE_TYPE_FULL_1      4   /* 全桥 */
+#define BRIDGE_TYPE_FULL_2      5   /* 全桥 */
+#define BRIDGE_TYPE_FULL_3      6   /* 全桥 */
+#define BRIDGE_TYPE_ERR         7   /* 配置错误 */
+#define BRIDGE_TYPE_1_2_CH3     8   /* 1/2桥 */
 
 /* 分流校准类型定义 (对应 nVar1 bit31-16) */
 #define SHUNT_CALIB_NONE    0   /* 不接入分流电阻 */
