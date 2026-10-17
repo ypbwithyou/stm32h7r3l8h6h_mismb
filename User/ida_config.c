@@ -14,6 +14,7 @@
 #include "./MALLOC/malloc.h"
 #include "./FATFS/exfuns/exfuns.h"
 #include "./FATFS/source/diskio.h"
+#include "./FATFS/source/emmc_arbitrator.h"
 #include "./LIBS/lib_dwt/lib_dwt_timestamp.h"
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
 #include "./BSP/EXTI/exti.h"
@@ -1229,6 +1230,9 @@ int8_t app_processor(void)
         {
             sd_disk_reset();
         }
+
+        /* U盘(USB MSC)接管/释放 eMMC 的状态机，需每圈轮询 */
+        emmc_media_poll();
 
         ExternalIO_Process();
 

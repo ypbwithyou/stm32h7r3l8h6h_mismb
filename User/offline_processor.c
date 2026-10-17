@@ -13,6 +13,7 @@
 #include "./LIBS/lib_file_utils/file_utils.h"
 #include "dataType.h"
 #include "bridge_config.h"
+#include "./FATFS/source/emmc_arbitrator.h"
 
 #define OFFLINE_SCHEDULE_ITEM_MAX 32
 typedef enum ScheduleItemRunStatus
@@ -195,6 +196,17 @@ static uint32_t ScanMaxFileNum(const char *dir_path)
 }
 
 // 初始化时调用一次
+/* 主机接管 eMMC 前由仲裁模块调用（此时本机磁盘访问仍被允许）：
+ * 把写缓存里的数据落盘，让主机读到最新内容，并保证本机缓存状态干净 */
+void emmc_fs_suspend_hook(void)
+{
+    if (g_offline_record_fil.flag && (s_write_cache_pos != 0U))
+    {
+        (void)cache_flush(&g_offline_record_fil);
+        s_write_cache_pos = 0U;
+    }
+}
+
 void OfflineRecordInit(void)
 {
     g_offline_signal_source = (SignalDataSource *)mymalloc(SRAMEX, sizeof(SignalDataSource) * 24);
@@ -274,6 +286,10 @@ static uint32_t GetOfflineSampleRate(void)
 static void HandleRecordStart(uint8_t idx)
 {
     if (g_offline_record_fil.flag)
+        return;
+
+    /* USB主机(只读U盘)接管 eMMC 期间不新建记录文件，待释放后由计划任务重新触发 */
+    if (emmc_media_taken())
         return;
 
     usb_printf("Record_Start\n");
@@ -1076,6 +1092,11 @@ static void OfflineDatasRecord(void)
 {
     FRESULT res;
     UINT bw;
+
+    /* USB主机接管 eMMC 期间暂停记录写入（不置错误态），
+     * 待主机释放后继续；此时 RECORD_STOP 的收尾也会顺延到释放后执行 */
+    if (emmc_media_taken())
+        return;
 
     g_offline_GlobalParam.nBlockSize = BLOCK_LEN;
     const uint32_t block_bytes = (uint32_t)g_offline_GlobalParam.nBlockSize * sizeof(short);

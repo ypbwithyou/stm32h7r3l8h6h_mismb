@@ -1,19 +1,19 @@
 /**
  ****************************************************************************************************
  * @file        usbd_conf.h
- * @author      ÕýµãÔ­×ÓÍÅ¶Ó(ALIENTEK)
+ * @author      ï¿½ï¿½ï¿½ï¿½Ô­ï¿½ï¿½ï¿½Å¶ï¿½(ALIENTEK)
  * @version     V1.0
  * @date        2024-05-21
- * @brief       USBÉè±¸ÅäÖÃÎÄ¼þ
- * @license     Copyright (c) 2020-2032, ¹ãÖÝÊÐÐÇÒíµç×Ó¿Æ¼¼ÓÐÏÞ¹«Ë¾
+ * @brief       USBï¿½è±¸ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
+ * @license     Copyright (c) 2020-2032, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿Æ¼ï¿½ï¿½ï¿½ï¿½Þ¹ï¿½Ë¾
  ****************************************************************************************************
  * @attention
  * 
- * ÊµÑéÆ½Ì¨:ÕýµãÔ­×Ó H7R3¿ª·¢°å
- * ÔÚÏßÊÓÆµ:www.yuanzige.com
- * ¼¼ÊõÂÛÌ³:www.openedv.com
- * ¹«Ë¾ÍøÖ·:www.alientek.com
- * ¹ºÂòµØÖ·:openedv.taobao.com
+ * Êµï¿½ï¿½Æ½Ì¨:ï¿½ï¿½ï¿½ï¿½Ô­ï¿½ï¿½ H7R3ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµ:www.yuanzige.com
+ * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì³:www.openedv.com
+ * ï¿½ï¿½Ë¾ï¿½ï¿½Ö·:www.alientek.com
+ * ï¿½ï¿½ï¿½ï¿½ï¿½Ö·:openedv.taobao.com
  * 
  ****************************************************************************************************
  */
@@ -25,25 +25,32 @@
 #include <string.h>
 #include <stdio.h>
 
-#define USBD_MAX_NUM_INTERFACES     1U
+#define USBD_MAX_NUM_INTERFACES     3U     /* CDC(2) + MSC(1) */
 #define USBD_MAX_NUM_CONFIGURATION  1U
 #define USBD_MAX_STR_DESC_SIZ       512U
 #define USBD_DEBUG_LEVEL            0U
 #define USBD_LPM_ENABLED            0U
 #define USBD_SELF_POWERED           1U
 
-/* CDCÀàÅäÖÃ */
+/* Composite device: CDC virtual COM port + MSC read-only U-disk */
+#define USE_USBD_COMPOSITE          1
+#define USBD_CMPSIT_ACTIVATE_CDC    1
+#define USBD_CMPSIT_ACTIVATE_MSC    1
+#define USBD_COMPOSITE_USE_IAD      1
+#define USBD_CMPST_MAX_CONFDESC_SZ  300U
+
+/* CDCï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
 #define USBD_CDC_INTERVAL           2000U
 
-/* Éè±¸ID¶¨Òå */
+/* ï¿½è±¸IDï¿½ï¿½ï¿½ï¿½ */
 #define DEVICE_HS                   0
 
-/* ÄÚ´æ¹ÜÀíÏà¹Øºê¶¨Òå */
+/* ï¿½Ú´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øºê¶¨ï¿½ï¿½ */
 #define USBD_malloc                 (void *)USBD_static_malloc
 #define USBD_free                   USBD_static_free
 #define USBD_memset                 memset
 
-/* µ÷ÊÔÏà¹Øºê¶¨Òå */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øºê¶¨ï¿½ï¿½ */
 #if (USBD_DEBUG_LEVEL > 0U)
 #define USBD_UsrLog(...)    do {                        \
                                 printf(__VA_ARGS__);    \
@@ -71,10 +78,10 @@
 #define USBD_DbgLog(...)    do {} while (0)
 #endif
 
-/* µ¼³öÏà¹Ø±äÁ¿ */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø±ï¿½ï¿½ï¿½ */
 extern uint8_t g_usb_conn_state;
 
-/* º¯ÊýÉùÃ÷ */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
 void *USBD_static_malloc(uint32_t size);
 void USBD_static_free(void *p);
 

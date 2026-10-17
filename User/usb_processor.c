@@ -4,8 +4,11 @@
 #include "usbd_core.h"
 #include "usbd_desc.h"
 #include "usbd_cdc.h"
+#include "usbd_msc.h"
+#include "usbd_msc_storage_if.h"
 
 #include "./SYSTEM/delay/delay.h"
+#include "./FATFS/source/emmc_arbitrator.h"
 #include "./LIBS/lib_usb_protocol/slidingWindowReceiver_c.h"
 #include "./LIBS/lib_usb_protocol/usb_protocol.h"
 #include "./LIBS/lib_circular_buffer/CircularBuffer.h"
@@ -365,9 +368,19 @@ void usb_init(void)
 #endif
 
     /* 鍒濆鍖朥SB */
+    /* USB composite: CDC virtual COM port + MSC read-only U-disk.
+     * pUserData is indexed by pdev->classId, so interface callbacks must be
+     * registered while classId points at that class slot:
+     *   after USBD_Init classId==0 -> register CDC interface, then CDC class(classId->1)
+     *   now classId==1 -> register MSC storage, then MSC class(classId->2)          */
+    static uint8_t cdc_ep_addr[3] = {0x81U, 0x01U, 0x82U}; /* IN bulk, OUT bulk, IN notify */
+    static uint8_t msc_ep_addr[2] = {0x83U, 0x02U};         /* IN bulk, OUT bulk           */
+
     USBD_Init(&g_usbd_handle, &CDC_Desc, DEVICE_HS);
-    USBD_RegisterClass(&g_usbd_handle, USBD_CDC_CLASS);
     USBD_CDC_RegisterInterface(&g_usbd_handle, &USBD_CDC_fops);
+    USBD_RegisterClassComposite(&g_usbd_handle, USBD_CDC_CLASS, CLASS_TYPE_CDC, cdc_ep_addr);
+    USBD_MSC_RegisterStorage(&g_usbd_handle, &USBD_MSC_fops);
+    USBD_RegisterClassComposite(&g_usbd_handle, USBD_MSC_CLASS, CLASS_TYPE_MSC, msc_ep_addr);
     USBD_Start(&g_usbd_handle);
 
     // ----------------------
@@ -1635,6 +1648,7 @@ static void download_send_next_pack(void)
         /* 读取出错，关闭文件 */
         f_close(&g_download_session.fil);
         memset(&g_download_session, 0, sizeof(g_download_session));
+        emmc_set_defer(0);
         return;
     }
 
@@ -1730,6 +1744,9 @@ static uint32_t USB_DownloadFileStart(uint8_t *data_in, uint32_t data_len, Frame
     g_download_session.bytes_sent = 0;
     strncpy(g_download_session.file_path, file_path,
             sizeof(g_download_session.file_path) - 1);
+
+    /* 下载会话期间推迟 U 盘接管，避免读文件被主机访问 eMMC 打断 */
+    emmc_set_defer(1);
 
     usb_printf("[Download] Session started: path=%s size=%lu packs=%lu\r\n",
                g_download_session.file_path,
@@ -1841,6 +1858,7 @@ static uint32_t USB_DownloadFileStop(uint8_t *data_in, uint32_t data_len, FrameH
         usb_printf("[Download] Session closed: sent=%lu bytes\r\n",
                    g_download_session.bytes_sent);
         memset(&g_download_session, 0, sizeof(g_download_session));
+        emmc_set_defer(0);
         ret = 0; /* 成功 */
     }
     else

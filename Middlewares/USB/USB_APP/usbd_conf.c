@@ -1,19 +1,19 @@
 /**
  ****************************************************************************************************
  * @file        usbd_conf.c
- * @author      ÕýµãÔ­×ÓÍÅ¶Ó(ALIENTEK)
+ * @author      ï¿½ï¿½ï¿½ï¿½Ô­ï¿½ï¿½ï¿½Å¶ï¿½(ALIENTEK)
  * @version     V1.0
  * @date        2024-05-21
- * @brief       USBÉè±¸ÅäÖÃÎÄ¼þ
- * @license     Copyright (c) 2020-2032, ¹ãÖÝÊÐÐÇÒíµç×Ó¿Æ¼¼ÓÐÏÞ¹«Ë¾
+ * @brief       USBï¿½è±¸ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
+ * @license     Copyright (c) 2020-2032, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿Æ¼ï¿½ï¿½ï¿½ï¿½Þ¹ï¿½Ë¾
  ****************************************************************************************************
  * @attention
  *
- * ÊµÑéÆ½Ì¨:ÕýµãÔ­×Ó H7R3¿ª·¢°å
- * ÔÚÏßÊÓÆµ:www.yuanzige.com
- * ¼¼ÊõÂÛÌ³:www.openedv.com
- * ¹«Ë¾ÍøÖ·:www.alientek.com
- * ¹ºÂòµØÖ·:openedv.taobao.com
+ * Êµï¿½ï¿½Æ½Ì¨:ï¿½ï¿½ï¿½ï¿½Ô­ï¿½ï¿½ H7R3ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµ:www.yuanzige.com
+ * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì³:www.openedv.com
+ * ï¿½ï¿½Ë¾ï¿½ï¿½Ö·:www.alientek.com
+ * ï¿½ï¿½ï¿½ï¿½ï¿½Ö·:openedv.taobao.com
  *
  ****************************************************************************************************
  */
@@ -22,16 +22,16 @@
 #include "./MALLOC/malloc.h"
 #include "./SYSTEM/delay/delay.h"
 
-/* PCD¾ä±ú */
+/* PCDï¿½ï¿½ï¿½ */
 PCD_HandleTypeDef g_pcd_handle = {0};
 
-/* USBÁ¬½Ó×´Ì¬±êÖ¾ */
+/* USBï¿½ï¿½ï¿½ï¿½×´Ì¬ï¿½ï¿½Ö¾ */
 uint8_t g_usb_conn_state = 0;
 
 /**
- * @brief   OTG HSÖÐ¶Ï·þÎñº¯Êý
- * @param   ÎÞ
- * @retval  ÎÞ
+ * @brief   OTG HSï¿½Ð¶Ï·ï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void OTG_HS_IRQHandler(void)
 {
@@ -39,9 +39,9 @@ void OTG_HS_IRQHandler(void)
 }
 
 /**
- * @brief   HAL¿âPCD³õÊ¼»¯MSPº¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½Ê¼ï¿½ï¿½MSPï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_MspInit(PCD_HandleTypeDef *hpcd)
 {
@@ -50,23 +50,23 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *hpcd)
 
     if (hpcd->Instance == USB_OTG_HS)
     {
-        /* Ê¹ÄÜUSB HSµçÑ¹µ÷½ÚÆ÷ */
+        /* Ê¹ï¿½ï¿½USB HSï¿½ï¿½Ñ¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
         HAL_PWREx_EnableUSBHSregulator();
 
-        /* ÅäÖÃÊ±ÖÓ */
+        /* ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ */
         rcc_periph_clk_init_struct.PeriphClockSelection = RCC_PERIPHCLK_USBPHYC;
         rcc_periph_clk_init_struct.UsbPhycClockSelection = RCC_USBPHYCCLKSOURCE_HSE;
         HAL_RCCEx_PeriphCLKConfig(&rcc_periph_clk_init_struct);
 
-        /* Ê¹ÄÜUSBµçÔ´¼à²âÆ÷ */
+        /* Ê¹ï¿½ï¿½USBï¿½ï¿½Ô´ï¿½ï¿½ï¿½ï¿½ï¿½ */
         HAL_PWREx_EnableUSBVoltageDetector();
 
-        /* Ê¹ÄÜÊ±ÖÓ */
+        /* Ê¹ï¿½ï¿½Ê±ï¿½ï¿½ */
         __HAL_RCC_USB_OTG_HS_CLK_ENABLE();
         __HAL_RCC_USBPHYC_CLK_ENABLE();
         __HAL_RCC_GPIOM_CLK_ENABLE();
 
-        /* ³õÊ¼»¯DM¡¢DPÒý½Å */
+        /* ï¿½ï¿½Ê¼ï¿½ï¿½DMï¿½ï¿½DPï¿½ï¿½ï¿½ï¿½ */
         gpio_init_struct.Pin = GPIO_PIN_5 | GPIO_PIN_6;
         gpio_init_struct.Mode = GPIO_MODE_AF_PP;
         gpio_init_struct.Pull = GPIO_NOPULL;
@@ -74,37 +74,37 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *hpcd)
         gpio_init_struct.Alternate = GPIO_AF10_OTG_HS;
         HAL_GPIO_Init(GPIOM, &gpio_init_struct);
 
-        /* ÅäÖÃÖÐ¶Ï */
+        /* ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½ */
         HAL_NVIC_SetPriority(OTG_HS_IRQn, 10, 0);
         HAL_NVIC_EnableIRQ(OTG_HS_IRQn);
     }
 }
  
 /**
- * @brief   HAL¿âPCD·´³õÊ¼»¯MSPº¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½MSPï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_MspDeInit(PCD_HandleTypeDef *hpcd)
 {
     if (hpcd->Instance == USB_OTG_HS)
     {
-        /* Ê§ÄÜÊ±ÖÓ */
+        /* Ê§ï¿½ï¿½Ê±ï¿½ï¿½ */
         __HAL_RCC_USB_OTG_HS_CLK_DISABLE();
         __HAL_RCC_USBPHYC_CLK_DISABLE();
 
-        /* ·´³õÊ¼»¯DM¡¢DPÒý½Å */
+        /* ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½DMï¿½ï¿½DPï¿½ï¿½ï¿½ï¿½ */
         HAL_GPIO_DeInit(GPIOM, GPIO_PIN_5 | GPIO_PIN_6);
 
-        /* ¹Ø±ÕÖÐ¶Ï */
+        /* ï¿½Ø±ï¿½ï¿½Ð¶ï¿½ */
         HAL_NVIC_DisableIRQ(OTG_HS_IRQn);
     }
 }
 
 /**
- * @brief   HAL¿âPCD½¨Á¢½×¶Î»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½ï¿½ï¿½ï¿½×¶Î»Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_SetupStageCallback(PCD_HandleTypeDef *hpcd)
 {
@@ -112,10 +112,10 @@ void HAL_PCD_SetupStageCallback(PCD_HandleTypeDef *hpcd)
 }
 
 /**
- * @brief   HAL¿âPCDÊý¾ÝÊä³ö»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @param   epnum: ¶Ëµã±àºÅ
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @param   epnum: ï¿½Ëµï¿½ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_DataOutStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 {
@@ -123,10 +123,10 @@ void HAL_PCD_DataOutStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 }
 
 /**
- * @brief   HAL¿âPCDÊý¾ÝÊäÈë»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @param   epnum: ¶Ëµã±àºÅ
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @param   epnum: ï¿½Ëµï¿½ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 {
@@ -134,9 +134,9 @@ void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 }
 
 /**
- * @brief   HAL¿âPCDÖ¡ÆðÊ¼»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDÖ¡ï¿½ï¿½Ê¼ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_SOFCallback(PCD_HandleTypeDef *hpcd)
 {
@@ -144,9 +144,9 @@ void HAL_PCD_SOFCallback(PCD_HandleTypeDef *hpcd)
 }
 
 /**
- * @brief   HAL¿âPCD¸´Î»»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½Î»ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd)
 {
@@ -170,9 +170,9 @@ void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd)
 }
 
 /**
- * @brief   HAL¿âPCD¹ÒÆð»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd)
 {
@@ -187,9 +187,9 @@ void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd)
 }
 
 /**
- * @brief   HAL¿âPCD»Ö¸´»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½Ö¸ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_ResumeCallback(PCD_HandleTypeDef *hpcd)
 {
@@ -203,10 +203,10 @@ void HAL_PCD_ResumeCallback(PCD_HandleTypeDef *hpcd)
 }
 
 /**
- * @brief   HAL¿âPCD ISOÊä³ö²»ÍêÕû»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @param   epnum: ¶Ëµã±àºÅ
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCD ISOï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @param   epnum: ï¿½Ëµï¿½ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_ISOOUTIncompleteCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 {
@@ -214,10 +214,10 @@ void HAL_PCD_ISOOUTIncompleteCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 }
 
 /**
- * @brief   HAL¿âPCD ISOÊäÈë²»ÍêÕû»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @param   epnum: ¶Ëµã±àºÅ
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCD ISOï¿½ï¿½ï¿½ë²»ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @param   epnum: ï¿½Ëµï¿½ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_ISOINIncompleteCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 {
@@ -225,9 +225,9 @@ void HAL_PCD_ISOINIncompleteCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 }
 
 /**
- * @brief   HAL¿âPCDÁ¬½Ó»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½ï¿½ï¿½Ó»Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_ConnectCallback(PCD_HandleTypeDef *hpcd)
 {
@@ -236,9 +236,9 @@ void HAL_PCD_ConnectCallback(PCD_HandleTypeDef *hpcd)
 }
 
 /**
- * @brief   HAL¿âPCD¶Ï¿ª»Øµ÷º¯Êý
- * @param   hpcd: PCD¾ä±úÖ¸Õë
- * @retval  ÎÞ
+ * @brief   HALï¿½ï¿½PCDï¿½Ï¿ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
+ * @param   hpcd: PCDï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+ * @retval  ï¿½ï¿½
  */
 void HAL_PCD_DisconnectCallback(PCD_HandleTypeDef *hpcd)
 {
@@ -299,7 +299,7 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
 
     if (pdev->id == DEVICE_HS)
     {
-        /* PCD³õÊ¼»¯ */
+        /* PCDï¿½ï¿½Ê¼ï¿½ï¿½ */
         g_pcd_handle.pData = pdev;
         pdev->pData = &g_pcd_handle;
         g_pcd_handle.Instance = USB_OTG_HS;
@@ -319,10 +319,12 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
             return usb_status;
         }
 
-        /* ÅäÖÃ½ÓÊÕ¡¢·¢ËÍFiFo */
+        /* ï¿½ï¿½ï¿½Ã½ï¿½ï¿½Õ¡ï¿½ï¿½ï¿½ï¿½ï¿½FiFo */
         HAL_PCDEx_SetRxFiFo(&g_pcd_handle, 0x200);
-        HAL_PCDEx_SetTxFiFo(&g_pcd_handle, 0, 0x40);
-        HAL_PCDEx_SetTxFiFo(&g_pcd_handle, 1, 0x80);
+        HAL_PCDEx_SetTxFiFo(&g_pcd_handle, 0, 0x40);  /* EP0 control   64B */
+        HAL_PCDEx_SetTxFiFo(&g_pcd_handle, 1, 0x80);  /* EP1 CDC bulk 512B */
+        HAL_PCDEx_SetTxFiFo(&g_pcd_handle, 2, 0x10);  /* EP2 CDC notify 64B */
+        HAL_PCDEx_SetTxFiFo(&g_pcd_handle, 3, 0x80);  /* EP3 MSC bulk 512B */
     }
 
     return USBD_OK;
@@ -558,7 +560,7 @@ void *USBD_static_malloc(uint32_t size)
 {
     return mymalloc(SRAMIN, size);
 
-    /* USBÁ¬½Ó×´Ì¬±êÖ¾ */
+    /* USBï¿½ï¿½ï¿½ï¿½×´Ì¬ï¿½ï¿½Ö¾ */
     uint8_t g_usb_conn_state = 0;
 }
 

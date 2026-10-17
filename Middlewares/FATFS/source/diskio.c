@@ -2,6 +2,7 @@
 #include "./SYSTEM/usart/usart.h"
 #include "./FATFS/source/ff.h"
 #include "./FATFS/source/diskio.h"
+#include "./FATFS/source/emmc_arbitrator.h"
 #include "./BSP/NORFLASH/norflash_ex.h"
 #include "./BSP/SDNAND/spi_sdnand.h"
 #include "./BSP/MMC/mmc_sdcard.h"
@@ -41,17 +42,24 @@ DSTATUS disk_initialize(BYTE pdrv)
     if (pdrv != DEV_EMMC)
         return STA_NOINIT;
 
+    /* USB 主机(只读U盘)已接管 eMMC：本机暂停访问 */
+    if (emmc_media_taken())
+        return STA_NOINIT;
+
+    DSTATUS st = STA_NOINIT;
+    emmc_local_lock(); /* 期间 MSC 侧 IsReady 返回未就绪，主机自动重试 */
     for (uint8_t retry = 0; retry < DISK_RETRY_MAX; retry++)
     {
         if (mmc_init() == 0)
         {
-            g_disk_status = 0;
-            return 0;
+            st = 0;
+            break;
         }
         HAL_Delay(DISK_RETRY_DLY);
     }
+    emmc_local_unlock();
 
-    g_disk_status = STA_NOINIT;
+    g_disk_status = st;
     return g_disk_status;
 }
 
@@ -133,17 +141,25 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
         return RES_NOTRDY;
     if (count == 0)
         return RES_PARERR;
+    /* USB 主机接管期间：本机暂停 eMMC 访问 */
+    if (emmc_media_taken())
+        return RES_NOTRDY;
 
+    emmc_local_lock();
     for (uint8_t retry = 0; retry < DISK_RETRY_MAX; retry++)
     {
         if (emmc_read_aligned((uint8_t *)buff, (uint32_t)sector, (uint32_t)count) == 0)
+        {
+            emmc_local_unlock();
             return RES_OK;
+        }
 
         HAL_Delay(DISK_RETRY_DLY);
         emmc_reinit(); /* reinit 失败也继续下一轮重试 */
     }
 
     g_disk_status = STA_NOINIT;
+    emmc_local_unlock();
     return RES_ERROR;
 }
 
@@ -160,17 +176,25 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
         return RES_WRPRT;
     if (count == 0)
         return RES_PARERR;
+    /* USB 主机接管期间：本机暂停 eMMC 访问 (主机侧为只读U盘，不会写) */
+    if (emmc_media_taken())
+        return RES_NOTRDY;
 
+    emmc_local_lock();
     for (uint8_t retry = 0; retry < DISK_RETRY_MAX; retry++)
     {
         if (emmc_write_aligned(buff, (uint32_t)sector, (uint32_t)count) == 0)
+        {
+            emmc_local_unlock();
             return RES_OK;
+        }
 
         HAL_Delay(DISK_RETRY_DLY);
         emmc_reinit();
     }
 
     g_disk_status = STA_NOINIT;
+    emmc_local_unlock();
     return RES_ERROR;
 }
 
@@ -186,6 +210,9 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
         return RES_PARERR;
     if (g_disk_status & STA_NOINIT)
         return RES_NOTRDY;
+    /* USB 主机接管期间：本机暂停 eMMC 访问 */
+    if (emmc_media_taken())
+        return RES_NOTRDY;
 
     switch (cmd)
     {
@@ -193,18 +220,25 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
     {
         /* 等待 eMMC 完成内部写操作，超时返回错误 */
         uint32_t timeout = SD_TIMEOUT;
+        emmc_local_lock();
         while (HAL_MMC_GetCardState(&g_sd_handle) != HAL_MMC_CARD_TRANSFER)
         {
             HAL_Delay(1);
             if (--timeout == 0)
+            {
+                emmc_local_unlock();
                 return RES_ERROR;
+            }
         }
+        emmc_local_unlock();
         return RES_OK;
     }
 
     case GET_SECTOR_COUNT:
         /* ★ 原来每次 ioctl 都调 GetCardInfo，只有需要时才刷新 */
+        emmc_local_lock();
         HAL_MMC_GetCardInfo(&g_sd_handle, &g_sd_card_info_struct);
+        emmc_local_unlock();
         *(LBA_t *)buff = (LBA_t)g_sd_card_info_struct.LogBlockNbr;
         return RES_OK;
 
