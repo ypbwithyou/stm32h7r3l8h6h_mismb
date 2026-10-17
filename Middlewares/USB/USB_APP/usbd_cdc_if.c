@@ -28,6 +28,9 @@
 /* USBD句柄 */
 extern USBD_HandleTypeDef g_usbd_handle;
 
+/* 复合设备中 CDC 的 classId（usb_init 里最先注册，classId = 0） */
+#define USBD_CDC_CLASS_ID   0U
+
 static uint8_t g_usbd_cdc_tx_done = 1;
 uint16_t g_usbd_cdc_rx_sta = 0;
 uint16_t g_usbd_cdc_rx_len = 0;
@@ -240,8 +243,8 @@ void usbd_cdc_transmit(uint8_t *data, uint32_t len)
     }
 
     g_usbd_cdc_tx_done = 0;
-    USBD_CDC_SetTxBuffer(&g_usbd_handle, data, len);
-    status = USBD_CDC_TransmitPacket(&g_usbd_handle);
+    USBD_CDC_SetTxBuffer(&g_usbd_handle, data, len, USBD_CDC_CLASS_ID);
+    status = USBD_CDC_TransmitPacket(&g_usbd_handle, USBD_CDC_CLASS_ID);
     if (status != USBD_OK)
     {
         g_usbd_cdc_tx_done = 1;

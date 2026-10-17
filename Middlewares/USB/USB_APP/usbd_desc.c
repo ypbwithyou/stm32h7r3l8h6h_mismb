@@ -1,19 +1,19 @@
 /**
  ****************************************************************************************************
  * @file        usbd_conf.c
- * @author      ï¿½ï¿½ï¿½ï¿½Ô­ï¿½ï¿½ï¿½Å¶ï¿½(ALIENTEK)
+ * @author      ÕıµãÔ­×ÓÍÅ¶Ó(ALIENTEK)
  * @version     V1.0
  * @date        2024-05-21
- * @brief       USBï¿½è±¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
- * @license     Copyright (c) 2020-2032, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿Æ¼ï¿½ï¿½ï¿½ï¿½Ş¹ï¿½Ë¾
+ * @brief       USBÉè±¸ÃèÊö·ûÅäÖÃÎÄ¼ş
+ * @license     Copyright (c) 2020-2032, ¹ãÖİÊĞĞÇÒíµç×Ó¿Æ¼¼ÓĞÏŞ¹«Ë¾
  ****************************************************************************************************
  * @attention
  * 
- * Êµï¿½ï¿½Æ½Ì¨:ï¿½ï¿½ï¿½ï¿½Ô­ï¿½ï¿½ H7R3ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
- * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµ:www.yuanzige.com
- * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì³:www.openedv.com
- * ï¿½ï¿½Ë¾ï¿½ï¿½Ö·:www.alientek.com
- * ï¿½ï¿½ï¿½ï¿½ï¿½Ö·:openedv.taobao.com
+ * ÊµÑéÆ½Ì¨:ÕıµãÔ­×Ó H7R3¿ª·¢°å
+ * ÔÚÏßÊÓÆµ:www.yuanzige.com
+ * ¼¼ÊõÂÛÌ³:www.openedv.com
+ * ¹«Ë¾ÍøÖ·:www.alientek.com
+ * ¹ºÂòµØÖ·:openedv.taobao.com
  * 
  ****************************************************************************************************
  */
@@ -32,14 +32,14 @@
 #define USBD_PRODUCT_STRING         "NTS-DAQ-H7R3"
 #define USBD_MANUFACTURER_STRING    "ALIENTEK-NTS"
 
-/* USBï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
+/* USBÃèÊö·û¶¨Òå */
 __ALIGN_BEGIN uint8_t USBD_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
     0x12,                       /*bLength */
     USB_DESC_TYPE_DEVICE,       /*bDescriptorType*/
     0x00,                       /*bcdUSB */
     0x02,
-    0xEF,                       /*bDeviceClass: Miscellaneous (IADå¤åˆè®¾å¤‡) */
-    0x02,                       /*bDeviceSubClass: Common */
+    0xEF,                       /*bDeviceClass: Miscellaneous (IAD) */
+    0x02,                       /*bDeviceSubClass*/
     0x01,                       /*bDeviceProtocol: IAD */
     USB_MAX_EP0_SIZE,           /*bMaxPacketSize*/
     LOBYTE(USBD_VID),           /*idVendor*/
@@ -47,7 +47,7 @@ __ALIGN_BEGIN uint8_t USBD_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
     LOBYTE(USBD_PID),           /*idProduct*/
     HIBYTE(USBD_PID),           /*idProduct*/
     0x10,                       /*bcdDevice rel. 1.10*/
-    0x01,
+    0x02,
     USBD_IDX_MFC_STR,           /*Index of manufacturer  string*/
     USBD_IDX_PRODUCT_STR,       /*Index of product string*/
     USBD_IDX_SERIAL_STR,        /*Index of serial number string*/
@@ -218,7 +218,7 @@ uint8_t * USBD_CDC_InterfaceStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *len
     return USBD_StrDesc;
 }
 
-/* USB CDCï¿½è±¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
+/* USB CDCÉè±¸ÃèÊö·û */
 USBD_DescriptorsTypeDef CDC_Desc = {
     USBD_CDC_DeviceDescriptor,
     USBD_CDC_LangIDStrDescriptor,

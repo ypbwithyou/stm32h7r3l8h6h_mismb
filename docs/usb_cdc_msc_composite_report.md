@@ -92,6 +92,8 @@ Rx FIFO 0x200 (2048B)。SetTxFiFo 按端点号升序调用（0→1→2→3），
 | Middlewares/FATFS/source/diskio.c | include emmc_arbitrator.h；disk_initialize / disk_read / disk_write / disk_ioctl 入口加 emmc_media_taken() 门控（返回 STA_NOINIT / RES_NOTRDY），重试与 emmc_reinit 全过程包在 emmc_local_lock()/unlock() 内 |
 | User/ida_config.c | include emmc_arbitrator.h；主循环 while(1) 内 sd_disk_poll() 之后调用 emmc_media_poll() |
 | User/offline_processor.c | include emmc_arbitrator.h；HandleRecordStart / OfflineDatasRecord 开头加 emmc_media_taken() 早退（不置错误态，暂停记录写入，释放后继续）；strong 实现 emmc_fs_suspend_hook()（接管前 cache_flush 落盘） |
+| Middlewares/USB/USB_APP/usbd_cdc_if.c | 复合模式下 USBD_CDC_SetTxBuffer / USBD_CDC_TransmitPacket 增加 ClassId 参数（新增 USBD_CDC_CLASS_ID=0，CDC 为最先注册的 class） |
+| Middlewares/MALLOC/malloc.h | MEM1（AXI-SRAM）池上限 0x62000→0x60000（缩小 8KB）：新增 MSC/复合静态数据约 1.3KB 使 .ANY 区域溢出，缩小本就富裕的 mem1 堆池腾出空间 |
 | Projects/MDK-ARM/atk_h7r3.uvprojx | 新增源文件：Middlewares/USB_CLASS 组加入 usbd_msc.c、usbd_msc_bot.c、usbd_msc_scsi.c、usbd_msc_data.c、usbd_composite_builder.c（CompositeBuilder/Src）；Middlewares/USB_APP 组加入 usbd_msc_storage_if.c；Middlewares/FATFS 组加入 emmc_arbitrator.c；IncludePath 追加 Class\MSC\Inc 与 Class\CompositeBuilder\Inc（Define 保持 USE_HAL_DRIVER,STM32H7R3xx,USE_USB_HS 不变） |
 
 ### 复合注册顺序（User/usb_processor.c:379，顺序硬约束）
@@ -127,18 +129,20 @@ cdc_ep_addr = {0x81, 0x01, 0x82}，msc_ep_addr = {0x83, 0x02}。
 
 ## 5. 验证情况
 
-- 已完成全面静态审查：
+- **编译验证通过**（Keil MDK V6.14，ARMCLANG，2026-10-17）：
+  全量 Rebuild 0 Error / 0 Warning。
+  Program Size: Code=153958, RO-data=187438, RW-data=524, ZI-data=9011836
+  （ZI 含 mem2 HyperRAM 堆池；代码 + RO 在 0x90100000 外部 XSPI NOR，RAM 在 0x24000000 AXI-SRAM）
+- 编译过程中发现并修复的两个问题：
+  1. usbd_cdc_if.c：复合模式下 SetTxBuffer/TransmitPacket 需传 ClassId 参数；
+  2. 链接 L6406E：新增静态数据使 RW_IRAM1 .ANY 区溢出 0x51c 字节 →
+     mem1 堆池上限缩小 8KB（0x62000→0x60000，池仍有约 390KB，实际使用远小于此）。
+- 已完成的静态审查：
   - 注册顺序、pUserData/classId 索引、EpAdd 索引顺序与 CompositeBuilder 源码一致；
-  - USBD_MSC_RegisterStorage / USBD_RegisterClassComposite / USBD_CMPSIT_* 宏与函数原型核对通过；
-  - inquiry 数组长度核对（曾发现 40 字节初始化超出 STANDARD_INQUIRY_DATA_LEN=36，
-    已修正为 8+8+16+4=36）；
+  - inquiry 数组长度核对（曾发现 40 字节初始化超出 STANDARD_INQUIRY_DATA_LEN=36，已修正）；
   - diskio.c 门控/锁的所有返回路径已确认成对 lock/unlock；
-  - uvprojx 中 usbd_composite_builder.c 路径已由误写的 Core\Src 修正为 Class\CompositeBuilder\Src，
-    并核对所有新增源文件在磁盘上真实存在；
+  - uvprojx 中 usbd_composite_builder.c 路径已由误写的 Core\Src 修正为 Class\CompositeBuilder\Src；
   - FIFO 升序、总占用 748 words (2992B) 未超硬件限制。
-- 本机未安装 Keil（D:\Keil_v5 与 arm-none-eabi-gcc 均不存在），无法实际编译；
-  atk_h7r3.BAT 依赖旧的 response file（不含新增文件），不可直接使用。
-  请在装有 MDK 的机器上打开 atk_h7r3.uvprojx 重新 Build（会自动重新生成 response file）。
 
 ## 6. 遗留风险与建议测试
 

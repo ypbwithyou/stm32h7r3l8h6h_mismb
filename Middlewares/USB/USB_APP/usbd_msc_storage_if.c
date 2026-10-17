@@ -1,14 +1,14 @@
 /**
   ****************************************************************************************************
   * @file        usbd_msc_storage_if.c
-  * @brief       USB MSC (åªè¯»Uç›˜) åç«¯å®ç°
+  * @brief       USB MSC (Ö»¶ÁUÅÌ) ºó¶ËÊµÏÖ
   *
-  * è¯´æ˜ï¼š
-  *  - æœ¬æ–‡ä»¶çš„ Read å›è°ƒåœ¨ USB ä¸­æ–­ä¸Šä¸‹æ–‡æ‰§è¡Œ(usbd_msc_scsi.c:SCSI_ProcessRead)ï¼Œ
-  *    ä¸¥ç¦è°ƒç”¨ HAL_Delay/mmc_init ç­‰è€—æ—¶æˆ–ä¾èµ–ä½ä¼˜å…ˆçº§ä¸­æ–­çš„å‡½æ•°ï¼›
-  *  - ä¸æœ¬æœº FatFS çš„äº’æ–¥ç”± emmc_arbitrator è´Ÿè´£ï¼š
-  *      IsReady() åœ¨æœ¬æœºæ“ä½œç£ç›˜æœŸé—´è¿”å›"æœªå°±ç»ª"ï¼Œä¸»æœºå¾—åˆ° NOT_READY åè‡ªåŠ¨é‡è¯•ï¼›
-  *  - æœ¬ U ç›˜ä¸ºåªè¯»ï¼šIsWriteProtected æ’ä¸º 1ï¼ŒWrite å›è°ƒç›´æ¥å¤±è´¥ã€‚
+  * ËµÃ÷£º
+  *  - ±¾ÎÄ¼şµÄ Read »Øµ÷ÔÚ USB ÖĞ¶ÏÉÏÏÂÎÄÖ´ĞĞ(usbd_msc_scsi.c:SCSI_ProcessRead)£¬
+  *    ÑÏ½ûµ÷ÓÃ HAL_Delay/mmc_init µÈºÄÊ±»òÒÀÀµµÍÓÅÏÈ¼¶ÖĞ¶ÏµÄº¯Êı£»
+  *  - Óë±¾»ú FatFS µÄ»¥³âÓÉ emmc_arbitrator ¸ºÔğ£º
+  *      IsReady() ÔÚ±¾»ú²Ù×÷´ÅÅÌÆÚ¼ä·µ»Ø"Î´¾ÍĞ÷"£¬Ö÷»úµÃµ½ NOT_READY ºó×Ô¶¯ÖØÊÔ£»
+  *  - ±¾ U ÅÌÎªÖ»¶Á£ºIsWriteProtected ºãÎª 1£¬Write »Øµ÷Ö±½ÓÊ§°Ü¡£
   ****************************************************************************************************
   */
 
@@ -37,14 +37,14 @@ static int8_t s_msc_inquiry_data[STANDARD_INQUIRY_DATA_LEN] =
     '1', '.', '0', '0'                        /* Revision: 4 bytes   */
 };
 
-/* MSC ä¾§ç‹¬ç«‹çš„ 32 å­—èŠ‚å¯¹é½ä¸­è½¬ç¼“å†²ï¼ˆDMA + DCache è¦æ±‚ï¼‰ã€‚
- * ä¸å¯ä¸ diskio.c çš„ä¸­è½¬ç¼“å†²å…±ç”¨ï¼šä¸¤è€…åˆ†å±ä¸åŒä¸Šä¸‹æ–‡ï¼ˆæœ¬æœºä¸»å¾ªç¯ / USBä¸­æ–­ï¼‰ */
+/* MSC ²à¶ÀÁ¢µÄ 32 ×Ö½Ú¶ÔÆëÖĞ×ª»º³å£¨DMA + DCache ÒªÇó£©¡£
+ * ²»¿ÉÓë diskio.c µÄÖĞ×ª»º³å¹²ÓÃ£ºÁ½Õß·ÖÊô²»Í¬ÉÏÏÂÎÄ£¨±¾»úÖ÷Ñ­»· / USBÖĞ¶Ï£© */
 static uint8_t s_msc_sector_buf[512] __attribute__((aligned(32)));
 
 /**
-  * @brief  åˆå§‹åŒ– LUN
-  *         åœ¨ USB ä¸­æ–­ä¸Šä¸‹æ–‡è¢«è°ƒç”¨ï¼ŒåªåšçŠ¶æ€æ£€æŸ¥ï¼Œä¸åšä»»ä½•åˆå§‹åŒ–åŠ¨ä½œã€‚
-  *         eMMC çš„åˆå§‹åŒ–ç”±æœ¬æœºå¯åŠ¨æµç¨‹(disk_initialize -> mmc_init)å®Œæˆã€‚
+  * @brief  ³õÊ¼»¯ LUN
+  *         ÔÚ USB ÖĞ¶ÏÉÏÏÂÎÄ±»µ÷ÓÃ£¬Ö»×ö×´Ì¬¼ì²é£¬²»×öÈÎºÎ³õÊ¼»¯¶¯×÷¡£
+  *         eMMC µÄ³õÊ¼»¯ÓÉ±¾»úÆô¶¯Á÷³Ì(disk_initialize -> mmc_init)Íê³É¡£
   */
 static int8_t STORAGE_Init(uint8_t lun)
 {
@@ -53,8 +53,8 @@ static int8_t STORAGE_Init(uint8_t lun)
 }
 
 /**
-  * @brief  è¿”å›å®¹é‡ï¼šblock_num = æ€»æ‰‡åŒºæ•°, block_size = æ‰‡åŒºå­—èŠ‚æ•°
-  *         (usbd_msc_scsi.c SCSI_ReadCapacity10 ä¼šè‡ªè¡Œ -1 å¾—åˆ°æœ€å LBA)
+  * @brief  ·µ»ØÈİÁ¿£ºblock_num = ×ÜÉÈÇøÊı, block_size = ÉÈÇø×Ö½ÚÊı
+  *         (usbd_msc_scsi.c SCSI_ReadCapacity10 »á×ÔĞĞ -1 µÃµ½×îºó LBA)
   */
 static int8_t STORAGE_GetCapacity(uint8_t lun, uint32_t *block_num, uint16_t *block_size)
 {
@@ -62,7 +62,7 @@ static int8_t STORAGE_GetCapacity(uint8_t lun, uint32_t *block_num, uint16_t *bl
 
     if ((g_sd_card_info_struct.LogBlockNbr == 0U) || (g_sd_card_info_struct.LogBlockSize == 0U))
     {
-        return -1; /* eMMC å°šæœªåˆå§‹åŒ– â†’ ä¸»æœºå¾—åˆ° NOT_READYï¼Œç¨åé‡è¯• */
+        return -1; /* eMMC ÉĞÎ´³õÊ¼»¯ ¡ú Ö÷»úµÃµ½ NOT_READY£¬ÉÔºóÖØÊÔ */
     }
 
     *block_num = g_sd_card_info_struct.LogBlockNbr;
@@ -71,8 +71,8 @@ static int8_t STORAGE_GetCapacity(uint8_t lun, uint32_t *block_num, uint16_t *bl
 }
 
 /**
-  * @brief  åª’ä»‹æ˜¯å¦å°±ç»ª
-  *         æœ¬æœºæ­£åœ¨æ“ä½œ eMMC æ—¶è¿”å›"æœªå°±ç»ª"ï¼Œä¸»æœºæ”¶åˆ° NOT_READY sense è‡ªåŠ¨é‡è¯•ã€‚
+  * @brief  Ã½½éÊÇ·ñ¾ÍĞ÷
+  *         ±¾»úÕıÔÚ²Ù×÷ eMMC Ê±·µ»Ø"Î´¾ÍĞ÷"£¬Ö÷»úÊÕµ½ NOT_READY sense ×Ô¶¯ÖØÊÔ¡£
   */
 static int8_t STORAGE_IsReady(uint8_t lun)
 {
@@ -92,7 +92,7 @@ static int8_t STORAGE_IsReady(uint8_t lun)
 }
 
 /**
-  * @brief  å†™ä¿æŠ¤ï¼šæœ¬ U ç›˜å¯¹ä¸»æœºåªè¯»
+  * @brief  Ğ´±£»¤£º±¾ U ÅÌ¶ÔÖ÷»úÖ»¶Á
   */
 static int8_t STORAGE_IsWriteProtected(uint8_t lun)
 {
@@ -101,8 +101,8 @@ static int8_t STORAGE_IsWriteProtected(uint8_t lun)
 }
 
 /**
-  * @brief  è¯»æ‰‡åŒºï¼ˆUSB ä¸­æ–­ä¸Šä¸‹æ–‡ï¼‰
-  *         SCSI å±‚æ¯æ¬¡æœ€å¤šä¼  1 ä¸ªæ‰‡åŒº (MSC_MEDIA_PACKET = 512B)
+  * @brief  ¶ÁÉÈÇø£¨USB ÖĞ¶ÏÉÏÏÂÎÄ£©
+  *         SCSI ²ãÃ¿´Î×î¶à´« 1 ¸öÉÈÇø (MSC_MEDIA_PACKET = 512B)
   */
 static int8_t STORAGE_Read(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16_t blk_len)
 {
@@ -113,11 +113,11 @@ static int8_t STORAGE_Read(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16_
         return -1;
     }
 
-    /* è®°å½•ä¸»æœºæ´»åŠ¨ï¼šè§¦å‘æ¥ç®¡åˆ¤å®šï¼ˆä»…å†™æ ‡è®°ï¼Œå¯åœ¨ä¸­æ–­å†…è°ƒç”¨ï¼‰ */
+    /* ¼ÇÂ¼Ö÷»ú»î¶¯£º´¥·¢½Ó¹ÜÅĞ¶¨£¨½öĞ´±ê¼Ç£¬¿ÉÔÚÖĞ¶ÏÄÚµ÷ÓÃ£© */
     emmc_msc_touch();
 
-    /* å…œåº•ï¼šæœ¬æœºæ°åœ¨æ­¤åˆ»å ç”¨ eMMC æ—¶å¿«é€Ÿå¤±è´¥ï¼Œä¸åšä»»ä½•ç­‰å¾…
-     * ï¼ˆUSB ä¸­æ–­å†…ç­‰å¾… SDMMC ä¸­æ–­ä¼šæ­»é”ï¼‰ */
+    /* ¶µµ×£º±¾»úÇ¡ÔÚ´Ë¿ÌÕ¼ÓÃ eMMC Ê±¿ìËÙÊ§°Ü£¬²»×öÈÎºÎµÈ´ı
+     * £¨USB ÖĞ¶ÏÄÚµÈ´ı SDMMC ÖĞ¶Ï»áËÀËø£© */
     if (emmc_local_busy() != 0U)
     {
         return -1;
@@ -136,7 +136,7 @@ static int8_t STORAGE_Read(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16_
 }
 
 /**
-  * @brief  å†™æ‰‡åŒºï¼šä¸»æœºä¾§å·²æŒ‰å†™ä¿æŠ¤æ‹’ç»ï¼Œæ­¤å¤„ä»ç„¶æ‹’ç»ï¼ˆåŒä¿é™©ï¼‰
+  * @brief  Ğ´ÉÈÇø£ºÖ÷»ú²àÒÑ°´Ğ´±£»¤¾Ü¾ø£¬´Ë´¦ÈÔÈ»¾Ü¾ø£¨Ë«±£ÏÕ£©
   */
 static int8_t STORAGE_Write(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16_t blk_len)
 {
@@ -148,14 +148,14 @@ static int8_t STORAGE_Write(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16
 }
 
 /**
-  * @brief  æœ€å¤§ LUN æ•° - 1
+  * @brief  ×î´ó LUN Êı - 1
   */
 static int8_t STORAGE_GetMaxLun(void)
 {
     return 0;
 }
 
-/* USB MSC å­˜å‚¨å›è°ƒé›†åˆ */
+/* USB MSC ´æ´¢»Øµ÷¼¯ºÏ */
 USBD_StorageTypeDef USBD_MSC_fops =
 {
     STORAGE_Init,

@@ -46,7 +46,7 @@
 
 /* mem1内存参数设定.mem1是H7R内部的AXI-SRAM1~4 */
 #define MEM1_BLOCK_SIZE         (64)                                                                                                /* 内存块大小为64字节 */
-#define MEM1_MAX_SIZE           ((0x00062000 / (MEM1_BLOCK_SIZE + sizeof(MT_TYPE))) * MEM1_BLOCK_SIZE)                              /* AXI-SRAM1~4最大空闲0x00072000字节 */
+#define MEM1_MAX_SIZE           ((0x00060000 / (MEM1_BLOCK_SIZE + sizeof(MT_TYPE))) * MEM1_BLOCK_SIZE)                              /* AXI-SRAM1~4最大空闲0x00072000字节 */
 #define MEM1_ALLOC_TABLE_SIZE   (MEM1_MAX_SIZE / MEM1_BLOCK_SIZE)                                                                   /* 内存表大小 */
 
 /* mem2内存参数设定.mem2是H7R外部的XSPI2 HyperRAM */
